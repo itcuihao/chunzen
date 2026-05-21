@@ -16,6 +16,9 @@ export class SidePanelProvider {
   private historyService: HistoryService;
   private configService: ConfigService;
 
+  public onTranslatePageRequested?: (pageNumber: number, paragraphs: Array<{ id: string; text: string }>) => Promise<void>;
+  public onRefreshPageTextRequested?: () => Promise<void>;
+
   constructor(
     context: vscode.ExtensionContext,
     translationService: TranslationService,
@@ -93,6 +96,12 @@ export class SidePanelProvider {
           case 'export-translations':
             await this.handleExport(msg.format);
             break;
+          case 'translate-page':
+            await this.onTranslatePageRequested?.(msg.pageNumber, msg.paragraphs);
+            break;
+          case 'refresh-page-text':
+            await this.onRefreshPageTextRequested?.();
+            break;
         }
       },
       undefined,
@@ -118,6 +127,32 @@ export class SidePanelProvider {
 
   updateJournal(info: JournalInfo): void {
     this.postMessage({ type: 'update-journal', info });
+  }
+
+  syncPageText(
+    pageNumber: number,
+    paragraphs: Array<{ id: string; text: string }>,
+    columnsCount: number,
+    translations?: Array<{ id: string; translatedText: string }>
+  ): void {
+    this.postMessage({
+      type: 'sync-page-text',
+      pageNumber,
+      paragraphs,
+      columnsCount,
+      translations
+    });
+  }
+
+  syncPageTranslation(
+    pageNumber: number,
+    translations: Array<{ id: string; translatedText: string }>
+  ): void {
+    this.postMessage({
+      type: 'sync-page-translation',
+      pageNumber,
+      translations
+    });
   }
 
   showLoading(message: string): void {

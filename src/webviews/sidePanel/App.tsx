@@ -20,6 +20,8 @@ export const App: FunctionComponent = () => {
   const setEngineStatuses = useStore((state) => state.setEngineStatuses);
   const setTestResultForEngine = useStore((state) => state.setTestResultForEngine);
   const setGlossaryTerms = useStore((state) => state.setGlossaryTerms);
+  const setCurrentPageText = useStore((state) => state.setCurrentPageText);
+  const setCurrentPageTranslation = useStore((state) => state.setCurrentPageTranslation);
   
   const setEnginePriority = useStore((state) => state.setEnginePriority);
   const setEngineConfigs = useStore((state) => state.setEngineConfigs);
@@ -99,6 +101,31 @@ export const App: FunctionComponent = () => {
       case 'history-sync':
         setTranslationHistory(msg.history);
         break;
+      case 'sync-page-text': {
+        const transRecord: Record<string, string> = {};
+        if (msg.translations) {
+          for (const item of msg.translations) {
+            transRecord[item.id] = item.translatedText;
+          }
+        }
+        setCurrentPageText({
+          pageNumber: msg.pageNumber,
+          paragraphs: msg.paragraphs,
+          columnsCount: msg.columnsCount,
+          translations: msg.translations ? transRecord : undefined
+        });
+        setIsTranslating(false);
+        break;
+      }
+      case 'sync-page-translation': {
+        const transRecord: Record<string, string> = {};
+        for (const item of msg.translations) {
+          transRecord[item.id] = item.translatedText;
+        }
+        setCurrentPageTranslation(transRecord);
+        setIsTranslating(false);
+        break;
+      }
     }
   }, [
     handleInitState,
@@ -109,7 +136,9 @@ export const App: FunctionComponent = () => {
     setEngineStatuses,
     setTestResultForEngine,
     setGlossaryTerms,
-    setTranslationHistory
+    setTranslationHistory,
+    setCurrentPageText,
+    setCurrentPageTranslation
   ]);
 
   useEffect(() => {

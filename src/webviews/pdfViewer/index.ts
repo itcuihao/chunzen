@@ -1,8 +1,8 @@
 // PDF viewer webview entry point
 
 import { initPdfJs, loadPdf, PdfDocument, renderPageToCanvas, getPageText } from './pdfRenderer';
-import { buildTextLayer, Sentence } from './textLayer';
-import { setupSelectionHandler } from './selection';
+import { buildTextLayer, Paragraph } from './textLayer';
+
 
 declare function acquireVsCodeApi(): { postMessage(msg: unknown): void };
 
@@ -14,11 +14,13 @@ let totalPages = 0;
 let scale = 1.2;
 let renderTask: { cancel(): void } | null = null;
 
-const sentences = new Map<string, Sentence>();
-const spanToSentence = new Map<HTMLSpanElement, string>();
-let activeSentenceId: string | null = null;
-let lastHoveredSentenceId: string | null = null;
-let hoverDebounce: ReturnType<typeof setTimeout> | null = null;
+// Removed hover/selection translation state variables
+
+// Translation states
+let currentParagraphs: Paragraph[] = [];
+const pageTranslationsCache = new Map<number, Record<string, string>>();
+let isTranslationMode = false;
+let isTranslating = false;
 
 // DOM refs
 const container = document.getElementById('pdf-container')!;
@@ -37,6 +39,25 @@ container.appendChild(wrapper);
 wrapper.appendChild(canvas);
 wrapper.appendChild(textLayer);
 
+// Translation structures
+const translationLayer = document.createElement('div');
+translationLayer.id = 'translation-layer';
+translationLayer.classList.add('hidden');
+wrapper.appendChild(translationLayer);
+
+const translationLoading = document.createElement('div');
+translationLoading.id = 'translation-loading';
+translationLoading.classList.add('hidden');
+translationLoading.innerHTML = `
+  <div class="spinner"></div>
+  <div class="loading-text">正在翻译当前页面...</div>
+`;
+wrapper.appendChild(translationLoading);
+
+// Toolbar buttons
+const btnTranslateEl = document.getElementById('btn-translate');
+const btnToggleTranslationEl = document.getElementById('btn-toggle-translation');
+
 async function loadPdfDocument() {
   try {
     initPdfJs((window as unknown as Record<string, string>).PDFJS_WORKER);
@@ -54,7 +75,6 @@ async function loadPdfDocument() {
     hideLoading();
 
     vscode.postMessage({ type: 'ready' });
-    setupSelectionHandler(textLayer, vscode);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     loadingOverlay.querySelector('.loading-text')!.textContent = `加载失败: ${msg}`;
@@ -77,91 +97,36 @@ async function renderCurrentPage() {
   textLayer.style.width = viewport.width + 'px';
   textLayer.style.height = viewport.height + 'px';
 
+  // Position the translation overlay layer as well
+  translationLayer.style.width = viewport.width + 'px';
+  translationLayer.style.height = viewport.height + 'px';
+
   const items = await getPageText(page);
-  const { sentences: newSentences, spanToSentence: newSpanMap } = buildTextLayer(textLayer, items, viewport);
+  const { paragraphs: newParagraphs, columnsCount } = buildTextLayer(textLayer, items, viewport);
 
-  sentences.clear();
-  spanToSentence.clear();
-  for (const [k, v] of newSentences) {
-    sentences.set(k, v);
-  }
-  for (const [k, v] of newSpanMap) {
-    spanToSentence.set(k, v);
-  }
+  currentParagraphs = newParagraphs;
 
-  bindTextLayerEvents();
+  // Retrieve cached translations for current page if available
+  const cacheObj = pageTranslationsCache.get(currentPage);
+  const translations = cacheObj
+    ? Object.entries(cacheObj).map(([id, translatedText]) => ({ id, translatedText }))
+    : undefined;
+
+  // Send page text loaded message to extension host
+  vscode.postMessage({
+    type: 'page-text-loaded',
+    pageNumber: currentPage,
+    paragraphs: newParagraphs.map(p => ({ id: p.id, text: p.text })),
+    columnsCount,
+    translations
+  });
+
+  // Render translations overlay if mode is active and update toolbar buttons
+  renderTranslationOverlay();
+  updateToolbarButtons();
 }
 
-function bindTextLayerEvents() {
-  textLayer.addEventListener('mouseover', onSpanMouseover as EventListener);
-  textLayer.addEventListener('mouseout', onSpanMouseout as EventListener);
-  textLayer.addEventListener('click', onSpanClick as EventListener);
-}
-
-function onSpanMouseover(e: MouseEvent) {
-  const span = e.target as HTMLElement;
-  if (!span.dataset.sentenceId) return;
-  const sid = span.dataset.sentenceId;
-  if (sid === lastHoveredSentenceId) return;
-
-  clearHover();
-  lastHoveredSentenceId = sid;
-
-  const sentence = sentences.get(sid);
-  if (!sentence) return;
-
-  for (const s of sentence.spans) {
-    s.classList.add('sentence-active');
-  }
-
-  clearTimeout(hoverDebounce ?? undefined);
-  hoverDebounce = setTimeout(() => {
-    activeSentenceId = sid;
-    for (const s of sentence.spans) {
-      s.classList.remove('sentence-active');
-      s.classList.add('sentence-selected');
-    }
-    vscode.postMessage({ type: 'sentence-hover', sentenceId: sid, text: sentence.text });
-  }, 300);
-}
-
-function onSpanMouseout(e: MouseEvent) {
-  const span = e.target as HTMLElement;
-  const sid = span.dataset.sentenceId;
-  if (!sid) return;
-
-  const relatedSid = (e.relatedTarget as HTMLElement)?.dataset?.sentenceId;
-  if (relatedSid === sid) return;
-
-  if (sid !== activeSentenceId) {
-    clearHover();
-  }
-  clearTimeout(hoverDebounce ?? undefined);
-}
-
-function onSpanClick(e: MouseEvent) {
-  const span = e.target as HTMLElement;
-  if (!span.dataset.sentenceId) return;
-  const sid = span.dataset.sentenceId;
-  const sentence = sentences.get(sid);
-  if (!sentence) return;
-  vscode.postMessage({ type: 'sentence-click', sentenceId: sid, text: sentence.text });
-}
-
-function clearHover() {
-  if (lastHoveredSentenceId) {
-    const prev = sentences.get(lastHoveredSentenceId);
-    if (prev) {
-      for (const s of prev.spans) {
-        s.classList.remove('sentence-active');
-        if (lastHoveredSentenceId !== activeSentenceId) {
-          s.classList.remove('sentence-selected');
-        }
-      }
-    }
-  }
-  lastHoveredSentenceId = null;
-}
+// Removed unused hover text events to avoid single sentence translation
 
 async function extractMetaFromFirstPage() {
   if (!pdfDoc) return;
@@ -215,6 +180,11 @@ document.addEventListener('keydown', e => {
 async function goToPage(n: number) {
   if (!pdfDoc) return;
   n = Math.max(1, Math.min(totalPages, n));
+  if (n !== currentPage) {
+    isTranslationMode = pageTranslationsCache.has(n);
+    isTranslating = false;
+    translationLoading.classList.add('hidden');
+  }
   currentPage = n;
   pageInputEl.value = String(n);
   await renderCurrentPage();
@@ -235,5 +205,140 @@ function fitWidth() {
     setZoom(containerWidth / vp.width);
   });
 }
+
+// Bind translation buttons
+btnTranslateEl?.addEventListener('click', startPageTranslation);
+btnToggleTranslationEl?.addEventListener('click', toggleTranslationMode);
+
+function startPageTranslation() {
+  if (!pdfDoc || isTranslating) return;
+
+  const pageCache = pageTranslationsCache.get(currentPage);
+  if (pageCache) {
+    isTranslationMode = true;
+    renderTranslationOverlay();
+    updateToolbarButtons();
+    return;
+  }
+
+  if (currentParagraphs.length === 0) {
+    alert('当前页面未检测到可翻译的段落文本');
+    return;
+  }
+
+  isTranslating = true;
+  translationLoading.classList.remove('hidden');
+
+  vscode.postMessage({
+    type: 'translate-page-paragraphs',
+    pageNumber: currentPage,
+    paragraphs: currentParagraphs.map(p => ({ id: p.id, text: p.text }))
+  });
+}
+
+function toggleTranslationMode() {
+  isTranslationMode = !isTranslationMode;
+  renderTranslationOverlay();
+  updateToolbarButtons();
+}
+
+function renderTranslationOverlay() {
+  translationLayer.innerHTML = '';
+  if (!isTranslationMode) {
+    translationLayer.classList.add('hidden');
+    return;
+  }
+
+  const pageCache = pageTranslationsCache.get(currentPage);
+  if (!pageCache) {
+    translationLayer.classList.add('hidden');
+    return;
+  }
+
+  translationLayer.classList.remove('hidden');
+
+  for (const para of currentParagraphs) {
+    const translatedText = pageCache[para.id];
+    if (!translatedText) continue;
+
+    const div = document.createElement('div');
+    div.className = 'translated-para';
+    div.textContent = translatedText;
+
+    div.style.left = para.x + 'px';
+    div.style.top = para.y + 'px';
+    div.style.width = para.width + 'px';
+    div.style.height = para.height + 'px';
+
+    const fs = Math.max(12, para.fontSize);
+    div.style.fontSize = fs + 'px';
+
+    translationLayer.appendChild(div);
+  }
+}
+
+function updateToolbarButtons() {
+  if (!btnTranslateEl || !btnToggleTranslationEl) return;
+
+  const hasCache = pageTranslationsCache.has(currentPage);
+  if (hasCache) {
+    btnTranslateEl.classList.add('hidden');
+    btnToggleTranslationEl.classList.remove('hidden');
+    if (isTranslationMode) {
+      btnToggleTranslationEl.textContent = '显示原文';
+      btnToggleTranslationEl.title = '显示原文';
+    } else {
+      btnToggleTranslationEl.textContent = '显示译文';
+      btnToggleTranslationEl.title = '显示译文';
+    }
+  } else {
+    btnTranslateEl.classList.remove('hidden');
+    btnToggleTranslationEl.classList.add('hidden');
+  }
+}
+
+// Receive messages from extension host
+window.addEventListener('message', event => {
+  const message = event.data;
+  if (!message) return;
+
+  switch (message.type) {
+    case 'translate-page-paragraphs-loading': {
+      if (message.pageNumber === currentPage) {
+        isTranslating = true;
+        translationLoading.classList.remove('hidden');
+      }
+      break;
+    }
+    case 'translate-page-paragraphs-result': {
+      const cacheObj: Record<string, string> = {};
+      for (const item of message.translations) {
+        cacheObj[item.id] = item.translatedText;
+      }
+      pageTranslationsCache.set(message.pageNumber, cacheObj);
+
+      if (message.pageNumber === currentPage) {
+        translationLoading.classList.add('hidden');
+        isTranslating = false;
+        isTranslationMode = true;
+        renderTranslationOverlay();
+        updateToolbarButtons();
+      }
+      break;
+    }
+    case 'translate-page-paragraphs-error': {
+      if (message.pageNumber === currentPage) {
+        translationLoading.classList.add('hidden');
+        isTranslating = false;
+        alert('翻译失败: ' + message.message);
+      }
+      break;
+    }
+    case 'trigger-page-text-extract': {
+      renderCurrentPage();
+      break;
+    }
+  }
+});
 
 loadPdfDocument();
