@@ -8,7 +8,7 @@ import { HistoryService } from './services/historyService';
 import { ConfigService } from './services/configService';
 
 export function activate(context: vscode.ExtensionContext) {
-  console.log('醇臻插件已激活');
+  console.log('春蝉插件已激活');
 
   // 初始化服务
   const translationService = new TranslationService(context);
@@ -66,7 +66,7 @@ export function activate(context: vscode.ExtensionContext) {
       const engines = translationService.getConfiguredEngines();
       if (engines.length === 0) {
         vscode.window.showWarningMessage(
-          '醇臻：尚未配置任何翻译引擎。请在设置中填入翻译 API Key。',
+          '春蝉：尚未配置任何翻译引擎。请在设置中填入翻译 API Key。',
           '打开设置'
         ).then(choice => {
           if (choice === '打开设置') {
@@ -78,7 +78,7 @@ export function activate(context: vscode.ExtensionContext) {
         });
       } else {
         vscode.window.showInformationMessage(
-          `醇臻：已配置的翻译引擎：${engines.join('、')}`
+          `春蝉：已配置的翻译引擎：${engines.join('、')}`
         );
       }
     })
@@ -88,7 +88,7 @@ export function activate(context: vscode.ExtensionContext) {
   const engines = translationService.getConfiguredEngines();
   if (engines.length === 0) {
     vscode.window.showInformationMessage(
-      '醇臻已就绪！请配置翻译 API Key 以启用翻译功能。',
+      '春蝉已就绪！请配置翻译 API Key 以启用翻译功能。',
       '配置翻译引擎'
     ).then(choice => {
       if (choice === '配置翻译引擎') {
@@ -102,5 +102,5 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 export function deactivate() {
-  console.log('醇臻插件已停用');
+  console.log('春蝉插件已停用');
 }

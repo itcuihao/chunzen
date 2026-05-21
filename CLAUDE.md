@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**醇臻 (ChunZen)** — A VSCode extension for immersive academic paper reading. Opens PDFs in a custom editor with real-time sentence-level translation (hover triggers translation) and journal metadata lookup (IF, CAS ranking, JCR quartile).
+**春蝉 (ChunZen)** — A VSCode extension for immersive academic paper reading. Opens PDFs in a custom editor with real-time sentence-level translation (hover triggers translation) and journal metadata lookup (IF, CAS ranking, JCR quartile).
 
 ## Build & Run
 
