@@ -43,6 +43,19 @@ interface PanelState {
   setIsTranslating: (isTranslating: boolean) => void;
   translationError: string;
   setTranslationError: (err: string) => void;
+  currentPageText: {
+    pageNumber: number;
+    paragraphs: Array<{ id: string; text: string }>;
+    columnsCount: number;
+    translations?: Record<string, string>;
+  } | null;
+  setCurrentPageText: (val: {
+    pageNumber: number;
+    paragraphs: Array<{ id: string; text: string }>;
+    columnsCount: number;
+    translations?: Record<string, string>;
+  } | null) => void;
+  setCurrentPageTranslation: (translations: Record<string, string>) => void;
 
   // Journal State
   journalInfo: JournalInfo | null;
@@ -86,6 +99,14 @@ export const useStore = create<PanelState>((set) => ({
   setIsTranslating: (isTranslating) => set({ isTranslating }),
   translationError: '',
   setTranslationError: (translationError) => set({ translationError }),
+  currentPageText: null,
+  setCurrentPageText: (currentPageText) => set({ currentPageText }),
+  setCurrentPageTranslation: (translations) =>
+    set((state) => ({
+      currentPageText: state.currentPageText
+        ? { ...state.currentPageText, translations }
+        : null
+    })),
 
   // Journal State initial
   journalInfo: null,

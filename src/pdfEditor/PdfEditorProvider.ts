@@ -22,6 +22,7 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
 
   // 每个文档对应的 WebView
   private webviews = new Map<string, vscode.WebviewPanel>();
+  private activeWebviewPanel: vscode.WebviewPanel | undefined;
 
   constructor(
     context: vscode.ExtensionContext,
@@ -53,6 +54,13 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
     const uri = document.uri;
     const key = uri.toString();
     this.webviews.set(key, webviewPanel);
+    this.activeWebviewPanel = webviewPanel;
+
+    webviewPanel.onDidChangeViewState(e => {
+      if (e.webviewPanel.active) {
+        this.activeWebviewPanel = webviewPanel;
+      }
+    });
 
     webviewPanel.webview.options = {
       enableScripts: true,
@@ -89,6 +97,14 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
           case 'doi-found':
             await this.handleDoiFound(msg.doi, msg.issn, msg.journal);
             break;
+
+          case 'translate-page-paragraphs':
+            await this.handleTranslatePageParagraphs(webviewPanel, msg.pageNumber, msg.paragraphs);
+            break;
+
+          case 'page-text-loaded':
+            this.sidePanel.syncPageText(msg.pageNumber, msg.paragraphs, msg.columnsCount, msg.translations);
+            break;
         }
       },
       undefined,
@@ -97,6 +113,9 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
 
     webviewPanel.onDidDispose(() => {
       this.webviews.delete(key);
+      if (this.activeWebviewPanel === webviewPanel) {
+        this.activeWebviewPanel = undefined;
+      }
     });
   }
 
@@ -136,6 +155,71 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
     } catch (err) {
       console.warn('期刊信息查询失败:', err);
     }
+  }
+
+  private async handleTranslatePageParagraphs(
+    webviewPanel: vscode.WebviewPanel,
+    pageNumber: number,
+    paragraphs: Array<{ id: string; text: string }>
+  ): Promise<void> {
+    try {
+      const translations: Array<{ id: string; translatedText: string }> = [];
+
+      for (const para of paragraphs) {
+        if (!para.text.trim()) {
+          translations.push({ id: para.id, translatedText: '' });
+          continue;
+        }
+
+        const result = await this.translationService.translate(para.text);
+        translations.push({ id: para.id, translatedText: result.text });
+        this.historyService.add(para.text, result.text, result.engine);
+
+        if (!result.cached) {
+          await new Promise(resolve => setTimeout(resolve, 300));
+        }
+      }
+
+      webviewPanel.webview.postMessage({
+        type: 'translate-page-paragraphs-result',
+        pageNumber,
+        translations
+      });
+
+      // Also sync to the side panel!
+      this.sidePanel.syncPageTranslation(pageNumber, translations);
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      webviewPanel.webview.postMessage({
+        type: 'translate-page-paragraphs-error',
+        pageNumber,
+        message: errMsg
+      });
+      this.sidePanel.showError(errMsg);
+    }
+  }
+
+  public async translateActivePage(pageNumber: number, paragraphs: Array<{ id: string; text: string }>): Promise<void> {
+    if (!this.activeWebviewPanel) {
+      vscode.window.showWarningMessage('未检测到活动的 PDF 编辑器，请确保 PDF 编辑器处于打开状态。');
+      return;
+    }
+    // Instruct the active webview panel to show translation loading state
+    this.activeWebviewPanel.webview.postMessage({
+      type: 'translate-page-paragraphs-loading',
+      pageNumber
+    });
+    await this.handleTranslatePageParagraphs(this.activeWebviewPanel, pageNumber, paragraphs);
+  }
+
+  public async refreshActivePageText(): Promise<void> {
+    if (!this.activeWebviewPanel) {
+      vscode.window.showWarningMessage('未检测到活动的 PDF 编辑器，请确保 PDF 编辑器处于打开状态。');
+      return;
+    }
+    this.activeWebviewPanel.webview.postMessage({
+      type: 'trigger-page-text-extract'
+    });
   }
 
   private getHtml(webview: vscode.Webview, pdfUri: vscode.Uri): string {
@@ -178,6 +262,8 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
       <span id="pdf-title" class="pdf-title"></span>
     </div>
     <div class="toolbar-right">
+      <button id="btn-translate" class="btn-text" title="翻译此页">翻译此页</button>
+      <button id="btn-toggle-translation" class="btn-text hidden" title="显示原文">显示原文</button>
       <button id="btn-zoom-out" title="缩小">−</button>
       <span id="zoom-level">100%</span>
       <button id="btn-zoom-in" title="放大">+</button>

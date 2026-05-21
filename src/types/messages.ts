@@ -31,12 +31,28 @@ export interface DoiFoundMessage {
   journal?: string;
 }
 
+export interface TranslatePageParagraphsMessage {
+  type: 'translate-page-paragraphs';
+  pageNumber: number;
+  paragraphs: Array<{ id: string; text: string }>;
+}
+
+export interface PageTextLoadedMessage {
+  type: 'page-text-loaded';
+  pageNumber: number;
+  paragraphs: Array<{ id: string; text: string }>;
+  columnsCount: number;
+  translations?: Array<{ id: string; translatedText: string }>;
+}
+
 export type PdfViewerToExtMessage =
   | ReadyMessage
   | SentenceHoverMessage
   | SentenceClickMessage
   | TextSelectMessage
-  | DoiFoundMessage;
+  | DoiFoundMessage
+  | TranslatePageParagraphsMessage
+  | PageTextLoadedMessage;
 
 // ── Extension → Side Panel ──
 
@@ -91,6 +107,20 @@ export interface HistorySyncMessage {
   history: TranslationHistoryEntry[];
 }
 
+export interface SyncPageTextMessage {
+  type: 'sync-page-text';
+  pageNumber: number;
+  paragraphs: Array<{ id: string; text: string }>;
+  columnsCount: number;
+  translations?: Array<{ id: string; translatedText: string }>;
+}
+
+export interface SyncPageTranslationMessage {
+  type: 'sync-page-translation';
+  pageNumber: number;
+  translations: Array<{ id: string; translatedText: string }>;
+}
+
 export type ExtToPanelMessage =
   | TranslateResultMessage
   | TranslateErrorMessage
@@ -100,6 +130,8 @@ export type ExtToPanelMessage =
   | EngineTestResultMessage
   | GlossarySyncMessage
   | HistorySyncMessage
+  | SyncPageTextMessage
+  | SyncPageTranslationMessage
   | { type: 'loading'; message: string }
   | { type: 'error'; message: string }
   | { type: 'clear' };
@@ -155,6 +187,12 @@ export interface ExportTranslationsMessage {
   format: 'markdown' | 'bilingual';
 }
 
+export interface TranslatePageMessage {
+  type: 'translate-page';
+  pageNumber: number;
+  paragraphs: Array<{ id: string; text: string }>;
+}
+
 export type PanelToExtMessage =
   | SaveEngineConfigMessage
   | TestEngineMessage
@@ -165,6 +203,8 @@ export type PanelToExtMessage =
   | DeleteTermMessage
   | ImportGlossaryMessage
   | ExportTranslationsMessage
+  | TranslatePageMessage
   | { type: 'clear-cache' }
   | { type: 'clear-history' }
-  | { type: 'request-state' };
+  | { type: 'request-state' }
+  | { type: 'refresh-page-text' };

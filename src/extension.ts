@@ -33,6 +33,13 @@ export function activate(context: vscode.ExtensionContext) {
     historyService
   );
 
+  sidePanel.onTranslatePageRequested = async (pageNumber, paragraphs) => {
+    await pdfProvider.translateActivePage(pageNumber, paragraphs);
+  };
+  sidePanel.onRefreshPageTextRequested = async () => {
+    await pdfProvider.refreshActivePageText();
+  };
+
   context.subscriptions.push(
     vscode.window.registerCustomEditorProvider(
       PdfEditorProvider.viewType,

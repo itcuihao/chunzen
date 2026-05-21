@@ -12,6 +12,16 @@ export interface Sentence {
   spans: HTMLSpanElement[];
 }
 
+export interface Paragraph {
+  id: string;
+  text: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  fontSize: number;
+}
+
 interface ColLayoutItem {
   str: string;
   x: number;
@@ -45,7 +55,12 @@ export function buildTextLayer(
   container: HTMLElement,
   items: TextItem[],
   viewport: PdfViewport
-): { sentences: Map<string, Sentence>; spanToSentence: Map<HTMLSpanElement, string> } {
+): {
+  sentences: Map<string, Sentence>;
+  spanToSentence: Map<HTMLSpanElement, string>;
+  paragraphs: Paragraph[];
+  columnsCount: number;
+} {
   container.innerHTML = '';
 
   // 1. Transform to layout coordinates
@@ -64,14 +79,14 @@ export function buildTextLayer(
   }
 
   if (allItems.length === 0) {
-    return { sentences: new Map(), spanToSentence: new Map() };
+    return { sentences: new Map(), spanToSentence: new Map(), paragraphs: [], columnsCount: 1 };
   }
 
   // 2. Detect columns from X-coordinate clustering
   const columns = detectColumns(allItems);
 
   // 3. Filter header/footer/math, assign each item to column, sort into reading order
-  const refined = refineItems(allItems, columns);
+  const refined = refineItems(allItems, columns, viewport.height);
 
   // 4. Group into lines (within same column, by Y coordinate)
   const lines = itemsToLines(refined);
@@ -79,35 +94,63 @@ export function buildTextLayer(
   // 5. Dehyphenate
   const clean = dehyphenate(lines);
 
-  // 6. Merge lines to paragraphs, split into sentences
-  const sents = buildSentences(clean);
+  // 6. Merge lines to paragraphs
+  const logicalParas = buildParagraphs(clean);
 
-  // 7. Render spans
+  // 7. Render spans and compute paragraph bounding boxes
   const sentenceMap = new Map<string, Sentence>();
   const spanToSentence = new Map<HTMLSpanElement, string>();
+  const paragraphs: Paragraph[] = [];
 
   let sentenceId = 0;
-  for (const sent of sents) {
-    if (!sent.text || sent.text.length < 5) continue;
-    const sid = String(sentenceId++);
-    const spans: HTMLSpanElement[] = [];
+  for (const para of logicalParas) {
+    if (!para.items.length) continue;
 
-    for (const item of sent.items) {
-      const span = document.createElement('span');
-      span.textContent = item.str;
-      span.dataset.sentenceId = sid;
-      span.style.left = item.x + 'px';
-      span.style.top = item.y + 'px';
-      span.style.fontSize = item.height + 'px';
-      container.appendChild(span);
-      spans.push(span);
-      spanToSentence.set(span, sid);
+    // Compute bounding box
+    const xs = para.items.map(it => it.x);
+    const ys = para.items.map(it => it.y);
+    const xMaxs = para.items.map(it => it.x + it.width);
+    const yMaxs = para.items.map(it => it.y + it.height);
+    const x = Math.min(...xs);
+    const y = Math.min(...ys);
+    const width = Math.max(...xMaxs) - x;
+    const height = Math.max(...yMaxs) - y;
+    const fontSize = para.items.reduce((sum, it) => sum + it.height, 0) / para.items.length;
+
+    paragraphs.push({
+      id: para.id,
+      text: para.text,
+      x,
+      y,
+      width,
+      height,
+      fontSize
+    });
+
+    // Split paragraph into sentences for highlight/selection
+    const sents = splitParagraphIntoSentences(para);
+    for (const sent of sents) {
+      if (!sent.text || sent.text.length < 5) continue;
+      const sid = String(sentenceId++);
+      const spans: HTMLSpanElement[] = [];
+
+      for (const item of sent.items) {
+        const span = document.createElement('span');
+        span.textContent = item.str;
+        span.dataset.sentenceId = sid;
+        span.style.left = item.x + 'px';
+        span.style.top = item.y + 'px';
+        span.style.fontSize = item.height + 'px';
+        container.appendChild(span);
+        spans.push(span);
+        spanToSentence.set(span, sid);
+      }
+
+      sentenceMap.set(sid, { id: sid, text: sent.text, spans });
     }
-
-    sentenceMap.set(sid, { id: sid, text: sent.text, spans });
   }
 
-  return { sentences: sentenceMap, spanToSentence };
+  return { sentences: sentenceMap, spanToSentence, paragraphs, columnsCount: columns.length };
 }
 
 // ── Column Detection ──
@@ -171,6 +214,11 @@ function detectColumns(items: ColLayoutItem[]): Column[] {
   // Split page at widest valley
   const widest = midValleys.sort((a, b) => (b.end - b.start) - (a.end - a.start))[0];
 
+  // If the widest valley is too wide (e.g. > 30% of page width), it's likely just a sparse single column page
+  if ((widest.end - widest.start) > pageWidth * 0.3) {
+    return [{ left: minX, right: maxX }];
+  }
+
   return [
     { left: minX, right: widest.start },
     { left: widest.end, right: maxX }
@@ -179,15 +227,10 @@ function detectColumns(items: ColLayoutItem[]): Column[] {
 
 // ── Item refinement: column assignment, header/footer/math filtering ──
 
-function refineItems(items: ColLayoutItem[], columns: Column[]): LineItem[] {
-  const allY = items.map(it => it.y);
-  const minY = Math.min(...allY);
-  const maxY = Math.max(...allY);
-  const pageHeight = maxY - minY;
-  if (pageHeight <= 0) return items.map(it => ({ ...it, columnIndex: 0 }));
-
-  const headerY = minY + pageHeight * 0.10;
-  const footerY = maxY - pageHeight * 0.08;
+function refineItems(items: ColLayoutItem[], columns: Column[], pageHeight: number): LineItem[] {
+  // Skip header/footer region (top 8%, bottom 8% of the actual page height)
+  const headerY = pageHeight * 0.08;
+  const footerY = pageHeight * 0.92;
 
   const result: LineItem[] = [];
 
@@ -211,10 +254,6 @@ function refineItems(items: ColLayoutItem[], columns: Column[]): LineItem[] {
         colIndex = c;
       }
     }
-
-    // Ensure item is reasonably within the column's horizontal span (±30px tolerance)
-    const col = columns[colIndex];
-    if (itemMidX < col.left - 30 || itemMidX > col.right + 30) continue;
 
     result.push({
       str: item.str,
@@ -305,29 +344,27 @@ function dehyphenate(lines: LineItem[][]): LineItem[][] {
   return result.filter(l => l.length > 0);
 }
 
-// ── Lines to sentences ──
+// ── Lines to paragraphs ──
 
-function buildSentences(lines: LineItem[][]): SentenceItem[] {
-  const result: SentenceItem[] = [];
+interface LogicalParagraph {
+  id: string;
+  text: string;
+  items: LineItem[];
+}
+
+function buildParagraphs(lines: LineItem[][]): LogicalParagraph[] {
+  const result: LogicalParagraph[] = [];
   let paraBuf = '';
   let paraItems: LineItem[] = [];
+  let paraId = 0;
 
   function flush() {
     if (!paraBuf.trim()) { paraBuf = ''; paraItems = []; return; }
-    const segs = splitIntoSentences(paraBuf);
-    let pos = 0;
-    for (const seg of segs) {
-      const start = pos;
-      const end = pos + seg.length;
-      const count = paraItems.length;
-      const s0 = Math.floor((start / paraBuf.length) * count);
-      const s1 = Math.max(s0 + 1, Math.ceil((end / paraBuf.length) * count));
-      const txt = seg.trim();
-      if (txt.length >= 5) {
-        result.push({ text: txt, items: paraItems.slice(s0, s1) });
-      }
-      pos = end;
-    }
+    result.push({
+      id: `p-${paraId++}`,
+      text: paraBuf.trim(),
+      items: [...paraItems]
+    });
     paraBuf = '';
     paraItems = [];
   }
@@ -358,6 +395,25 @@ function buildSentences(lines: LineItem[][]): SentenceItem[] {
   }
   flush();
 
+  return result;
+}
+
+function splitParagraphIntoSentences(para: LogicalParagraph): SentenceItem[] {
+  const result: SentenceItem[] = [];
+  const segs = splitIntoSentences(para.text);
+  let pos = 0;
+  for (const seg of segs) {
+    const start = pos;
+    const end = pos + seg.length;
+    const count = para.items.length;
+    const s0 = Math.floor((start / para.text.length) * count);
+    const s1 = Math.max(s0 + 1, Math.ceil((end / para.text.length) * count));
+    const txt = seg.trim();
+    if (txt.length >= 5) {
+      result.push({ text: txt, items: para.items.slice(s0, s1) });
+    }
+    pos = end;
+  }
   return result;
 }
 
