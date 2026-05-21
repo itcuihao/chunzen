@@ -123,9 +123,25 @@ export function buildTextLayer(
   }
   if (currentLine.length) rawLines.push(currentLine.sort((a, b) => a.x - b.x));
 
-  // 3. Find page horizontal bounds
-  const xs = allItems.map(it => it.x);
-  const xMaxs = allItems.map(it => it.x + it.width);
+  // 2b. Filter out running headers and footers using content analysis
+  const filteredRawLines: ColLayoutItem[][] = [];
+  for (const line of rawLines) {
+    if (line.length === 0) continue;
+    const lineStr = line.map(it => it.str).join(' ').trim();
+    const lineY = line[0].y;
+    if (isRunningHeaderFooter(lineStr, lineY, viewport.height)) {
+      continue;
+    }
+    filteredRawLines.push(line);
+  }
+
+  // 3. Find page horizontal bounds from body text lines
+  const bodyItems = filteredRawLines.flat();
+  if (bodyItems.length === 0) {
+    return { sentences: new Map(), spanToSentence: new Map(), paragraphs: [], columnsCount: 1 };
+  }
+  const xs = bodyItems.map(it => it.x);
+  const xMaxs = bodyItems.map(it => it.x + it.width);
   const minX = Math.min(...xs);
   const maxX = Math.max(...xMaxs);
   const pageWidth = maxX - minX;
@@ -137,7 +153,7 @@ export function buildTextLayer(
   const GUTTER_MIN_WIDTH = 15; // px
   const centerRange = pageWidth * 0.2; // gutter midpoint must be within 20% of page center
 
-  for (const line of rawLines) {
+  for (const line of filteredRawLines) {
     if (line.length === 0) continue;
 
     let splitIndex = -1;
@@ -184,7 +200,7 @@ export function buildTextLayer(
   }
 
   // 5. Layout classification
-  const isDoubleColumn = splitCount >= 3 || (rawLines.length > 0 && splitCount / rawLines.length > 0.08);
+  const isDoubleColumn = splitCount >= 3 || (filteredRawLines.length > 0 && splitCount / filteredRawLines.length > 0.08);
 
   // 6. Segment ordering (reading flow reconstruction)
   let orderedSegments: LineSegment[] = [];
@@ -441,6 +457,44 @@ function isMathArtifact(str: string): boolean {
 
   // Filter only if it has no alphanumeric characters and length > 1 (e.g. operators like "+-", "<=")
   if (str.length > 1 && !/[a-zA-Z0-9]/.test(str)) return true;
+
+  return false;
+}
+
+function isRunningHeaderFooter(lineStr: string, lineY: number, viewportHeight: number): boolean {
+  const isTopRegion = lineY < viewportHeight * 0.08;
+  const isBottomRegion = lineY > viewportHeight * 0.92;
+
+  if (!isTopRegion && !isBottomRegion) return false;
+
+  const trimmed = lineStr.trim();
+  if (!trimmed) return false;
+
+  // 1. Page number patterns (e.g., "123", "Page 123", "123 of 456", "[123]", "- 123 -")
+  if (/^\d+$/.test(trimmed)) return true;
+  if (/^page\s+\d+$/i.test(trimmed)) return true;
+  if (/^\d+\s+of\s+\d+$/i.test(trimmed)) return true;
+  if (/^-\s*\d+\s*-$/.test(trimmed)) return true;
+  if (/^\[\s*\d+\s*\]$/.test(trimmed)) return true;
+  if (/^•\s*\d+\s*•$/.test(trimmed)) return true;
+
+  // 2. Copyright and publication metadata
+  const lower = trimmed.toLowerCase();
+  if (lower.includes('copyright') || lower.includes('©') || lower.includes('all rights reserved')) return true;
+  if (lower.includes('doi:') || lower.includes('doi.org')) return true;
+  if (lower.includes('issn') || lower.includes('e-issn') || lower.includes('eissn')) return true;
+  if (lower.includes('http://') || lower.includes('https://') || lower.includes('www.')) return true;
+  
+  // Volume, issue, year info (e.g. "Vol. 12, No. 4, 2023", "Cancer Research 2024;84:1-10")
+  if (/\bvol\.\s*\d+/i.test(trimmed) || /\bno\.\s*\d+/i.test(trimmed)) return true;
+  if (/\b(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{4}\b/i.test(trimmed)) return true;
+
+  // 3. Short lines at the extreme edges (e.g., journal abbreviations like "Nat. Commun.")
+  const isExtremeTop = lineY < viewportHeight * 0.05;
+  const isExtremeBottom = lineY > viewportHeight * 0.95;
+  if ((isExtremeTop || isExtremeBottom) && trimmed.length < 40) {
+    return true;
+  }
 
   return false;
 }
