@@ -1,0 +1,184 @@
+{
+  "name": "chunzen",
+  "displayName": "春蝉 — 学术论文沉浸式阅读",
+  "description": "春蝉 — 在 VSCode 中沉浸式阅读学术 PDF，支持实时翻译、期刊信息查询（IF、中科院分区）",
+  "version": "0.1.0",
+  "publisher": "chunzen",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "pdf",
+    "academic",
+    "translation",
+    "research",
+    "论文"
+  ],
+  "activationEvents": [],
+  "main": "./dist/extension.js",
+  "icon": "media/icon.png",
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "chunzen.pdfViewer",
+        "displayName": "春蝉 PDF 阅读器",
+        "selector": [
+          {
+            "filenamePattern": "*.pdf"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
+    "commands": [
+      {
+        "command": "chunzen.openSidePanel",
+        "title": "春蝉：打开翻译面板",
+        "icon": "$(book)"
+      },
+      {
+        "command": "chunzen.clearCache",
+        "title": "春蝉：清除翻译缓存"
+      },
+      {
+        "command": "chunzen.configureEngines",
+        "title": "春蝉：配置翻译引擎"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "chunzen.openSidePanel",
+          "when": "activeCustomEditorId == 'chunzen.pdfViewer'",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "春蝉 PDF 阅读器",
+      "properties": {
+        "chunzen.translation.priority": {
+          "type": "array",
+          "default": [
+            "baidu",
+            "deepl",
+            "openai",
+            "custom",
+            "claudeCli"
+          ],
+          "description": "翻译引擎优先级顺序（从高到低）"
+        },
+        "chunzen.translation.baidu.appId": {
+          "type": "string",
+          "default": "",
+          "description": "百度翻译 App ID"
+        },
+        "chunzen.translation.baidu.secretKey": {
+          "type": "string",
+          "default": "",
+          "description": "百度翻译密钥"
+        },
+        "chunzen.translation.deepl.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "DeepL API Key"
+        },
+        "chunzen.translation.deepl.freeApi": {
+          "type": "boolean",
+          "default": true,
+          "description": "使用 DeepL 免费版 API（api-free.deepl.com）"
+        },
+        "chunzen.translation.openai.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "OpenAI / Gemini / 兼容接口 API Key"
+        },
+        "chunzen.translation.openai.baseUrl": {
+          "type": "string",
+          "default": "https://api.openai.com/v1",
+          "description": "OpenAI 兼容接口 Base URL（可填 Gemini 或其他代理地址）"
+        },
+        "chunzen.translation.openai.model": {
+          "type": "string",
+          "default": "gpt-4o-mini",
+          "description": "使用的模型名称"
+        },
+        "chunzen.translation.openai.systemPrompt": {
+          "type": "string",
+          "default": "你是一个学术论文翻译专家。请将以下英文学术句子翻译成中文，保持专业术语准确，语言简洁流畅。只输出翻译结果，不要解释。",
+          "description": "AI 翻译的系统提示词"
+        },
+        "chunzen.translation.custom.url": {
+          "type": "string",
+          "default": "",
+          "description": "自定义翻译 HTTP 接口 URL"
+        },
+        "chunzen.translation.custom.headers": {
+          "type": "object",
+          "default": {},
+          "description": "自定义接口请求头"
+        },
+        "chunzen.translation.custom.bodyTemplate": {
+          "type": "string",
+          "default": "{\"text\": \"{{text}}\", \"target_lang\": \"ZH\"}",
+          "description": "请求体模板，用 {{text}} 占位"
+        },
+        "chunzen.translation.custom.responsePath": {
+          "type": "string",
+          "default": "result",
+          "description": "从响应 JSON 中提取翻译结果的路径（如 data.translation）"
+        },
+        "chunzen.translation.claudeCli.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "启用 claude -p 命令行翻译"
+        },
+        "chunzen.translation.claudeCli.prompt": {
+          "type": "string",
+          "default": "将以下学术英文翻译为中文，只输出译文：",
+          "description": "Claude CLI 翻译提示词"
+        },
+        "chunzen.cache.maxSize": {
+          "type": "number",
+          "default": 500,
+          "description": "翻译缓存最大条数"
+        },
+        "chunzen.journal.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "启用期刊信息查询（LetPub）"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "webpack",
+    "watch": "webpack --watch",
+    "package": "webpack --mode production --devtool hidden-source-map",
+    "vsix": "npm run package && node ./node_modules/@vscode/vsce/out/main.js package",
+    "compile-tests": "tsc -p . --outDir out",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "@vscode/vsce": "^3.9.1",
+    "copy-webpack-plugin": "^14.0.0",
+    "eslint": "^8.0.0",
+    "ts-loader": "^9.0.0",
+    "typescript": "^5.3.0",
+    "webpack": "^5.89.0",
+    "webpack-cli": "^5.1.0"
+  },
+  "dependencies": {
+    "@preact/signals": "^2.9.0",
+    "node-fetch": "^3.3.2",
+    "preact": "^10.29.2"
+  }
+}
