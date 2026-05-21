@@ -165,12 +165,12 @@ export class SidePanelProvider {
 
   private async handleTestEngine(engineName: string): Promise<void> {
     try {
-      const result = await this.translationService.translate('test sentence');
+      const result = await this.translationService.translateWithEngine(engineName, 'test sentence');
       this.postMessage({
         type: 'engine-test-result',
         engineName,
         success: true,
-        message: `test: ${result.text}`
+        message: `test: ${result}`
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

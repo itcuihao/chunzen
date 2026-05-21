@@ -12,13 +12,15 @@ export class BaiduEngine implements TranslationEngine {
 
   isConfigured(): boolean {
     const cfg = vscode.workspace.getConfiguration('chunzen.translation.baidu');
-    return !!(cfg.get<string>('appId') && cfg.get<string>('secretKey'));
+    const appId = (cfg.get<string>('appId') || '').trim();
+    const secretKey = (cfg.get<string>('secretKey') || '').trim();
+    return !!(appId && secretKey);
   }
 
   async translate(text: string, _sourceLang = 'en', _targetLang = 'zh'): Promise<string> {
     const cfg = vscode.workspace.getConfiguration('chunzen.translation.baidu');
-    const appId = cfg.get<string>('appId', '');
-    const secretKey = cfg.get<string>('secretKey', '');
+    const appId = cfg.get<string>('appId', '').trim();
+    const secretKey = cfg.get<string>('secretKey', '').trim();
 
     if (!appId || !secretKey) {
       throw new Error('百度翻译未配置');
