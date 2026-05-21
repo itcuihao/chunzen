@@ -69,8 +69,9 @@ export function buildTextLayer(
   container.innerHTML = '';
 
   // 1. Transform to layout coordinates and filter math/headers
-  const headerY = viewport.height * 0.08;
-  const footerY = viewport.height * 0.92;
+  // We use a safe 2% margin to prevent discarding actual body text at page boundaries.
+  const headerY = viewport.height * 0.02;
+  const footerY = viewport.height * 0.98;
   const allItems: ColLayoutItem[] = [];
 
   for (const item of items) {
@@ -81,7 +82,7 @@ export function buildTextLayer(
     // Filter math symbols and LaTeX commands
     if (isMathArtifact(item.str)) continue;
 
-    // Skip header/footer region
+    // Skip header/footer region (only if extreme outer margins)
     if (tx[5] < headerY || tx[5] > footerY) continue;
 
     const w = item.width * viewport.scale;
@@ -164,12 +165,19 @@ export function buildTextLayer(
       const last = line[line.length - 1];
       const lineRight = last.x + last.width;
       const lineLeft = first.x;
+      const lineWidth = lineRight - lineLeft;
+      const lineCenter = (lineLeft + lineRight) / 2;
 
       let colIndex = -1;
-      if (lineRight < midX - pageWidth * 0.02) {
-        colIndex = 0;
-      } else if (lineLeft > midX + pageWidth * 0.02) {
-        colIndex = 1;
+      // In a dual-column layout, each column is less than 50% width.
+      // We check if the segment width is smaller than 55% of the page width.
+      // If so, we assign it to left/right column based on its center alignment relative to the page middle.
+      if (lineWidth < pageWidth * 0.55) {
+        if (lineCenter < midX) {
+          colIndex = 0; // Left column
+        } else {
+          colIndex = 1; // Right column
+        }
       }
       segments.push(createSegment(line, colIndex));
     }
