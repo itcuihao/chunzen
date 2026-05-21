@@ -67,7 +67,8 @@ export function buildTextLayer(
   const allItems: ColLayoutItem[] = [];
   for (const item of items) {
     if (!item.str || !item.str.trim()) continue;
-    const tx = pdfjsLib.Util.transform(viewport as unknown as number[], item.transform);
+    const tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
+    if (!tx || isNaN(tx[4]) || isNaN(tx[5])) continue;
     const w = item.width * viewport.scale;
     allItems.push({
       str: item.str,
@@ -174,6 +175,11 @@ function detectColumns(items: ColLayoutItem[]): Column[] {
   const maxX = sortedBins[sortedBins.length - 1][0];
   const pageWidth = maxX - minX;
 
+  if (isNaN(pageWidth) || pageWidth <= 0) {
+    const defaultWidth = items[0]?.width || 800;
+    return [{ left: 0, right: defaultWidth }];
+  }
+
   // Build density profile: sliding window of 20px
   const density: Array<{ x: number; count: number }> = [];
   for (let x = minX; x <= maxX; x += 10) {
@@ -235,6 +241,8 @@ function refineItems(items: ColLayoutItem[], columns: Column[], pageHeight: numb
   const result: LineItem[] = [];
 
   for (const item of items) {
+    if (isNaN(item.x) || isNaN(item.y) || isNaN(item.width) || isNaN(item.height)) continue;
+
     // Skip header/footer region
     if (item.y < headerY || item.y > footerY) continue;
 
@@ -284,12 +292,8 @@ function isMathArtifact(str: string): boolean {
   // Pure math symbols (single char)
   if (str.length === 1 && /[∫∑∏∞∂√∇×±≤≥→←↑↓↔⇒⇐⇔ℕℝℂℤ]/.test(str)) return true;
 
-  // Very short strings with low alpha ratio (formula fragments)
-  if (str.length <= 15) {
-    const alphaCount = (str.match(/[a-zA-Z]/g) || []).length;
-    if (alphaCount === 0 && str.length > 1) return true;
-    if (alphaCount / str.length < 0.15 && str.length >= 4) return true;
-  }
+  // Filter only if it has no alphanumeric characters and length > 1 (e.g. operators like "+-", "<=")
+  if (str.length > 1 && !/[a-zA-Z0-9]/.test(str)) return true;
 
   return false;
 }
