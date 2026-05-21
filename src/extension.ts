@@ -1,0 +1,106 @@
+import * as vscode from 'vscode';
+import { PdfEditorProvider } from './pdfEditor/PdfEditorProvider';
+import { SidePanelProvider } from './sidePanel/SidePanelProvider';
+import { TranslationService } from './services/translationService';
+import { JournalService } from './services/journalService';
+import { GlossaryService } from './services/glossaryService';
+import { HistoryService } from './services/historyService';
+import { ConfigService } from './services/configService';
+
+export function activate(context: vscode.ExtensionContext) {
+  console.log('醇臻插件已激活');
+
+  // 初始化服务
+  const translationService = new TranslationService(context);
+  const journalService = new JournalService();
+  const glossaryService = new GlossaryService(context);
+  const historyService = new HistoryService(context);
+  const configService = new ConfigService();
+  const sidePanel = new SidePanelProvider(
+    context,
+    translationService,
+    glossaryService,
+    historyService,
+    configService
+  );
+
+  // 注册 PDF 自定义编辑器
+  const pdfProvider = new PdfEditorProvider(
+    context,
+    translationService,
+    journalService,
+    sidePanel,
+    historyService
+  );
+
+  context.subscriptions.push(
+    vscode.window.registerCustomEditorProvider(
+      PdfEditorProvider.viewType,
+      pdfProvider,
+      {
+        webviewOptions: {
+          retainContextWhenHidden: true
+        },
+        supportsMultipleEditorsPerDocument: false
+      }
+    )
+  );
+
+  // 注册命令：打开翻译面板
+  context.subscriptions.push(
+    vscode.commands.registerCommand('chunzen.openSidePanel', () => {
+      sidePanel.show();
+    })
+  );
+
+  // 注册命令：清除缓存
+  context.subscriptions.push(
+    vscode.commands.registerCommand('chunzen.clearCache', () => {
+      translationService.clearCache();
+    })
+  );
+
+  // 注册命令：显示已配置的翻译引擎
+  context.subscriptions.push(
+    vscode.commands.registerCommand('chunzen.configureEngines', () => {
+      const engines = translationService.getConfiguredEngines();
+      if (engines.length === 0) {
+        vscode.window.showWarningMessage(
+          '醇臻：尚未配置任何翻译引擎。请在设置中填入翻译 API Key。',
+          '打开设置'
+        ).then(choice => {
+          if (choice === '打开设置') {
+            vscode.commands.executeCommand(
+              'workbench.action.openSettings',
+              'chunzen.translation'
+            );
+          }
+        });
+      } else {
+        vscode.window.showInformationMessage(
+          `醇臻：已配置的翻译引擎：${engines.join('、')}`
+        );
+      }
+    })
+  );
+
+  // 启动提示
+  const engines = translationService.getConfiguredEngines();
+  if (engines.length === 0) {
+    vscode.window.showInformationMessage(
+      '醇臻已就绪！请配置翻译 API Key 以启用翻译功能。',
+      '配置翻译引擎'
+    ).then(choice => {
+      if (choice === '配置翻译引擎') {
+        vscode.commands.executeCommand(
+          'workbench.action.openSettings',
+          'chunzen.translation'
+        );
+      }
+    });
+  }
+}
+
+export function deactivate() {
+  console.log('醇臻插件已停用');
+}
