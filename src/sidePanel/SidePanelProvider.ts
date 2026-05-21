@@ -38,7 +38,7 @@ export class SidePanelProvider {
 
     this.panel = vscode.window.createWebviewPanel(
       SidePanelProvider.viewType,
-      '醇臻 — 翻译 & 期刊信息',
+      '春蝉 — 翻译 & 期刊信息',
       vscode.ViewColumn.Two,
       {
         enableScripts: true,

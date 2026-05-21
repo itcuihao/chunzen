@@ -20,18 +20,18 @@ npx webpack --mode production --devtool hidden-source-map
 echo "[3/4] Packaging VSIX..."
 node ./node_modules/@vscode/vsce/out/main.js package
 
-# 4. Show result
-VSIX_FILE=$(ls -t chunzen-*.vsix | head -1)
+PACKAGE_FILE=$(ls -t chunzen-*.vsix | head -1)
 
 echo "[4/4] Done."
-ls -lh "$VSIX_FILE"
+ls -lh "$PACKAGE_FILE"
 
 if $LOCAL_MODE; then
   echo ""
   echo "Installing to local VSCode..."
-  code --install-extension "$VSIX_FILE" --force
+  code --uninstall-extension chunzen.chunzen
+  code --install-extension "$PACKAGE_FILE" --force
   echo "Installed. Reload any open VSCode windows to apply."
 else
   echo ""
-  echo "Install: code --install-extension $VSIX_FILE"
+  echo "Install: code --install-extension $PACKAGE_FILE"
 fi

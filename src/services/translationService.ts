@@ -71,7 +71,7 @@ export class TranslationService {
 
   clearCache(): void {
     this.cache.clear();
-    vscode.window.showInformationMessage('醇臻：翻译缓存已清除');
+    vscode.window.showInformationMessage('春蝉：翻译缓存已清除');
   }
 
   getCacheSize(): number {
