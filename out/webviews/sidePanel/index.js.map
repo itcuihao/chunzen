@@ -1,0 +1,1 @@
+{"version":3,"file":"index.js","sourceRoot":"","sources":["../../../src/webviews/sidePanel/index.tsx"],"names":[],"mappings":";;;AAAA,iCAAiC;AACjC,6CAA8C;AAC9C,+BAA4B;AAC5B,iCAA+B;AAE/B,MAAM,SAAS,GAAG,QAAQ,CAAC,cAAc,CAAC,KAAK,CAAC,CAAC;AACjD,IAAI,SAAS,EAAE,CAAC;IACd,MAAM,IAAI,GAAG,IAAA,mBAAU,EAAC,SAAS,CAAC,CAAC;IACnC,IAAI,CAAC,MAAM,CAAC,uBAAC,SAAG,KAAG,CAAC,CAAC;AACvB,CAAC"}

@@ -1,0 +1,60 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom Premium Glassmorphism styling and CSS variables mapping */
+:root {
+  --radius: 10px;
+}
+
+/* Custom Scrollbars to look neat inside VS Code side panel */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--vscode-scrollbarSlider-background, rgba(255, 255, 255, 0.1));
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--vscode-scrollbarSlider-hoverBackground, rgba(255, 255, 255, 0.2));
+}
+
+/* Glassmorphism custom card panel */
+.glass-panel {
+  background: rgba(30, 41, 59, 0.35);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Glow animations */
+@keyframes warning-glow-pulse {
+  0%, 100% {
+    box-shadow: 0 0 5px rgba(252, 129, 129, 0.2);
+    border-color: rgba(252, 129, 129, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 15px rgba(252, 129, 129, 0.5);
+    border-color: rgba(252, 129, 129, 0.6);
+  }
+}
+
+.warning-card-pulse {
+  animation: warning-glow-pulse 2s infinite ease-in-out;
+}
+
+/* Smooth micro transition */
+.hover-micro-scale {
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease-in-out;
+}
+
+.hover-micro-scale:hover {
+  transform: translateY(-1px);
+}
