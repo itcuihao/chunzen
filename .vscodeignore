@@ -8,3 +8,5 @@ tsconfig.json
 **/*.map
 pdf/**
 implementation_plan.md
+.claude/**
+scripts/**
