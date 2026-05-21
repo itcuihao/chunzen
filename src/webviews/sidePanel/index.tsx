@@ -1,8 +1,10 @@
 // Side panel webview entry point
-import { render } from 'preact';
+import { createRoot } from 'react-dom/client';
 import { App } from './App';
+import './styles/tailwind.css';
 
-const root = document.getElementById('app');
-if (root) {
-  render(<App />, root);
+const container = document.getElementById('app');
+if (container) {
+  const root = createRoot(container);
+  root.render(<App />);
 }

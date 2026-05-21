@@ -53,6 +53,28 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
+  // 注册命令：用春蝉 PDF 阅读器打开 PDF 文件
+  context.subscriptions.push(
+    vscode.commands.registerCommand('chunzen.openPdf', (uri?: vscode.Uri) => {
+      let targetUri = uri;
+      if (!targetUri && vscode.window.activeTextEditor) {
+        targetUri = vscode.window.activeTextEditor.document.uri;
+      }
+      if (!targetUri) {
+        vscode.window.showOpenDialog({
+          canSelectMany: false,
+          filters: { 'PDF files': ['pdf'] }
+        }).then(uris => {
+          if (uris && uris.length > 0) {
+            vscode.commands.executeCommand('vscode.openWith', uris[0], PdfEditorProvider.viewType);
+          }
+        });
+        return;
+      }
+      vscode.commands.executeCommand('vscode.openWith', targetUri, PdfEditorProvider.viewType);
+    })
+  );
+
   // 注册命令：清除缓存
   context.subscriptions.push(
     vscode.commands.registerCommand('chunzen.clearCache', () => {

@@ -3,6 +3,7 @@
 
 const path = require('path');
 const CopyPlugin = require('copy-webpack-plugin');
+const MiniCssExtractPlugin = require('mini-css-extract-plugin');
 
 /** @type {import('webpack').Configuration} */
 const extConfig = {
@@ -32,7 +33,6 @@ const extConfig = {
   plugins: [
     new CopyPlugin({
       patterns: [
-        { from: 'src/webviews/sidePanel/styles/panel.css', to: 'panel.css' },
         { from: 'src/webviews/pdfViewer/styles/pdfViewer.css', to: 'pdfViewer.css' }
       ]
     })
@@ -59,9 +59,18 @@ const panelConfig = {
         test: /\.tsx?$/,
         exclude: /node_modules/,
         use: [{ loader: 'ts-loader' }]
+      },
+      {
+        test: /\.css$/,
+        use: [MiniCssExtractPlugin.loader, 'css-loader', 'postcss-loader']
       }
     ]
   },
+  plugins: [
+    new MiniCssExtractPlugin({
+      filename: 'panel.css'
+    })
+  ],
   devtool: 'nosources-source-map'
 };
 
