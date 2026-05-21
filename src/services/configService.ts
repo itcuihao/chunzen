@@ -6,28 +6,28 @@ export class ConfigService {
     return {
       priority: cfg.get<string[]>('priority', ['baidu', 'deepl', 'openai', 'custom', 'claudeCli']),
       baidu: {
-        appId: cfg.get<string>('baidu.appId', ''),
-        secretKey: cfg.get<string>('baidu.secretKey', '')
+        appId: cfg.get<string>('baidu.appId', '').trim(),
+        secretKey: cfg.get<string>('baidu.secretKey', '').trim()
       },
       deepl: {
-        apiKey: cfg.get<string>('deepl.apiKey', ''),
+        apiKey: cfg.get<string>('deepl.apiKey', '').trim(),
         freeApi: cfg.get<boolean>('deepl.freeApi', true)
       },
       openai: {
-        apiKey: cfg.get<string>('openai.apiKey', ''),
-        baseUrl: cfg.get<string>('openai.baseUrl', 'https://api.openai.com/v1'),
-        model: cfg.get<string>('openai.model', 'gpt-4o-mini'),
-        systemPrompt: cfg.get<string>('openai.systemPrompt', '')
+        apiKey: cfg.get<string>('openai.apiKey', '').trim(),
+        baseUrl: cfg.get<string>('openai.baseUrl', 'https://api.openai.com/v1').trim(),
+        model: cfg.get<string>('openai.model', 'gpt-4o-mini').trim(),
+        systemPrompt: cfg.get<string>('openai.systemPrompt', '').trim()
       },
       custom: {
-        url: cfg.get<string>('custom.url', ''),
+        url: cfg.get<string>('custom.url', '').trim(),
         headers: cfg.get<Record<string, string>>('custom.headers', {}),
         bodyTemplate: cfg.get<string>('custom.bodyTemplate', '{"text": "{{text}}", "target_lang": "ZH"}'),
-        responsePath: cfg.get<string>('custom.responsePath', 'result')
+        responsePath: cfg.get<string>('custom.responsePath', 'result').trim()
       },
       claudeCli: {
         enabled: cfg.get<boolean>('claudeCli.enabled', false),
-        prompt: cfg.get<string>('claudeCli.prompt', '')
+        prompt: cfg.get<string>('claudeCli.prompt', '').trim()
       }
     };
   }
@@ -78,21 +78,22 @@ export class ConfigService {
 
     for (const [key, value] of Object.entries(config)) {
       const fullKey = `${engineName}.${key}`;
+      const trimmedValue = typeof value === 'string' ? value.trim() : value;
 
       if (key === 'enabled') {
-        await cfg.update(fullKey, value === 'true', vscode.ConfigurationTarget.Global);
+        await cfg.update(fullKey, trimmedValue === 'true', vscode.ConfigurationTarget.Global);
       } else if (key === 'freeApi') {
-        await cfg.update(fullKey, value === 'true', vscode.ConfigurationTarget.Global);
+        await cfg.update(fullKey, trimmedValue === 'true', vscode.ConfigurationTarget.Global);
       } else if (key === 'headers') {
         try {
-          const parsed = JSON.parse(value);
+          const parsed = JSON.parse(trimmedValue);
           await cfg.update(fullKey, parsed, vscode.ConfigurationTarget.Global);
         } catch {
           // If invalid JSON, store as-is
-          await cfg.update(fullKey, value, vscode.ConfigurationTarget.Global);
+          await cfg.update(fullKey, trimmedValue, vscode.ConfigurationTarget.Global);
         }
       } else {
-        await cfg.update(fullKey, value, vscode.ConfigurationTarget.Global);
+        await cfg.update(fullKey, trimmedValue, vscode.ConfigurationTarget.Global);
       }
     }
   }

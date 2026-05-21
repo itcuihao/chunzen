@@ -10,14 +10,15 @@ export class OpenAIEngine implements TranslationEngine {
 
   isConfigured(): boolean {
     const cfg = vscode.workspace.getConfiguration('chunzen.translation.openai');
-    return !!cfg.get<string>('apiKey');
+    const apiKey = (cfg.get<string>('apiKey') || '').trim();
+    return !!apiKey;
   }
 
   async translate(text: string): Promise<string> {
     const cfg = vscode.workspace.getConfiguration('chunzen.translation.openai');
-    const apiKey = cfg.get<string>('apiKey', '');
-    const baseUrl = cfg.get<string>('baseUrl', 'https://api.openai.com/v1');
-    const model = cfg.get<string>('model', 'gpt-4o-mini');
+    const apiKey = cfg.get<string>('apiKey', '').trim();
+    const baseUrl = cfg.get<string>('baseUrl', 'https://api.openai.com/v1').trim();
+    const model = cfg.get<string>('model', 'gpt-4o-mini').trim();
     const systemPrompt = cfg.get<string>(
       'systemPrompt',
       '你是一个学术论文翻译专家。请将以下英文学术句子翻译成中文，保持专业术语准确，语言简洁流畅。只输出翻译结果，不要解释。'
@@ -79,18 +80,19 @@ export class CustomHttpEngine implements TranslationEngine {
 
   isConfigured(): boolean {
     const cfg = vscode.workspace.getConfiguration('chunzen.translation.custom');
-    return !!cfg.get<string>('url');
+    const url = (cfg.get<string>('url') || '').trim();
+    return !!url;
   }
 
   async translate(text: string): Promise<string> {
     const cfg = vscode.workspace.getConfiguration('chunzen.translation.custom');
-    const url = cfg.get<string>('url', '');
+    const url = cfg.get<string>('url', '').trim();
     const headers = cfg.get<Record<string, string>>('headers', {});
     const bodyTemplate = cfg.get<string>(
       'bodyTemplate',
       '{"text": "{{text}}", "target_lang": "ZH"}'
     );
-    const responsePath = cfg.get<string>('responsePath', 'result');
+    const responsePath = cfg.get<string>('responsePath', 'result').trim();
 
     if (!url) {
       throw new Error('自定义接口未配置 URL');

@@ -69,6 +69,24 @@ export class TranslationService {
     );
   }
 
+  async translateWithEngine(engineName: string, text: string): Promise<string> {
+    const trimmed = text.trim();
+    if (!trimmed) {
+      return '';
+    }
+
+    const engine = this.engines.get(engineName);
+    if (!engine) {
+      throw new Error(`未找到指定的翻译引擎: ${engineName}`);
+    }
+
+    if (!engine.isConfigured()) {
+      throw new Error(`翻译引擎 ${engine.displayName} 未配置`);
+    }
+
+    return await engine.translate(trimmed);
+  }
+
   clearCache(): void {
     this.cache.clear();
     vscode.window.showInformationMessage('春蝉：翻译缓存已清除');
