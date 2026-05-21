@@ -131,7 +131,7 @@ export class SidePanelProvider {
 
   syncPageText(
     pageNumber: number,
-    paragraphs: Array<{ id: string; text: string }>,
+    paragraphs: Array<{ id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' }>,
     columnsCount: number,
     translations?: Array<{ id: string; translatedText: string }>
   ): void {

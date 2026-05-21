@@ -40,7 +40,7 @@ export interface TranslatePageParagraphsMessage {
 export interface PageTextLoadedMessage {
   type: 'page-text-loaded';
   pageNumber: number;
-  paragraphs: Array<{ id: string; text: string }>;
+  paragraphs: Array<{ id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' }>;
   columnsCount: number;
   translations?: Array<{ id: string; translatedText: string }>;
 }
@@ -110,7 +110,7 @@ export interface HistorySyncMessage {
 export interface SyncPageTextMessage {
   type: 'sync-page-text';
   pageNumber: number;
-  paragraphs: Array<{ id: string; text: string }>;
+  paragraphs: Array<{ id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' }>;
   columnsCount: number;
   translations?: Array<{ id: string; translatedText: string }>;
 }

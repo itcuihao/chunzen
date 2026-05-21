@@ -116,7 +116,7 @@ async function renderCurrentPage() {
   vscode.postMessage({
     type: 'page-text-loaded',
     pageNumber: currentPage,
-    paragraphs: newParagraphs.map(p => ({ id: p.id, text: p.text })),
+    paragraphs: newParagraphs.map(p => ({ id: p.id, text: p.text, section: p.section })),
     columnsCount,
     translations
   });

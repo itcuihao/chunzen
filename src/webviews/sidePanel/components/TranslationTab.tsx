@@ -107,20 +107,71 @@ export const TranslationTab: FunctionComponent = () => {
           ) : currentPageText ? (
             layoutMode === 'original' ? (
               currentPageText.paragraphs.length > 0 ? (
-                <div
-                  className="select-text selection:bg-accent/30 break-words leading-relaxed text-justify font-serif text-[11px] text-foreground animate-in fade-in duration-300"
-                  style={{
-                    columnCount: currentPageText.columnsCount > 1 ? currentPageText.columnsCount : undefined,
-                    columnGap: '20px',
-                    columnRule: currentPageText.columnsCount > 1 ? '1px dashed var(--border)' : undefined,
-                  }}
-                >
-                  {currentPageText.paragraphs.map((para) => (
-                    <p key={para.id} className="mb-3 indent-4 leading-relaxed text-justify">
-                      {para.text}
-                    </p>
-                  ))}
-                </div>
+                (() => {
+                  const hasSections = currentPageText.paragraphs.some(p => p.section !== undefined);
+                  if (currentPageText.columnsCount > 1 && hasSections) {
+                    const headerParas = currentPageText.paragraphs.filter(p => p.section === 'header');
+                    const leftParas = currentPageText.paragraphs.filter(p => p.section === 'left');
+                    const rightParas = currentPageText.paragraphs.filter(p => p.section === 'right');
+                    const footerParas = currentPageText.paragraphs.filter(p => p.section === 'footer');
+
+                    return (
+                      <div className="select-text selection:bg-accent/30 break-words leading-relaxed text-justify font-serif text-[11px] text-foreground animate-in fade-in duration-300 flex flex-col gap-3">
+                        {headerParas.length > 0 && (
+                          <div className="w-full mb-2">
+                            {headerParas.map(para => (
+                              <p key={para.id} className="mb-3 indent-4 leading-relaxed text-justify font-semibold">
+                                {para.text}
+                              </p>
+                            ))}
+                          </div>
+                        )}
+                        <div className="grid grid-cols-2 gap-5 w-full">
+                          <div className="flex flex-col">
+                            {leftParas.map(para => (
+                              <p key={para.id} className="mb-3 indent-4 leading-relaxed text-justify">
+                                {para.text}
+                              </p>
+                            ))}
+                          </div>
+                          <div className="flex flex-col border-l border-dashed border-border/40 pl-5">
+                            {rightParas.map(para => (
+                              <p key={para.id} className="mb-3 indent-4 leading-relaxed text-justify">
+                                {para.text}
+                              </p>
+                            ))}
+                          </div>
+                        </div>
+                        {footerParas.length > 0 && (
+                          <div className="w-full mt-2 border-t border-dashed border-border/40 pt-2">
+                            {footerParas.map(para => (
+                              <p key={para.id} className="mb-3 indent-4 leading-relaxed text-justify text-secondary-foreground/80">
+                                {para.text}
+                              </p>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div
+                      className="select-text selection:bg-accent/30 break-words leading-relaxed text-justify font-serif text-[11px] text-foreground animate-in fade-in duration-300"
+                      style={{
+                        columnCount: currentPageText.columnsCount > 1 ? currentPageText.columnsCount : undefined,
+                        columnGap: '20px',
+                        columnRule: currentPageText.columnsCount > 1 ? '1px dashed var(--border)' : undefined,
+                      }}
+                    >
+                      {currentPageText.paragraphs.map((para) => (
+                        <p key={para.id} className="mb-3 indent-4 leading-relaxed text-justify">
+                          {para.text}
+                        </p>
+                      ))}
+                    </div>
+                  );
+                })()
               ) : (
                 <div className="flex-1 flex flex-col items-center justify-center text-center py-10 opacity-70">
                   <FileCheck className="w-12 h-12 mb-3 text-secondary-foreground/40 stroke-[1.2]" />
@@ -146,38 +197,180 @@ export const TranslationTab: FunctionComponent = () => {
                 </button>
               </div>
             ) : layoutMode === 'translation' ? (
-              <div
-                className="select-text selection:bg-accent/30 break-words leading-relaxed text-justify font-zhSerif text-[14.5px] leading-[2.1] text-foreground font-medium tracking-wide animate-in fade-in duration-300"
-                style={{
-                  columnCount: currentPageText.columnsCount > 1 ? currentPageText.columnsCount : undefined,
-                  columnGap: '20px',
-                  columnRule: currentPageText.columnsCount > 1 ? '1px dashed var(--border)' : undefined,
-                }}
-              >
-                {currentPageText.paragraphs.map((para) => (
-                  <p key={para.id} className="mb-4 indent-8 text-justify">
-                    {currentPageText.translations?.[para.id] || ''}
-                  </p>
-                ))}
-              </div>
-            ) : (
-              <div className="select-text selection:bg-accent/30 break-words leading-relaxed text-justify animate-in fade-in duration-300">
-                {currentPageText.paragraphs.map((para) => {
-                  const translation = currentPageText.translations?.[para.id];
+              (() => {
+                const hasSections = currentPageText.paragraphs.some(p => p.section !== undefined);
+                if (currentPageText.columnsCount > 1 && hasSections) {
+                  const headerParas = currentPageText.paragraphs.filter(p => p.section === 'header');
+                  const leftParas = currentPageText.paragraphs.filter(p => p.section === 'left');
+                  const rightParas = currentPageText.paragraphs.filter(p => p.section === 'right');
+                  const footerParas = currentPageText.paragraphs.filter(p => p.section === 'footer');
+
                   return (
-                    <div key={para.id} className="mb-5 pb-4 border-b border-border/20 last:border-0">
-                      <p className="font-serif text-[11px] text-secondary-foreground leading-relaxed italic mb-2">
-                        {para.text}
-                      </p>
-                      {translation && (
-                        <p className="font-zhSerif text-[14px] leading-[2] text-foreground font-medium tracking-wide indent-4 mt-1 border-l-2 border-primary/20 pl-3">
-                          {translation}
-                        </p>
+                    <div className="select-text selection:bg-accent/30 break-words leading-relaxed text-justify font-zhSerif text-[14px] leading-[2.0] text-foreground font-medium tracking-wide animate-in fade-in duration-300 flex flex-col gap-4">
+                      {headerParas.length > 0 && (
+                        <div className="w-full mb-2">
+                          {headerParas.map(para => (
+                            <p key={para.id} className="mb-3 indent-8 text-justify font-semibold">
+                              {currentPageText.translations?.[para.id] || ''}
+                            </p>
+                          ))}
+                        </div>
+                      )}
+                      <div className="grid grid-cols-2 gap-5 w-full">
+                        <div className="flex flex-col">
+                          {leftParas.map(para => (
+                            <p key={para.id} className="mb-3 indent-8 text-justify">
+                              {currentPageText.translations?.[para.id] || ''}
+                            </p>
+                          ))}
+                        </div>
+                        <div className="flex flex-col border-l border-dashed border-border/40 pl-5">
+                          {rightParas.map(para => (
+                            <p key={para.id} className="mb-3 indent-8 text-justify">
+                              {currentPageText.translations?.[para.id] || ''}
+                            </p>
+                          ))}
+                        </div>
+                      </div>
+                      {footerParas.length > 0 && (
+                        <div className="w-full mt-2 border-t border-dashed border-border/40 pt-2">
+                          {footerParas.map(para => (
+                            <p key={para.id} className="mb-3 indent-8 text-justify text-secondary-foreground/80">
+                              {currentPageText.translations?.[para.id] || ''}
+                            </p>
+                          ))}
+                        </div>
                       )}
                     </div>
                   );
-                })}
-              </div>
+                }
+
+                return (
+                  <div
+                    className="select-text selection:bg-accent/30 break-words leading-relaxed text-justify font-zhSerif text-[14.5px] leading-[2.1] text-foreground font-medium tracking-wide animate-in fade-in duration-300"
+                    style={{
+                      columnCount: currentPageText.columnsCount > 1 ? currentPageText.columnsCount : undefined,
+                      columnGap: '20px',
+                      columnRule: currentPageText.columnsCount > 1 ? '1px dashed var(--border)' : undefined,
+                    }}
+                  >
+                    {currentPageText.paragraphs.map((para) => (
+                      <p key={para.id} className="mb-4 indent-8 text-justify">
+                        {currentPageText.translations?.[para.id] || ''}
+                      </p>
+                    ))}
+                  </div>
+                );
+              })()
+            ) : (
+              (() => {
+                const hasSections = currentPageText.paragraphs.some(p => p.section !== undefined);
+                if (currentPageText.columnsCount > 1 && hasSections) {
+                  const headerParas = currentPageText.paragraphs.filter(p => p.section === 'header');
+                  const leftParas = currentPageText.paragraphs.filter(p => p.section === 'left');
+                  const rightParas = currentPageText.paragraphs.filter(p => p.section === 'right');
+                  const footerParas = currentPageText.paragraphs.filter(p => p.section === 'footer');
+
+                  return (
+                    <div className="select-text selection:bg-accent/30 break-words leading-relaxed text-justify animate-in fade-in duration-300 flex flex-col gap-4">
+                      {headerParas.length > 0 && (
+                        <div className="w-full mb-2">
+                          {headerParas.map(para => {
+                            const translation = currentPageText.translations?.[para.id];
+                            return (
+                              <div key={para.id} className="mb-4 pb-3 border-b border-border/20 last:border-0">
+                                <p className="font-serif text-[11px] text-secondary-foreground leading-relaxed italic mb-1.5 font-semibold">
+                                  {para.text}
+                                </p>
+                                {translation && (
+                                  <p className="font-zhSerif text-[14px] leading-[2] text-foreground font-medium tracking-wide indent-8 mt-1 border-l-2 border-primary/20 pl-3 font-semibold">
+                                    {translation}
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                      <div className="grid grid-cols-2 gap-5 w-full">
+                        <div className="flex flex-col">
+                          {leftParas.map(para => {
+                            const translation = currentPageText.translations?.[para.id];
+                            return (
+                              <div key={para.id} className="mb-4 pb-3 border-b border-border/20 last:border-0">
+                                <p className="font-serif text-[11px] text-secondary-foreground leading-relaxed italic mb-1.5">
+                                  {para.text}
+                                </p>
+                                {translation && (
+                                  <p className="font-zhSerif text-[14px] leading-[2] text-foreground font-medium tracking-wide indent-8 mt-1 border-l-2 border-primary/20 pl-3">
+                                    {translation}
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div className="flex flex-col border-l border-dashed border-border/40 pl-5">
+                          {rightParas.map(para => {
+                            const translation = currentPageText.translations?.[para.id];
+                            return (
+                              <div key={para.id} className="mb-4 pb-3 border-b border-border/20 last:border-0">
+                                <p className="font-serif text-[11px] text-secondary-foreground leading-relaxed italic mb-1.5">
+                                  {para.text}
+                                </p>
+                                {translation && (
+                                  <p className="font-zhSerif text-[14px] leading-[2] text-foreground font-medium tracking-wide indent-8 mt-1 border-l-2 border-primary/20 pl-3">
+                                    {translation}
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      {footerParas.length > 0 && (
+                        <div className="w-full mt-2 border-t border-dashed border-border/40 pt-2">
+                          {footerParas.map(para => {
+                            const translation = currentPageText.translations?.[para.id];
+                            return (
+                              <div key={para.id} className="mb-4 pb-3 border-b border-border/20 last:border-0">
+                                <p className="font-serif text-[11px] text-secondary-foreground/80 leading-relaxed italic mb-1.5">
+                                  {para.text}
+                                </p>
+                                {translation && (
+                                  <p className="font-zhSerif text-[14px] leading-[2] text-secondary-foreground/80 font-medium tracking-wide indent-8 mt-1 border-l-2 border-primary/20 pl-3">
+                                    {translation}
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="select-text selection:bg-accent/30 break-words leading-relaxed text-justify animate-in fade-in duration-300">
+                    {currentPageText.paragraphs.map((para) => {
+                      const translation = currentPageText.translations?.[para.id];
+                      return (
+                        <div key={para.id} className="mb-5 pb-4 border-b border-border/20 last:border-0">
+                          <p className="font-serif text-[11px] text-secondary-foreground leading-relaxed italic mb-2">
+                            {para.text}
+                          </p>
+                          {translation && (
+                            <p className="font-zhSerif text-[14px] leading-[2] text-foreground font-medium tracking-wide indent-4 mt-1 border-l-2 border-primary/20 pl-3">
+                              {translation}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()
             )
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center text-center py-10 opacity-70">

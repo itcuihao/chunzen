@@ -45,13 +45,13 @@ interface PanelState {
   setTranslationError: (err: string) => void;
   currentPageText: {
     pageNumber: number;
-    paragraphs: Array<{ id: string; text: string }>;
+    paragraphs: Array<{ id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' }>;
     columnsCount: number;
     translations?: Record<string, string>;
   } | null;
   setCurrentPageText: (val: {
     pageNumber: number;
-    paragraphs: Array<{ id: string; text: string }>;
+    paragraphs: Array<{ id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' }>;
     columnsCount: number;
     translations?: Record<string, string>;
   } | null) => void;

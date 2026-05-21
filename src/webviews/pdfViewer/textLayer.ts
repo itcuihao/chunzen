@@ -20,6 +20,7 @@ export interface Paragraph {
   width: number;
   height: number;
   fontSize: number;
+  section: 'header' | 'left' | 'right' | 'footer';
 }
 
 interface ColLayoutItem {
@@ -30,23 +31,27 @@ interface ColLayoutItem {
   height: number;
 }
 
-interface Column {
-  left: number;
-  right: number;
-}
-
-interface LineItem {
-  str: string;
+interface LineSegment {
+  items: ColLayoutItem[];
   x: number;
   y: number;
   width: number;
   height: number;
-  columnIndex: number;
+  columnIndex: number; // -1: Full-width, 0: Left, 1: Right
+  str: string;
+  section: 'header' | 'left' | 'right' | 'footer';
+}
+
+interface LogicalParagraph {
+  id: string;
+  text: string;
+  items: ColLayoutItem[];
+  section: 'header' | 'left' | 'right' | 'footer';
 }
 
 interface SentenceItem {
   text: string;
-  items: LineItem[];
+  items: ColLayoutItem[];
 }
 
 // ── Main entry ──
@@ -63,12 +68,22 @@ export function buildTextLayer(
 } {
   container.innerHTML = '';
 
-  // 1. Transform to layout coordinates
+  // 1. Transform to layout coordinates and filter math/headers
+  const headerY = viewport.height * 0.08;
+  const footerY = viewport.height * 0.92;
   const allItems: ColLayoutItem[] = [];
+
   for (const item of items) {
     if (!item.str || !item.str.trim()) continue;
     const tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
     if (!tx || isNaN(tx[4]) || isNaN(tx[5])) continue;
+
+    // Filter math symbols and LaTeX commands
+    if (isMathArtifact(item.str)) continue;
+
+    // Skip header/footer region
+    if (tx[5] < headerY || tx[5] > footerY) continue;
+
     const w = item.width * viewport.scale;
     allItems.push({
       str: item.str,
@@ -83,22 +98,214 @@ export function buildTextLayer(
     return { sentences: new Map(), spanToSentence: new Map(), paragraphs: [], columnsCount: 1 };
   }
 
-  // 2. Detect columns from X-coordinate clustering
-  const columns = detectColumns(allItems);
+  // Sort items: Y first (top-to-bottom), then X (left-to-right)
+  allItems.sort((a, b) => {
+    if (Math.abs(a.y - b.y) > 4) return a.y - b.y;
+    return a.x - b.x;
+  });
 
-  // 3. Filter header/footer/math, assign each item to column, sort into reading order
-  const refined = refineItems(allItems, columns, viewport.height);
+  // 2. Group items into raw horizontal lines
+  const rawLines: ColLayoutItem[][] = [];
+  let currentLine: ColLayoutItem[] = [];
+  let currentY: number | null = null;
+  const LINE_THRESHOLD = 4; // px
 
-  // 4. Group into lines (within same column, by Y coordinate)
-  const lines = itemsToLines(refined);
+  for (const item of allItems) {
+    if (currentY === null || Math.abs(item.y - currentY) <= LINE_THRESHOLD) {
+      currentLine.push(item);
+      currentY = currentY === null ? item.y : (currentY + item.y) / 2;
+    } else {
+      if (currentLine.length) rawLines.push(currentLine.sort((a, b) => a.x - b.x));
+      currentLine = [item];
+      currentY = item.y;
+    }
+  }
+  if (currentLine.length) rawLines.push(currentLine.sort((a, b) => a.x - b.x));
 
-  // 5. Dehyphenate
-  const clean = dehyphenate(lines);
+  // 3. Find page horizontal bounds
+  const xs = allItems.map(it => it.x);
+  const xMaxs = allItems.map(it => it.x + it.width);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xMaxs);
+  const pageWidth = maxX - minX;
+  const midX = minX + pageWidth / 2;
 
-  // 6. Merge lines to paragraphs
-  const logicalParas = buildParagraphs(clean);
+  // 4. Split lines into segments & count splits
+  let splitCount = 0;
+  const segments: LineSegment[] = [];
+  const GUTTER_MIN_WIDTH = 15; // px
+  const centerRange = pageWidth * 0.2; // gutter midpoint must be within 20% of page center
 
-  // 7. Render spans and compute paragraph bounding boxes
+  for (const line of rawLines) {
+    if (line.length === 0) continue;
+
+    let splitIndex = -1;
+    for (let j = 0; j < line.length - 1; j++) {
+      const item1 = line[j];
+      const item2 = line[j + 1];
+      const rightSide1 = item1.x + item1.width;
+      const leftSide2 = item2.x;
+      const gapWidth = leftSide2 - rightSide1;
+      const gapMid = (rightSide1 + leftSide2) / 2;
+
+      if (gapWidth > GUTTER_MIN_WIDTH && Math.abs(gapMid - midX) < centerRange) {
+        splitIndex = j;
+        break;
+      }
+    }
+
+    if (splitIndex !== -1) {
+      splitCount++;
+      segments.push(createSegment(line.slice(0, splitIndex + 1), 0));
+      segments.push(createSegment(line.slice(splitIndex + 1), 1));
+    } else {
+      // Determine single line column index
+      const first = line[0];
+      const last = line[line.length - 1];
+      const lineRight = last.x + last.width;
+      const lineLeft = first.x;
+
+      let colIndex = -1;
+      if (lineRight < midX - pageWidth * 0.02) {
+        colIndex = 0;
+      } else if (lineLeft > midX + pageWidth * 0.02) {
+        colIndex = 1;
+      }
+      segments.push(createSegment(line, colIndex));
+    }
+  }
+
+  // 5. Layout classification
+  const isDoubleColumn = splitCount >= 3 || (rawLines.length > 0 && splitCount / rawLines.length > 0.08);
+
+  // 6. Segment ordering (reading flow reconstruction)
+  let orderedSegments: LineSegment[] = [];
+  if (!isDoubleColumn) {
+    // Single column: map all to col 0, sort by Y
+    for (const seg of segments) {
+      seg.columnIndex = 0;
+      seg.section = 'left';
+    }
+    orderedSegments = [...segments].sort((a, b) => a.y - b.y);
+  } else {
+    // Double column: partition header, left col, right col, footer
+    const colSegments = segments.filter(seg => seg.columnIndex === 0 || seg.columnIndex === 1);
+    const bodyMinY = colSegments.length > 0 ? Math.min(...colSegments.map(s => s.y)) : 0;
+    const bodyMaxY = colSegments.length > 0 ? Math.max(...colSegments.map(s => s.y + s.height)) : viewport.height;
+
+    const headerGroup: LineSegment[] = [];
+    const leftGroup: LineSegment[] = [];
+    const rightGroup: LineSegment[] = [];
+    const footerGroup: LineSegment[] = [];
+
+    const bodyMidY = (bodyMinY + bodyMaxY) / 2;
+
+    for (const seg of segments) {
+      if (seg.columnIndex === 0) {
+        seg.section = 'left';
+        leftGroup.push(seg);
+      } else if (seg.columnIndex === 1) {
+        seg.section = 'right';
+        rightGroup.push(seg);
+      } else {
+        // Full-width (columnIndex === -1)
+        if (seg.y < bodyMinY) {
+          seg.section = 'header';
+          headerGroup.push(seg);
+        } else if (seg.y > bodyMaxY) {
+          seg.section = 'footer';
+          footerGroup.push(seg);
+        } else {
+          // Middle full-width: assign depending on vertical half
+          if (seg.y < bodyMidY) {
+            seg.section = 'left';
+            leftGroup.push(seg);
+          } else {
+            seg.section = 'right';
+            rightGroup.push(seg);
+          }
+        }
+      }
+    }
+
+    headerGroup.sort((a, b) => a.y - b.y);
+    leftGroup.sort((a, b) => a.y - b.y);
+    rightGroup.sort((a, b) => a.y - b.y);
+    footerGroup.sort((a, b) => a.y - b.y);
+
+    orderedSegments = [...headerGroup, ...leftGroup, ...rightGroup, ...footerGroup];
+  }
+
+  // 7. Dehyphenate segments in-place
+  for (let i = 0; i < orderedSegments.length - 1; i++) {
+    const current = orderedSegments[i];
+    const next = orderedSegments[i + 1];
+    if (current.columnIndex === next.columnIndex && current.str.endsWith('-') && current.str.length > 1) {
+      const firstWordMatch = next.str.match(/^([a-zA-Z0-9]+)/);
+      if (firstWordMatch) {
+        const firstWord = firstWordMatch[1];
+        current.str = current.str.slice(0, -1) + firstWord;
+        next.str = next.str.slice(firstWord.length).trim();
+      }
+    }
+  }
+
+  // 8. Merge segments to paragraphs
+  const logicalParas: LogicalParagraph[] = [];
+  let paraBuf = '';
+  let paraItems: ColLayoutItem[] = [];
+  let paraId = 0;
+  let currentColumnIndex: number | null = null;
+  let currentSection: 'header' | 'left' | 'right' | 'footer' | null = null;
+
+  function flush() {
+    if (!paraBuf.trim()) { paraBuf = ''; paraItems = []; return; }
+    logicalParas.push({
+      id: `p-${paraId++}`,
+      text: paraBuf.trim(),
+      items: [...paraItems],
+      section: currentSection || 'left'
+    });
+    paraBuf = '';
+    paraItems = [];
+  }
+
+  for (let i = 0; i < orderedSegments.length; i++) {
+    const seg = orderedSegments[i];
+    const segText = seg.str;
+    if (!segText) continue;
+
+    const nextSeg = orderedSegments[i + 1];
+    const isNewColumn = currentColumnIndex !== null && seg.columnIndex !== currentColumnIndex;
+    const isNewSection = currentSection !== null && seg.section !== currentSection;
+
+    if (isNewColumn || isNewSection) {
+      flush();
+    }
+
+    currentColumnIndex = seg.columnIndex;
+    currentSection = seg.section;
+    paraBuf += (paraBuf ? ' ' : '') + segText;
+    paraItems.push(...seg.items);
+
+    const lineH = seg.height;
+    const thisY = seg.y;
+    const nextY = nextSeg?.y;
+    const yGap = nextY ? (nextY - thisY) : Infinity;
+
+    const endsWithPunct = /[.!?]$/.test(segText);
+    const lineW = seg.width;
+    const isParaEnd = !nextSeg ||
+                      nextSeg.columnIndex !== currentColumnIndex ||
+                      nextSeg.section !== currentSection ||
+                      yGap > lineH * 2.3 ||
+                      (endsWithPunct && lineW < 180);
+
+    if (isParaEnd) flush();
+  }
+  flush();
+
+  // 9. Render spans and compute paragraph bounding boxes
   const sentenceMap = new Map<string, Sentence>();
   const spanToSentence = new Map<HTMLSpanElement, string>();
   const paragraphs: Paragraph[] = [];
@@ -125,7 +332,8 @@ export function buildTextLayer(
       y,
       width,
       height,
-      fontSize
+      fontSize,
+      section: para.section
     });
 
     // Split paragraph into sentences for highlight/selection
@@ -151,255 +359,37 @@ export function buildTextLayer(
     }
   }
 
-  return { sentences: sentenceMap, spanToSentence, paragraphs, columnsCount: columns.length };
+  return {
+    sentences: sentenceMap,
+    spanToSentence,
+    paragraphs,
+    columnsCount: isDoubleColumn ? 2 : 1
+  };
 }
 
-// ── Column Detection ──
+// ── Helper functions ──
 
-function detectColumns(items: ColLayoutItem[]): Column[] {
-  // Build histogram of X positions to find column boundaries
-  const bins = new Map<number, number>(); // rounded x → count
-  const BIN_SIZE = 10;
+function createSegment(lineItems: ColLayoutItem[], colIndex: number): LineSegment {
+  const xs = lineItems.map(it => it.x);
+  const ys = lineItems.map(it => it.y);
+  const xMaxs = lineItems.map(it => it.x + it.width);
+  const yMaxs = lineItems.map(it => it.y + it.height);
+  const x = Math.min(...xs);
+  const y = Math.min(...ys);
+  const width = Math.max(...xMaxs) - x;
+  const height = Math.max(...yMaxs) - y;
+  const str = lineItems.map(it => it.str).join(' ').trim();
 
-  for (const item of items) {
-    const bin = Math.round(item.x / BIN_SIZE) * BIN_SIZE;
-    bins.set(bin, (bins.get(bin) || 0) + 1);
-  }
-
-  const sortedBins = [...bins.entries()].sort((a, b) => a[0] - b[0]);
-
-  // Find gaps between bins (regions with low density)
-  if (sortedBins.length === 0) return [{ left: 0, right: items[0]?.width || 800 }];
-
-  const minX = sortedBins[0][0];
-  const maxX = sortedBins[sortedBins.length - 1][0];
-  const pageWidth = maxX - minX;
-
-  if (isNaN(pageWidth) || pageWidth <= 0) {
-    const defaultWidth = items[0]?.width || 800;
-    return [{ left: 0, right: defaultWidth }];
-  }
-
-  // Build density profile: sliding window of 20px
-  const density: Array<{ x: number; count: number }> = [];
-  for (let x = minX; x <= maxX; x += 10) {
-    const itemsInRange = items.filter(it => it.x >= x && it.x <= x + 20).length;
-    density.push({ x, count: itemsInRange });
-  }
-
-  // Find valleys: x ranges where density is very low
-  const valleys: Array<{ start: number; end: number }> = [];
-  const MEAN_DENSITY = density.reduce((s, d) => s + d.count, 0) / density.length;
-  const VALLEY_THRESHOLD = MEAN_DENSITY * 0.05;
-
-  let valleyStart: number | null = null;
-  for (let i = 0; i < density.length; i++) {
-    if (density[i].count <= VALLEY_THRESHOLD) {
-      if (valleyStart === null) valleyStart = density[i].x;
-    } else if (valleyStart !== null) {
-      valleys.push({ start: valleyStart, end: density[i].x });
-      valleyStart = null;
-    }
-  }
-  if (valleyStart !== null) {
-    valleys.push({ start: valleyStart, end: maxX + 20 });
-  }
-
-  // Only count valleys in the middle 60% of page width (not margins)
-  const marginLeft = minX + pageWidth * 0.15;
-  const marginRight = maxX - pageWidth * 0.15;
-  const midValleys = valleys.filter(v =>
-    v.start > marginLeft && v.end < marginRight && (v.end - v.start) > 15
-  );
-
-  if (midValleys.length === 0) {
-    // Single column
-    return [{ left: minX, right: maxX }];
-  }
-
-  // Split page at widest valley
-  const widest = midValleys.sort((a, b) => (b.end - b.start) - (a.end - a.start))[0];
-
-  // If the widest valley is too wide (e.g. > 30% of page width), it's likely just a sparse single column page
-  if ((widest.end - widest.start) > pageWidth * 0.3) {
-    return [{ left: minX, right: maxX }];
-  }
-
-  return [
-    { left: minX, right: widest.start },
-    { left: widest.end, right: maxX }
-  ];
-}
-
-// ── Item refinement: column assignment, header/footer/math filtering ──
-
-function refineItems(items: ColLayoutItem[], columns: Column[], pageHeight: number): LineItem[] {
-  // Skip header/footer region (top 8%, bottom 8% of the actual page height)
-  const headerY = pageHeight * 0.08;
-  const footerY = pageHeight * 0.92;
-
-  const result: LineItem[] = [];
-
-  for (const item of items) {
-    if (isNaN(item.x) || isNaN(item.y) || isNaN(item.width) || isNaN(item.height)) continue;
-
-    // Skip header/footer region
-    if (item.y < headerY || item.y > footerY) continue;
-
-    // Skip math symbols and formula fragments
-    if (isMathArtifact(item.str)) continue;
-
-    // Assign to column by center proximity
-    const itemMidX = item.x + item.width / 2;
-    let colIndex = 0;
-    let bestDist = Infinity;
-
-    for (let c = 0; c < columns.length; c++) {
-      const colMidX = (columns[c].left + columns[c].right) / 2;
-      const dist = Math.abs(itemMidX - colMidX);
-      if (dist < bestDist) {
-        bestDist = dist;
-        colIndex = c;
-      }
-    }
-
-    result.push({
-      str: item.str,
-      x: item.x,
-      y: item.y,
-      width: item.width,
-      height: item.height,
-      columnIndex: colIndex
-    });
-  }
-
-  // Sort: column-first, then Y, then X
-  result.sort((a, b) => {
-    if (a.columnIndex !== b.columnIndex) return a.columnIndex - b.columnIndex;
-    if (Math.abs(a.y - b.y) > 5) return a.y - b.y;
-    return a.x - b.x;
-  });
-
-  return result;
-}
-
-// ── Math artifact detection ──
-
-function isMathArtifact(str: string): boolean {
-  // LaTeX commands
-  if (/^\\[a-zA-Z]+/.test(str)) return true;
-
-  // Pure math symbols (single char)
-  if (str.length === 1 && /[∫∑∏∞∂√∇×±≤≥→←↑↓↔⇒⇐⇔ℕℝℂℤ]/.test(str)) return true;
-
-  // Filter only if it has no alphanumeric characters and length > 1 (e.g. operators like "+-", "<=")
-  if (str.length > 1 && !/[a-zA-Z0-9]/.test(str)) return true;
-
-  return false;
-}
-
-// ── Items to lines ──
-
-function itemsToLines(items: LineItem[]): LineItem[][] {
-  const lines: LineItem[][] = [];
-  let currentLine: LineItem[] = [];
-  let currentY: number | null = null;
-  const LINE_THRESHOLD = 4;
-
-  for (const item of items) {
-    if (currentY === null || Math.abs(item.y - currentY) <= LINE_THRESHOLD) {
-      currentLine.push(item);
-      currentY = currentY === null ? item.y : (currentY + item.y) / 2;
-    } else {
-      if (currentLine.length) lines.push(currentLine.sort((a, b) => a.x - b.x));
-      currentLine = [item];
-      currentY = item.y;
-    }
-  }
-  if (currentLine.length) lines.push(currentLine.sort((a, b) => a.x - b.x));
-  return lines;
-}
-
-// ── Dehyphenation ──
-
-function dehyphenate(lines: LineItem[][]): LineItem[][] {
-  const result: LineItem[][] = [];
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (line.length === 0) continue;
-
-    const last = line[line.length - 1];
-
-    if (last.str.endsWith('-') && last.str.length > 1 && i + 1 < lines.length) {
-      const nextLine = lines[i + 1];
-      if (nextLine.length > 0) {
-        const first = nextLine[0];
-        // Merge: remove hyphen, append first word of next line
-        last.str = last.str.slice(0, -1) + first.str;
-        // Remove the first item from next line
-        lines[i + 1] = nextLine.slice(1);
-      }
-    }
-
-    result.push([...line]);
-  }
-
-  return result.filter(l => l.length > 0);
-}
-
-// ── Lines to paragraphs ──
-
-interface LogicalParagraph {
-  id: string;
-  text: string;
-  items: LineItem[];
-}
-
-function buildParagraphs(lines: LineItem[][]): LogicalParagraph[] {
-  const result: LogicalParagraph[] = [];
-  let paraBuf = '';
-  let paraItems: LineItem[] = [];
-  let paraId = 0;
-
-  function flush() {
-    if (!paraBuf.trim()) { paraBuf = ''; paraItems = []; return; }
-    result.push({
-      id: `p-${paraId++}`,
-      text: paraBuf.trim(),
-      items: [...paraItems]
-    });
-    paraBuf = '';
-    paraItems = [];
-  }
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const lineText = line.map(it => it.str).join(' ').trim();
-    if (!lineText) continue;
-
-    const nextLine = lines[i + 1];
-    paraBuf += (paraBuf ? ' ' : '') + lineText;
-    paraItems.push(...line);
-
-    const lineH = line[0]?.height || 12;
-    const thisY = line[0]?.y;
-    const nextY = nextLine?.[0]?.y;
-    const yGap = nextY ? (nextY - thisY) : Infinity;
-
-    // End of paragraph markers
-    const endsWithPunct = /[.!?]$/.test(lineText);
-    const lastX = line[line.length - 1]?.x || 0;
-    const firstX = line[0]?.x || 0;
-    const lineW = (lastX + ((line[line.length - 1]?.width) || 0)) - firstX;
-    // Paragraph ends: big Y gap, or short last line in a paragraph
-    const isParaEnd = !nextLine || yGap > lineH * 2.5 || (endsWithPunct && lineW < 80);
-
-    if (isParaEnd) flush();
-  }
-  flush();
-
-  return result;
+  return {
+    items: lineItems,
+    x,
+    y,
+    width,
+    height,
+    columnIndex: colIndex,
+    str,
+    section: 'left'
+  };
 }
 
 function splitParagraphIntoSentences(para: LogicalParagraph): SentenceItem[] {
@@ -432,4 +422,17 @@ function splitIntoSentences(text: string): string[] {
   }
   if (last < text.length) results.push(text.slice(last));
   return results.filter(s => s.trim().length > 2);
+}
+
+function isMathArtifact(str: string): boolean {
+  // LaTeX commands
+  if (/^\\[a-zA-Z]+/.test(str)) return true;
+
+  // Pure math symbols (single char)
+  if (str.length === 1 && /[∫∑∏∞∂√∇×±≤≥→←↑↓↔⇒⇐⇔ℕℝℂℤ]/.test(str)) return true;
+
+  // Filter only if it has no alphanumeric characters and length > 1 (e.g. operators like "+-", "<=")
+  if (str.length > 1 && !/[a-zA-Z0-9]/.test(str)) return true;
+
+  return false;
 }
