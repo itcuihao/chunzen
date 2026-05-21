@@ -22,6 +22,7 @@ interface PdfViewport {
   width: number;
   height: number;
   scale: number;
+  transform: number[];
 }
 
 interface RenderTask {
