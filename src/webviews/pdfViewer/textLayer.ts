@@ -1,6 +1,6 @@
 // Text layer: extracts text items, detects columns, filters math, dehyphenates, renders span overlay
 
-import { TextItem, PdfViewport } from './pdfRenderer';
+import { TextItem, PdfViewport, RichTextContent, ParagraphBoundary } from './pdfRenderer';
 
 declare const pdfjsLib: {
   Util: { transform(transform: number[], viewportTransform: number[]): number[] };
@@ -86,7 +86,7 @@ interface SentenceItem {
 
 export function buildTextLayer(
   container: HTMLElement,
-  items: TextItem[],
+  richContent: RichTextContent | TextItem[],
   viewport: PdfViewport,
   options?: {
     layoutHints?: LayoutHints;
@@ -98,6 +98,18 @@ export function buildTextLayer(
   columnsCount: number;
 } {
   container.innerHTML = '';
+
+  let items: TextItem[];
+  let paragraphBoundaries: ParagraphBoundary[] = [];
+  let hasStructure = false;
+
+  if (Array.isArray(richContent)) {
+    items = richContent;
+  } else {
+    items = richContent.items;
+    paragraphBoundaries = richContent.paragraphBoundaries;
+    hasStructure = richContent.hasStructure;
+  }
 
   // 1. Transform to layout coordinates and filter math/headers
   const headerY = viewport.height * 0.02;
@@ -588,19 +600,206 @@ export function buildTextLayer(
   }
 
   // 8. Two-pass: detect structural blocks, then segment into paragraphs
-  const blocks = detectStructuralBlocks(orderedSegments, columnMargins, pageWidth);
+  let mergedLogicalParas: LogicalParagraph[] = [];
+  let blocks: StructuralBlock[] | null = null;
 
-  const logicalParas: LogicalParagraph[] = [];
-  let paraId = 0;
-  for (const block of blocks) {
-    const result = segmentBlockIntoParas(block, columnMargins, pageWidth, paraId);
-    for (const para of result.paras) {
-      para.blockType = block.type;
-      logicalParas.push(para);
+  if (hasStructure && paragraphBoundaries && paragraphBoundaries.length > 0) {
+    let nextParaId = 0;
+
+    // 1. Create a list of blocks (structured and gaps)
+    interface PageBlock {
+      type: 'structured' | 'gap';
+      start: number; // index in items
+      end: number;   // index in items
+      role?: 'p' | 'heading' | 'figure' | 'table' | 'other';
+      rawTag?: string;
     }
-    paraId = result.nextParaId;
+
+    const pageBlocks: PageBlock[] = [];
+    let currentIdx = 0;
+    for (const b of paragraphBoundaries) {
+      if (b.start > currentIdx) {
+        pageBlocks.push({
+          type: 'gap',
+          start: currentIdx,
+          end: b.start,
+        });
+      }
+      pageBlocks.push({
+        type: 'structured',
+        start: b.start,
+        end: b.end,
+        role: b.role,
+        rawTag: b.rawTag,
+      });
+      currentIdx = b.end;
+    }
+    if (currentIdx < items.length) {
+      pageBlocks.push({
+        type: 'gap',
+        start: currentIdx,
+        end: items.length,
+      });
+    }
+
+    // 2. Process each block
+    for (const block of pageBlocks) {
+      const rangeItems = items.slice(block.start, block.end);
+      
+      // Transform rangeItems to ColLayoutItems in layout coords
+      const transformedItems: ColLayoutItem[] = [];
+      for (const item of rangeItems) {
+        if (!item.str || !item.str.trim()) continue;
+        const tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
+        if (!tx || isNaN(tx[4]) || isNaN(tx[5])) continue;
+        if (isMathArtifact(item.str)) continue;
+        if (tx[5] < headerY || tx[5] > footerY) continue;
+        
+        const scaledH = item.height * viewport.scale;
+        if (isAffiliationClutter(item.str, scaledH)) continue;
+        
+        const w = item.width * viewport.scale;
+        transformedItems.push({
+          str: item.str.trim(),
+          x: tx[4],
+          y: tx[5],
+          width: w,
+          height: scaledH,
+          fontName: item.fontName || ''
+        });
+      }
+
+      if (transformedItems.length === 0) continue;
+
+      // Group into lines by Y coordinate
+      const rawLines: ColLayoutItem[][] = [];
+      let currentLine: ColLayoutItem[] = [];
+      let currentY: number | null = null;
+      const LINE_THRESHOLD = 4; // px
+
+      for (const item of transformedItems) {
+        if (currentY === null || Math.abs(item.y - currentY) <= LINE_THRESHOLD) {
+          currentLine.push(item);
+          currentY = currentY === null ? item.y : (currentY + item.y) / 2;
+        } else {
+          if (currentLine.length) rawLines.push(currentLine.sort((a, b) => a.x - b.x));
+          currentLine = [item];
+          currentY = item.y;
+        }
+      }
+      if (currentLine.length) rawLines.push(currentLine.sort((a, b) => a.x - b.x));
+
+      // Dehyphenate lines in-place
+      for (let i = 0; i < rawLines.length - 1; i++) {
+        const curLine = rawLines[i];
+        const nxtLine = rawLines[i + 1];
+        if (curLine.length === 0 || nxtLine.length === 0) continue;
+        const lastItem = curLine[curLine.length - 1];
+        const firstItem = nxtLine[0];
+        if (lastItem.str.endsWith('-') && lastItem.str.length > 1) {
+          const firstWordMatch = firstItem.str.match(/^([a-zA-Z0-9]+)/);
+          if (firstWordMatch) {
+            const firstWord = firstWordMatch[1];
+            lastItem.str = lastItem.str.slice(0, -1) + firstWord;
+            if (firstItem.str.startsWith(firstWord)) {
+              firstItem.str = firstItem.str.slice(firstWord.length);
+            } else {
+              const idx = firstItem.str.indexOf(firstWord);
+              if (idx !== -1) {
+                firstItem.str = firstItem.str.slice(0, idx) + firstItem.str.slice(idx + firstWord.length);
+              }
+            }
+          }
+        }
+      }
+
+      // Filter out empty items
+      const filteredLines = rawLines.map(line => line.filter(it => it.str.trim() !== '')).filter(line => line.length > 0);
+      if (filteredLines.length === 0) continue;
+
+      if (block.type === 'structured') {
+        // Structured block is always a single paragraph/heading
+        const allText = filteredLines.map(line => line.map(it => it.str).join(' ').trim()).join(' ').replace(/\s+/g, ' ').trim();
+        const allItems = filteredLines.flat();
+        if (allText) {
+          const blockType = mapRoleToBlockType(block.role);
+          const para: LogicalParagraph = {
+            id: `p-${nextParaId++}`,
+            text: allText,
+            items: allItems,
+            section: 'left', // assigned below
+            blockType
+          };
+          assignLayoutToParagraph(
+            para,
+            pageWidth,
+            midX,
+            isDoubleColumn,
+            expandedZones,
+            hasSidebar,
+            sidebarGutterX,
+            effectiveGutters
+          );
+          mergedLogicalParas.push(para);
+        }
+      } else {
+        // Gap block: group lines into paragraphs when Y gap is large
+        let paraItems: ColLayoutItem[] = [];
+        let prevLineY: number | null = null;
+        
+        const flushGapPara = () => {
+          if (paraItems.length === 0) return;
+          const text = paraItems.map(it => it.str).join(' ').replace(/\s+/g, ' ').trim();
+          if (text) {
+            const para: LogicalParagraph = {
+              id: `p-${nextParaId++}`,
+              text,
+              items: [...paraItems],
+              section: 'left',
+              blockType: 'unknown'
+            };
+            assignLayoutToParagraph(
+              para,
+              pageWidth,
+              midX,
+              isDoubleColumn,
+              expandedZones,
+              hasSidebar,
+              sidebarGutterX,
+              effectiveGutters
+            );
+            mergedLogicalParas.push(para);
+          }
+          paraItems = [];
+        };
+
+        for (const line of filteredLines) {
+          const lineY = line[0].y;
+          const lineH = line[0].height;
+          if (prevLineY !== null && Math.abs(lineY - prevLineY) > lineH * 1.6) {
+            flushGapPara();
+          }
+          paraItems.push(...line);
+          prevLineY = lineY;
+        }
+        flushGapPara();
+      }
+    }
+  } else {
+    blocks = detectStructuralBlocks(orderedSegments, columnMargins, pageWidth);
+
+    const logicalParas: LogicalParagraph[] = [];
+    let paraId = 0;
+    for (const block of blocks) {
+      const result = segmentBlockIntoParas(block, columnMargins, pageWidth, paraId);
+      for (const para of result.paras) {
+        para.blockType = block.type;
+        logicalParas.push(para);
+      }
+      paraId = result.nextParaId;
+    }
+    mergedLogicalParas = mergeOverSplitBodyParagraphs(logicalParas);
   }
-  const mergedLogicalParas = mergeOverSplitBodyParagraphs(logicalParas);
 
   // 8b. Post-pass: classify title/authors from first body blocks
   const fontSizes = mergedLogicalParas.map(p => p.items.reduce((s, it) => s + it.height, 0) / (p.items.length || 1));
@@ -692,7 +891,9 @@ export function buildTextLayer(
 
   // Debug: log font names and block types
   console.log('[ChunZen] Font names:', [...fontNames]);
-  console.log('[ChunZen] Blocks:', blocks.map((b: StructuralBlock) => `${b.type}(${b.segments.length}segs)`));
+  if (blocks) {
+    console.log('[ChunZen] Blocks:', blocks.map((b: StructuralBlock) => `${b.type}(${b.segments.length}segs)`));
+  }
   console.log('[ChunZen] Paragraphs:', paragraphs.map(p => `${p.blockType || '?'} bold=${p.bold} "${p.text.slice(0, 50)}..."`));
 
   return {
@@ -1626,4 +1827,54 @@ function isRunningHeaderFooter(lineStr: string, lineY: number, viewportHeight: n
   }
 
   return false;
+}
+
+function mapRoleToBlockType(role?: 'p' | 'heading' | 'figure' | 'table' | 'other'): BlockType {
+  if (!role) return 'unknown';
+  if (role === 'p') return 'body';
+  if (role === 'heading') return 'heading';
+  if (role === 'figure') return 'figure-caption';
+  if (role === 'table') return 'table';
+  return 'unknown';
+}
+
+function assignLayoutToParagraph(
+  para: LogicalParagraph,
+  pageWidth: number,
+  midX: number,
+  isDoubleColumn: boolean,
+  expandedZones: Array<{ minY: number; maxY: number }>,
+  hasSidebar: boolean,
+  sidebarGutterX: number,
+  effectiveGutters: number[]
+) {
+  if (para.items.length === 0) return;
+
+  const xs = para.items.map(it => it.x);
+  const ys = para.items.map(it => it.y);
+  const avgX = xs.reduce((s, x) => s + x, 0) / xs.length;
+  const avgY = ys.reduce((s, y) => s + y, 0) / ys.length;
+
+  const minParaX = Math.min(...xs);
+  const maxParaX = Math.max(...para.items.map(it => it.x + it.width));
+  const paraWidth = maxParaX - minParaX;
+
+  let colIndex = -1;
+  if (hasSidebar) {
+    if (minParaX >= sidebarGutterX - 5 && paraWidth < pageWidth * 0.45) {
+      colIndex = 1;
+    } else if (maxParaX <= sidebarGutterX + 5 || paraWidth >= pageWidth * 0.65) {
+      colIndex = 0;
+    }
+  } else if (isDoubleColumn) {
+    const inDoubleColumnZone = expandedZones.some(zone => avgY >= zone.minY && avgY <= zone.maxY);
+    if (inDoubleColumnZone && paraWidth < pageWidth * 0.55) {
+      colIndex = avgX < midX ? 0 : 1;
+    }
+  } else if (effectiveGutters.length > 0 && paraWidth < pageWidth * 0.82) {
+    colIndex = estimateColumnIndex(para.items, effectiveGutters, pageWidth);
+  }
+
+  para.columnIndex = colIndex >= 0 ? colIndex : undefined;
+  para.section = sectionFromColumnIndex(colIndex);
 }

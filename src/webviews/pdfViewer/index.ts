@@ -132,7 +132,7 @@ function isValidLayoutHints(data: unknown): data is LayoutHints {
 }
 
 async function getLayoutHints(
-  items: Awaited<ReturnType<typeof getPageText>>,
+  richContent: Awaited<ReturnType<typeof getPageText>>,
   viewport?: { width: number; height: number; scale: number }
 ): Promise<LayoutHints | null> {
   if (!layoutConfig.useModel) return null;
@@ -157,7 +157,7 @@ async function getLayoutHints(
         height: viewport.height,
         scale: viewport.scale
       } : undefined,
-      items: items.map(it => ({
+      items: richContent.items.map(it => ({
         str: it.str,
         transform: it.transform,
         width: it.width,
@@ -386,8 +386,8 @@ async function extractMetaFromFirstPage() {
   if (!pdfDoc) return;
   try {
     const page = await pdfDoc.getPage(1);
-    const items = await getPageText(page);
-    const text = items.map(it => it.str).join(' ');
+    const richContent = await getPageText(page);
+    const text = richContent.items.map(it => it.str).join(' ');
 
     const doiMatch = text.match(/\b(10\.\d{4,9}\/[^\s"<>{}|\\^`\[\]]+)/);
     const issnMatch = text.match(/\b(\d{4}-\d{3}[\dX])\b/);
