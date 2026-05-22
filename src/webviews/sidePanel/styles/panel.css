@@ -8,78 +8,78 @@
 
 :root {
   /* Default Cozy Warm Dark (same as body.vscode-dark) */
-  --bg: #1c1917;
-  --bg-section: #292524;
-  --bg-hover: #44403c;
-  --border: #332f2c;
+  --bg: #241e15;
+  --bg-section: #32291d;
+  --bg-hover: #453929;
+  --border: #453929;
   --accent: #f59e0b;
   --accent-glow: rgba(245, 158, 11, 0.12);
-  --text-primary: #f5f5f4;
-  --text-secondary: #d6d3d1;
-  --text-muted: #a8a29e;
-  --success: #84cc16;
+  --text-primary: #ffffff;
+  --text-secondary: #f4efe6;
+  --text-muted: #c8bfae;
+  --success: #a3e635;
   --warning: #f59e0b;
   --error: #f87171;
-  --cached: #84cc16;
+  --cached: #a3e635;
   --radius: 10px;
   --radius-sm: 6px;
 
   /* Default Badge Colors (Dark) */
   --badge-if-bg: rgba(245, 158, 11, 0.12);
   --badge-if-border: rgba(245, 158, 11, 0.3);
-  --badge-if-text: #fbbf24;
+  --badge-if-text: #f59e0b;
   
-  --badge-success-bg: rgba(132, 204, 22, 0.12);
-  --badge-success-border: rgba(132, 204, 22, 0.3);
+  --badge-success-bg: rgba(163, 230, 53, 0.12);
+  --badge-success-border: rgba(163, 230, 53, 0.3);
   --badge-success-text: #a3e635;
   
   --badge-warning-bg: rgba(245, 158, 11, 0.12);
   --badge-warning-border: rgba(245, 158, 11, 0.3);
-  --badge-warning-text: #fbbf24;
+  --badge-warning-text: #f59e0b;
   
-  --badge-error-bg: rgba(239, 68, 68, 0.12);
-  --badge-error-border: rgba(239, 68, 68, 0.3);
-  --badge-error-text: #fca5a5;
+  --badge-error-bg: rgba(248, 113, 113, 0.12);
+  --badge-error-border: rgba(248, 113, 113, 0.3);
+  --badge-error-text: #f87171;
   
-  --badge-jcr-bg: rgba(167, 139, 250, 0.12);
-  --badge-jcr-border: rgba(167, 139, 250, 0.3);
-  --badge-jcr-text: #c084fc;
+  --badge-jcr-bg: rgba(244, 63, 94, 0.12);
+  --badge-jcr-border: rgba(244, 63, 94, 0.3);
+  --badge-jcr-text: #fb7185; /* soft rose-purple/pink in dark theme */
 }
 
 body.vscode-dark {
-  --bg: #1c1917;
-  --bg-section: #292524;
-  --bg-hover: #44403c;
-  --border: #332f2c;
+  --bg: #241e15;
+  --bg-section: #32291d;
+  --bg-hover: #453929;
+  --border: #453929;
   --accent: #f59e0b;
   --accent-glow: rgba(245, 158, 11, 0.12);
-  --text-primary: #f5f5f4;
-  --text-secondary: #d6d3d1;
-  --text-muted: #a8a29e;
-  --success: #84cc16;
+  --text-primary: #ffffff;
+  --text-secondary: #f4efe6;
+  --text-muted: #c8bfae;
+  --success: #a3e635;
   --warning: #f59e0b;
   --error: #f87171;
-  --cached: #84cc16;
+  --cached: #a3e635;
 
   --badge-if-bg: rgba(245, 158, 11, 0.12);
   --badge-if-border: rgba(245, 158, 11, 0.3);
-  --badge-if-text: #fbbf24;
+  --badge-if-text: #f59e0b;
   
-  --badge-success-bg: rgba(132, 204, 22, 0.12);
-  --badge-success-border: rgba(132, 204, 22, 0.3);
+  --badge-success-bg: rgba(163, 230, 53, 0.12);
+  --badge-success-border: rgba(163, 230, 53, 0.3);
   --badge-success-text: #a3e635;
   
   --badge-warning-bg: rgba(245, 158, 11, 0.12);
   --badge-warning-border: rgba(245, 158, 11, 0.3);
-  --badge-warning-text: #fbbf24;
+  --badge-warning-text: #f59e0b;
   
-  --badge-error-bg: rgba(239, 68, 68, 0.12);
-  --badge-error-border: rgba(239, 68, 68, 0.3);
-  --badge-error-text: #fca5a5;
+  --badge-error-bg: rgba(248, 113, 113, 0.12);
+  --badge-error-border: rgba(248, 113, 113, 0.3);
+  --badge-error-text: #f87171;
   
-  --badge-jcr-bg: rgba(167, 139, 250, 0.12);
-  --badge-jcr-border: rgba(167, 139, 250, 0.3);
-  --badge-jcr-text: #c084fc;
+  --badge-jcr-bg: rgba(244, 63, 94, 0.12);
+  --badge-jcr-border: rgba(244, 63, 94, 0.3);
+  --badge-jcr-text: #fb7185;
 }
 
 body.vscode-light {

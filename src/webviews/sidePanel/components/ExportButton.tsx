@@ -6,7 +6,7 @@ import { FileDown } from 'lucide-react';
 export const ExportButton: FunctionComponent = () => {
   const [open, setOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const translationHistory = useStore((state) => state.translationHistory);
+  const translationHistory = useStore((state) => state.translationHistory) || [];
 
   const handleExport = (format: 'markdown' | 'bilingual') => {
     postMessage({ type: 'export-translations', format });

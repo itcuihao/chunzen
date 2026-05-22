@@ -9,7 +9,7 @@ export const GlossaryTab: FunctionComponent = () => {
   const [source, setSource] = useState('');
   const [target, setTarget] = useState('');
 
-  const glossaryTerms = useStore((state) => state.glossaryTerms);
+  const glossaryTerms = useStore((state) => state.glossaryTerms) || [];
   const glossaryFilter = useStore((state) => state.glossaryFilter);
   const setGlossaryFilter = useStore((state) => state.setGlossaryFilter);
   const editingTermId = useStore((state) => state.editingTermId);

@@ -30,14 +30,14 @@ export const App: FunctionComponent = () => {
   const setLayoutConfig = useStore((state) => state.setLayoutConfig);
 
   const handleInitState = useCallback((msg: InitStateMessage) => {
-    setGlossaryTerms(msg.glossary);
-    setTranslationHistory(msg.history);
-    setEngineStatuses(msg.engines);
-    setEnginePriority(msg.priority);
-    setEngineConfigs(msg.engineConfigs);
-    setJournalSource(msg.journalSource);
-    setCacheMaxSize(msg.cacheMaxSize);
-    setLayoutConfig(msg.layoutConfig);
+    if (msg.glossary) setGlossaryTerms(msg.glossary);
+    if (msg.history) setTranslationHistory(msg.history);
+    if (msg.engines) setEngineStatuses(msg.engines);
+    if (msg.priority) setEnginePriority(msg.priority);
+    if (msg.engineConfigs) setEngineConfigs(msg.engineConfigs);
+    if (msg.journalSource) setJournalSource(msg.journalSource);
+    if (msg.cacheMaxSize !== undefined && msg.cacheMaxSize !== null) setCacheMaxSize(msg.cacheMaxSize);
+    if (msg.layoutConfig) setLayoutConfig(msg.layoutConfig);
   }, [
     setGlossaryTerms,
     setTranslationHistory,
