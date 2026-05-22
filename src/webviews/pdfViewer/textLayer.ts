@@ -1,6 +1,6 @@
 // Text layer: extracts text items, detects columns, filters math, dehyphenates, renders span overlay
 
-import { TextItem, PdfViewport, RichTextContent, ParagraphBoundary } from './pdfRenderer';
+import { TextItem, PdfViewport, RichTextContent, ParagraphBoundary, HorizontalRule } from './pdfRenderer';
 
 declare const pdfjsLib: {
   Util: { transform(transform: number[], viewportTransform: number[]): number[] };
@@ -30,6 +30,10 @@ export interface Paragraph {
   sentences?: Array<{ id: string; text: string }>;
   bold?: boolean;
   blockType?: BlockType;
+  skipped?: boolean;
+  lineMarker?: 'horizontal-rule';
+  ruleX1?: number;
+  ruleX2?: number;
 }
 
 export interface LayoutHints {
@@ -56,6 +60,7 @@ interface LineSegment {
   columnIndex: number; // -1: Full-width, 0: Left, 1: Right
   str: string;
   section: 'header' | 'left' | 'right' | 'footer' | 'full';
+  flowBand?: number;
 }
 
 export type BlockType =
@@ -81,6 +86,7 @@ interface LogicalParagraph {
   section: 'header' | 'left' | 'right' | 'footer' | 'full';
   columnIndex?: number;
   blockType?: BlockType;
+  skipped?: boolean;
 }
 
 interface SentenceItem {
@@ -108,6 +114,7 @@ export function buildTextLayer(
   let items: TextItem[];
   let paragraphBoundaries: ParagraphBoundary[] = [];
   let hasStructure = false;
+  let horizontalRules: HorizontalRule[] = [];
 
   if (Array.isArray(richContent)) {
     items = richContent;
@@ -115,6 +122,7 @@ export function buildTextLayer(
     items = richContent.items;
     paragraphBoundaries = richContent.paragraphBoundaries;
     hasStructure = richContent.hasStructure;
+    horizontalRules = richContent.horizontalRules || [];
   }
 
   // 1. Transform to layout coordinates and filter math/headers
@@ -249,7 +257,7 @@ export function buildTextLayer(
     }
   }
   if (firstBodyY === 0) {
-    firstBodyY = viewport.height * 0.45;
+    firstBodyY = inferFirstBodyY(filteredRawLines, viewport.height);
   }
 
   // 4. Split lines into segments & count splits (Two-pass analysis for hybrid layouts)
@@ -497,87 +505,14 @@ export function buildTextLayer(
     }
   }
 
-  // 6. Segment ordering (reading flow reconstruction)
-  let orderedSegments: LineSegment[] = [];
-  if (hasSidebar) {
-    // Sidebar layout: full-width items in Y-order, then left col in Y-order, then right sidebar in Y-order.
-    // This keeps the main narrative in one column and avoids TOC/sidebar text mixing into body paragraphs.
-    const fullSegs: LineSegment[] = [];
-    const leftSegs: LineSegment[] = [];
-    const rightSegs: LineSegment[] = [];
-    for (const seg of segments) {
-      if (seg.columnIndex === 0) { seg.section = 'left'; leftSegs.push(seg); }
-      else if (seg.columnIndex === 1) { seg.section = 'right'; rightSegs.push(seg); }
-      else { seg.section = 'full'; seg.columnIndex = -1; fullSegs.push(seg); }
-    }
-    fullSegs.sort((a, b) => a.y - b.y);
-    leftSegs.sort((a, b) => a.y - b.y);
-    rightSegs.sort((a, b) => a.y - b.y);
-    const firstLeftY = leftSegs.length > 0 ? leftSegs[0].y : Infinity;
-    const headerFullSegs = fullSegs.filter(s => s.y < firstLeftY);
-    const footerFullSegs = fullSegs.filter(s => s.y >= firstLeftY);
-    orderedSegments = [...headerFullSegs, ...leftSegs, ...footerFullSegs, ...rightSegs];
-    console.log('[ChunZen] Sidebar ordering: full=', fullSegs.length, 'left=', leftSegs.length, 'right=', rightSegs.length);
-  } else if (detectedColumnsCount <= 1) {
-    // Single column: map all to col 0, sort by Y
-    for (const seg of segments) {
-      seg.columnIndex = 0;
-      seg.section = 'left';
-    }
-    orderedSegments = [...segments].sort((a, b) => a.y - b.y);
-  } else {
-    // Multi-column page: group segments into blocks of 'single' (columnIndex === -1)
-    // and 'multi' (columnIndex >= 0) based on their Y-sorted order.
-    const sortedSegs = [...segments].sort((a, b) => a.y - b.y);
-    const blocks: Array<{ type: 'single' | 'multi'; segments: LineSegment[] }> = [];
-
-    for (const seg of sortedSegs) {
-      const type = seg.columnIndex === -1 ? 'single' : 'multi';
-      if (blocks.length === 0 || blocks[blocks.length - 1].type !== type) {
-        blocks.push({ type, segments: [seg] });
-      } else {
-        blocks[blocks.length - 1].segments.push(seg);
-      }
-    }
-
-    const firstMultiIndex = blocks.findIndex(b => b.type === 'multi');
-    const lastMultiIndex = blocks.map(b => b.type).lastIndexOf('multi');
-
-    for (let bIdx = 0; bIdx < blocks.length; bIdx++) {
-      const block = blocks[bIdx];
-      if (block.type === 'single') {
-        let section: 'header' | 'footer' | 'left' | 'full' = 'left';
-        if (firstMultiIndex !== -1) {
-          if (bIdx < firstMultiIndex) {
-            section = 'header';
-          } else if (bIdx > lastMultiIndex) {
-            section = 'footer';
-          } else {
-            section = 'full';
-          }
-        }
-        for (const seg of block.segments) {
-          seg.section = section;
-          seg.columnIndex = -1; // Keep as full-width
-          orderedSegments.push(seg);
-        }
-      } else {
-        const perColumn = new Map<number, LineSegment[]>();
-        for (const seg of block.segments) {
-          const normalizedIndex = seg.columnIndex < 0 ? 0 : Math.min(seg.columnIndex, detectedColumnsCount - 1);
-          seg.columnIndex = normalizedIndex;
-          seg.section = sectionFromColumnIndex(normalizedIndex);
-          if (!perColumn.has(normalizedIndex)) perColumn.set(normalizedIndex, []);
-          perColumn.get(normalizedIndex)!.push(seg);
-        }
-        for (let col = 0; col < detectedColumnsCount; col++) {
-          const colSegs = perColumn.get(col) || [];
-          colSegs.sort((a, b) => a.y - b.y);
-          orderedSegments.push(...colSegs);
-        }
-      }
-    }
-  }
+  // 6. Segment ordering (reading flow reconstruction + horizontal rule barriers)
+  const effectiveRules = normalizeHorizontalRuleBarriers(horizontalRules, viewport.width, viewport.height, firstBodyY);
+  const orderedSegments = orderSegmentsWithHorizontalBarriers(
+    segments,
+    effectiveRules,
+    hasSidebar,
+    detectedColumnsCount
+  );
 
   // 7. Dehyphenate segments in-place
   for (let i = 0; i < orderedSegments.length - 1; i++) {
@@ -930,15 +865,36 @@ export function buildTextLayer(
   const sentenceMap = new Map<string, Sentence>();
   const spanToSentence = new Map<HTMLSpanElement, string>();
   const paragraphs: Paragraph[] = [];
+  const sortedRuleMarkers = [...effectiveRules].sort((a, b) => a.y - b.y);
 
   let sentenceId = 0;
+  let ruleCursor = 0;
+
+  const emitRuleMarkersBefore = (y: number) => {
+    while (ruleCursor < sortedRuleMarkers.length && sortedRuleMarkers[ruleCursor].y <= y) {
+      const rule = sortedRuleMarkers[ruleCursor];
+      const ruleWidth = Math.max(1, rule.x2 - rule.x1);
+      paragraphs.push({
+        id: `line-rule-${ruleCursor}`,
+        text: '',
+        x: rule.x1,
+        y: rule.y,
+        width: ruleWidth,
+        height: Math.max(1, rule.thickness),
+        fontSize: Math.max(1, rule.thickness),
+        section: 'full',
+        blockType: 'unknown',
+        skipped: true,
+        lineMarker: 'horizontal-rule',
+        ruleX1: rule.x1,
+        ruleX2: rule.x2,
+      });
+      ruleCursor++;
+    }
+  };
+
   for (const para of mergedLogicalParas) {
     if (!para.items.length) continue;
-
-    // Filter out paragraphs that should be skipped for translation/overlays
-    if (shouldSkipParagraphForTranslation(para, viewport.height, firstBodyY, hasSidebar)) {
-      continue;
-    }
 
     // Compute bounding box
     const xs = para.items.map(it => it.x);
@@ -950,6 +906,7 @@ export function buildTextLayer(
     const width = Math.max(...xMaxs) - x;
     const height = Math.max(...yMaxs) - y;
     const fontSize = para.items.reduce((sum, it) => sum + it.height, 0) / para.items.length;
+    const shouldSkip = shouldSkipParagraphForTranslation(para, viewport.height, firstBodyY, hasSidebar);
 
     // Detect bold: check if majority of items (by text length) use a bold font
     const boldScore = para.items.reduce((score, it) => {
@@ -959,28 +916,31 @@ export function buildTextLayer(
     const isBold = totalLen > 0 && (boldScore / totalLen) > 0.5;
 
     const sentsList: Array<{ id: string; text: string }> = [];
+    emitRuleMarkersBefore(y);
 
-    // Split paragraph into sentences for highlight/selection
-    const sents = splitParagraphIntoSentences(para);
-    for (const sent of sents) {
-      if (!sent.text || sent.text.length < 5) continue;
-      const sid = String(sentenceId++);
-      sentsList.push({ id: sid, text: sent.text });
-      const spans: HTMLSpanElement[] = [];
+    if (!shouldSkip) {
+      // Split paragraph into sentences for highlight/selection
+      const sents = splitParagraphIntoSentences(para);
+      for (const sent of sents) {
+        if (!sent.text || sent.text.length < 5) continue;
+        const sid = String(sentenceId++);
+        sentsList.push({ id: sid, text: sent.text });
+        const spans: HTMLSpanElement[] = [];
 
-      for (const item of sent.items) {
-        const span = document.createElement('span');
-        span.textContent = item.str;
-        span.dataset.sentenceId = sid;
-        span.style.left = item.x + 'px';
-        span.style.top = item.y + 'px';
-        span.style.fontSize = item.height + 'px';
-        container.appendChild(span);
-        spans.push(span);
-        spanToSentence.set(span, sid);
+        for (const item of sent.items) {
+          const span = document.createElement('span');
+          span.textContent = item.str;
+          span.dataset.sentenceId = sid;
+          span.style.left = item.x + 'px';
+          span.style.top = item.y + 'px';
+          span.style.fontSize = item.height + 'px';
+          container.appendChild(span);
+          spans.push(span);
+          spanToSentence.set(span, sid);
+        }
+
+        sentenceMap.set(sid, { id: sid, text: sent.text, spans });
       }
-
-      sentenceMap.set(sid, { id: sid, text: sent.text, spans });
     }
 
     paragraphs.push({
@@ -993,11 +953,13 @@ export function buildTextLayer(
       fontSize,
       section: para.section,
       columnIndex: para.columnIndex,
-      sentences: sentsList,
+      sentences: sentsList.length > 0 ? sentsList : undefined,
       bold: isBold || undefined,
       blockType: para.blockType,
+      skipped: shouldSkip,
     });
   }
+  emitRuleMarkersBefore(Number.POSITIVE_INFINITY);
 
   // Debug: log font names and block types
   console.log('[ChunZen] Font names:', [...fontNames]);
@@ -1184,6 +1146,7 @@ function detectStructuralBlocks(
       while (i < segments.length) {
         const cur = segments[i];
         if (!cur.str.trim()) { i++; continue; }
+        if (refSegs.length > 0 && cur.flowBand !== refSegs[refSegs.length - 1].flowBand) break;
         if (isHeadingSegment(cur)) break;
         if (isFigureCaptionSegment(cur)) break;
         if (refSegs.length === 0 || isReferenceStart(cur.str) || isContinuationOfReference(cur, refSegs[refSegs.length - 1])) {
@@ -1206,6 +1169,7 @@ function detectStructuralBlocks(
       while (i < segments.length) {
         const next = segments[i];
         if (!next.str.trim() || isHeadingSegment(next) || isFigureCaptionSegment(next)) break;
+        if (next.flowBand !== seg.flowBand) break;
         if (next.columnIndex !== seg.columnIndex && next.columnIndex >= 0) break;
         captionSegs.push(next);
         i++;
@@ -1221,6 +1185,7 @@ function detectStructuralBlocks(
       while (i < segments.length) {
         const next = segments[i];
         if (!next.str.trim()) break;
+        if (next.flowBand !== seg.flowBand) break;
         if (!isSidebarTocEntry(next, seg.columnIndex, columnMargins, pageWidth)) break;
         const prev = tocSegs[tocSegs.length - 1];
         const yClose = Math.abs(next.y - prev.y) <= Math.max(prev.height, next.height) * 2.4;
@@ -1261,6 +1226,7 @@ function detectStructuralBlocks(
       while (i < segments.length) {
         const cur = segments[i];
         if (!cur.str.trim()) break;
+        if (cur.flowBand !== seg.flowBand) break;
         if (cur.columnIndex !== seg.columnIndex) break;
 
         const prev = tableSegs[tableSegs.length - 1];
@@ -1275,6 +1241,7 @@ function detectStructuralBlocks(
       while (i < segments.length) {
         const next = segments[i];
         if (!next.str.trim()) break;
+        if (next.flowBand !== seg.flowBand) break;
         if (next.width > colWidth * 0.7) break;
         if (isHeadingSegment(next) || isFigureCaptionSegment(next)) break;
         // Check Y gap - must be close to previous table row
@@ -1293,6 +1260,7 @@ function detectStructuralBlocks(
     while (i < segments.length) {
       const next = segments[i];
       if (!next.str.trim()) { i++; continue; }
+      if (next.flowBand !== seg.flowBand) break;
       if (isHeadingSegment(next)) break;
       if (isFigureCaptionSegment(next)) break;
       if (isSidebarTocHeading(next, columnMargins, pageWidth)) break;
@@ -1310,6 +1278,7 @@ function detectStructuralBlocks(
 
 function isContinuationOfReference(cur: LineSegment, prev: LineSegment): boolean {
   if (isReferenceStart(cur.str)) return true;
+  if (cur.flowBand !== prev.flowBand) return false;
   if (cur.columnIndex !== prev.columnIndex) return false;
   const yGap = Math.abs(cur.y - prev.y);
   const lineH = Math.max(prev.height, 1);
@@ -1501,6 +1470,172 @@ function sectionFromColumnIndex(columnIndex: number): 'left' | 'right' | 'full' 
   if (columnIndex === 0) return 'left';
   if (columnIndex === 1) return 'right';
   return 'full';
+}
+
+function normalizeHorizontalRuleBarriers(
+  rules: HorizontalRule[],
+  viewportWidth: number,
+  viewportHeight: number,
+  firstBodyY: number
+): HorizontalRule[] {
+  if (!Array.isArray(rules) || rules.length === 0) return [];
+  const filtered = rules
+    .filter(rule => Number.isFinite(rule.y) && Number.isFinite(rule.x1) && Number.isFinite(rule.x2))
+    .filter(rule => {
+      const width = Math.max(0, rule.x2 - rule.x1);
+      if (width < viewportWidth * 0.25) return false;
+      if (rule.y < viewportHeight * 0.04) return false;
+      if (rule.y < firstBodyY - 12) return false;
+      if (rule.y > viewportHeight * 0.98) return false;
+      return true;
+    })
+    .sort((a, b) => a.y - b.y);
+
+  const merged: HorizontalRule[] = [];
+  for (const rule of filtered) {
+    const prev = merged[merged.length - 1];
+    const yTol = Math.max(2, rule.thickness * 1.5);
+    if (prev && Math.abs(prev.y - rule.y) <= yTol) {
+      prev.x1 = Math.min(prev.x1, rule.x1);
+      prev.x2 = Math.max(prev.x2, rule.x2);
+      prev.y = (prev.y + rule.y) / 2;
+      prev.thickness = Math.max(prev.thickness, rule.thickness);
+    } else {
+      merged.push({ ...rule });
+    }
+  }
+  return merged;
+}
+
+function orderSegmentsWithHorizontalBarriers(
+  segments: LineSegment[],
+  rules: HorizontalRule[],
+  hasSidebar: boolean,
+  detectedColumnsCount: number
+): LineSegment[] {
+  if (segments.length === 0) return [];
+  if (rules.length === 0) {
+    const orderedSingleBand = orderSegmentBand(segments, hasSidebar, detectedColumnsCount);
+    for (const seg of orderedSingleBand) seg.flowBand = 0;
+    return orderedSingleBand;
+  }
+
+  const sortedByY = [...segments].sort((a, b) => a.y - b.y);
+  const bands: LineSegment[][] = [];
+  let currentBand: LineSegment[] = [];
+  let ruleIndex = 0;
+
+  for (const seg of sortedByY) {
+    while (ruleIndex < rules.length && seg.y > rules[ruleIndex].y + Math.max(2, rules[ruleIndex].thickness * 0.5)) {
+      if (currentBand.length > 0) {
+        bands.push(currentBand);
+        currentBand = [];
+      }
+      ruleIndex++;
+    }
+    currentBand.push(seg);
+  }
+  if (currentBand.length > 0) bands.push(currentBand);
+
+  const ordered: LineSegment[] = [];
+  for (let bandIndex = 0; bandIndex < bands.length; bandIndex++) {
+    const band = bands[bandIndex];
+    const bandOrdered = orderSegmentBand(band, hasSidebar, detectedColumnsCount);
+    for (const seg of bandOrdered) {
+      seg.flowBand = bandIndex;
+      ordered.push(seg);
+    }
+  }
+  return ordered;
+}
+
+function orderSegmentBand(
+  segments: LineSegment[],
+  hasSidebar: boolean,
+  detectedColumnsCount: number
+): LineSegment[] {
+  if (hasSidebar) {
+    // Sidebar layout: full-width items in Y-order, then left col in Y-order, then right sidebar in Y-order.
+    // This keeps the main narrative in one column and avoids TOC/sidebar text mixing into body paragraphs.
+    const fullSegs: LineSegment[] = [];
+    const leftSegs: LineSegment[] = [];
+    const rightSegs: LineSegment[] = [];
+    for (const seg of segments) {
+      if (seg.columnIndex === 0) { seg.section = 'left'; leftSegs.push(seg); }
+      else if (seg.columnIndex === 1) { seg.section = 'right'; rightSegs.push(seg); }
+      else { seg.section = 'full'; seg.columnIndex = -1; fullSegs.push(seg); }
+    }
+    fullSegs.sort((a, b) => a.y - b.y);
+    leftSegs.sort((a, b) => a.y - b.y);
+    rightSegs.sort((a, b) => a.y - b.y);
+    const firstLeftY = leftSegs.length > 0 ? leftSegs[0].y : Infinity;
+    const headerFullSegs = fullSegs.filter(s => s.y < firstLeftY);
+    const footerFullSegs = fullSegs.filter(s => s.y >= firstLeftY);
+    return [...headerFullSegs, ...leftSegs, ...footerFullSegs, ...rightSegs];
+  }
+
+  if (detectedColumnsCount <= 1) {
+    // Single column: map all to col 0, sort by Y
+    for (const seg of segments) {
+      seg.columnIndex = 0;
+      seg.section = 'left';
+    }
+    return [...segments].sort((a, b) => a.y - b.y);
+  }
+
+  // Multi-column page: group segments into blocks of 'single' (columnIndex === -1)
+  // and 'multi' (columnIndex >= 0) based on their Y-sorted order.
+  const sortedSegs = [...segments].sort((a, b) => a.y - b.y);
+  const blocks: Array<{ type: 'single' | 'multi'; segments: LineSegment[] }> = [];
+
+  for (const seg of sortedSegs) {
+    const type = seg.columnIndex === -1 ? 'single' : 'multi';
+    if (blocks.length === 0 || blocks[blocks.length - 1].type !== type) {
+      blocks.push({ type, segments: [seg] });
+    } else {
+      blocks[blocks.length - 1].segments.push(seg);
+    }
+  }
+
+  const ordered: LineSegment[] = [];
+  const firstMultiIndex = blocks.findIndex(b => b.type === 'multi');
+  const lastMultiIndex = blocks.map(b => b.type).lastIndexOf('multi');
+
+  for (let bIdx = 0; bIdx < blocks.length; bIdx++) {
+    const block = blocks[bIdx];
+    if (block.type === 'single') {
+      let section: 'header' | 'footer' | 'left' | 'full' = 'left';
+      if (firstMultiIndex !== -1) {
+        if (bIdx < firstMultiIndex) {
+          section = 'header';
+        } else if (bIdx > lastMultiIndex) {
+          section = 'footer';
+        } else {
+          section = 'full';
+        }
+      }
+      for (const seg of block.segments) {
+        seg.section = section;
+        seg.columnIndex = -1; // Keep as full-width
+        ordered.push(seg);
+      }
+    } else {
+      const perColumn = new Map<number, LineSegment[]>();
+      for (const seg of block.segments) {
+        const normalizedIndex = seg.columnIndex < 0 ? 0 : Math.min(seg.columnIndex, detectedColumnsCount - 1);
+        seg.columnIndex = normalizedIndex;
+        seg.section = sectionFromColumnIndex(normalizedIndex);
+        if (!perColumn.has(normalizedIndex)) perColumn.set(normalizedIndex, []);
+        perColumn.get(normalizedIndex)!.push(seg);
+      }
+      for (let col = 0; col < detectedColumnsCount; col++) {
+        const colSegs = perColumn.get(col) || [];
+        colSegs.sort((a, b) => a.y - b.y);
+        ordered.push(...colSegs);
+      }
+    }
+  }
+  return ordered;
 }
 
 function composeLineText(items: ColLayoutItem[]): string {
@@ -1888,6 +2023,50 @@ function isMathArtifact(str: string): boolean {
   return false;
 }
 
+function inferFirstBodyY(lines: ColLayoutItem[][], viewportHeight: number): number {
+  if (lines.length === 0) return viewportHeight * 0.45;
+  const candidates: number[] = [];
+  const minY = viewportHeight * 0.14;
+  const maxY = viewportHeight * 0.72;
+
+  for (const line of lines) {
+    if (line.length === 0) continue;
+    const y = line[0].y;
+    if (y < minY || y > maxY) continue;
+
+    const text = composeLineText(line).trim();
+    if (!text) continue;
+
+    const lower = text.toLowerCase();
+    if (isLikelyAuthorList(text)) continue;
+    if (
+      lower.includes('corresponding author') ||
+      lower.includes('addresses') ||
+      lower.includes('this review comes from') ||
+      lower.includes('edited by') ||
+      lower.includes('current opinion') ||
+      lower.includes('published by') ||
+      lower.includes('sciencedirect') ||
+      lower.includes('copyright') ||
+      lower.includes('doi:') ||
+      lower.includes('doi.org') ||
+      lower.includes('issn') ||
+      lower.includes('downloaded from') ||
+      /https?:\/\//.test(lower)
+    ) {
+      continue;
+    }
+
+    const words = text.split(/\s+/).filter(Boolean);
+    if (words.length < 6) continue;
+    if (text.length < 45) continue;
+    candidates.push(y);
+  }
+
+  if (candidates.length === 0) return viewportHeight * 0.45;
+  return Math.max(viewportHeight * 0.18, Math.min(...candidates));
+}
+
 /**
  * Filter standalone affiliation superscript number clusters.
  * e.g. "29 30", "1,2,3", "31 32,33,34 15 35"
@@ -2058,7 +2237,7 @@ function shouldSkipParagraphForTranslation(
     lowerText.includes('license');
 
   if (isAffiliationOrFootnote) {
-    if (avgY < firstBodyY - 5 || avgY > viewportHeight * 0.65) {
+    if (avgY < firstBodyY + 90 || avgY > viewportHeight * 0.65) {
       return true;
     }
   }

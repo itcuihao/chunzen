@@ -89,7 +89,7 @@ async function renderCurrentPage() {
   textLayer.style.width = viewport.width + 'px';
   textLayer.style.height = viewport.height + 'px';
 
-  const items = await getPageText(page);
+  const items = await getPageText(page, viewport);
   const modelHints = await getLayoutHints(items, viewport);
   const { paragraphs: newParagraphs, columnsCount } = buildTextLayer(textLayer, items, viewport, {
     layoutHints: modelHints || undefined
@@ -114,8 +114,13 @@ async function renderCurrentPage() {
       columnIndex: p.columnIndex,
       sentences: p.sentences,
       fontSize: Math.round(p.fontSize / scale * 10) / 10,
+      height: Math.round(p.height / scale * 10) / 10,
       bold: p.bold,
-      blockType: p.blockType
+      blockType: p.blockType,
+      skipped: p.skipped,
+      lineMarker: p.lineMarker,
+      ruleX1: p.ruleX1 !== undefined ? Math.round(p.ruleX1 / scale * 10) / 10 : undefined,
+      ruleX2: p.ruleX2 !== undefined ? Math.round(p.ruleX2 / scale * 10) / 10 : undefined,
     })),
     columnsCount,
     translations
