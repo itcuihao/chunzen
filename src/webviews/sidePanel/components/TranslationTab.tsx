@@ -15,11 +15,13 @@ interface AnnotatedPara {
   section?: 'header' | 'left' | 'right' | 'footer' | 'full';
   sentences?: Array<{ id: string; text: string }>;
   fontSize?: number;
+  bold?: boolean;
+  blockType?: string;
   role: ParagraphRole;
 }
 
 function classifyParagraphs(
-  paragraphs: Array<{ text: string; fontSize?: number }>
+  paragraphs: Array<{ text: string; fontSize?: number; blockType?: string }>
 ): ParagraphRole[] {
   const sizes = paragraphs.map(p => p.fontSize).filter((s): s is number => s !== undefined && s > 0);
 
@@ -31,6 +33,13 @@ function classifyParagraphs(
   const median = sorted[Math.floor(sorted.length / 2)];
 
   return paragraphs.map(para => {
+    // Use blockType from textLayer when available
+    if (para.blockType === 'title') return 'title';
+    if (para.blockType === 'heading') return 'heading';
+    if (para.blockType === 'authors' || para.blockType === 'table'
+        || para.blockType === 'figure-caption' || para.blockType === 'reference') return 'small';
+
+    // Fall back to font-size heuristic for body/unknown
     const fs = para.fontSize;
     if (!fs) return 'body';
 
@@ -255,7 +264,8 @@ export const TranslationTab: FunctionComponent = () => {
     });
   };
 
-  const paraClass = (role: ParagraphRole, mode: 'en' | 'zh' | 'bi-en' | 'bi-zh'): string => {
+  const paraClass = (para: AnnotatedPara, mode: 'en' | 'zh' | 'bi-en' | 'bi-zh'): string => {
+    const role = para.role;
     const styles = mode === 'en' ? EN_STYLES
       : mode === 'zh' ? ZH_STYLES
       : mode === 'bi-en' ? BI_EN_STYLES
@@ -263,7 +273,9 @@ export const TranslationTab: FunctionComponent = () => {
     const indent = (mode === 'en') ? EN_INDENT[role]
       : (mode === 'zh') ? ZH_INDENT[role]
       : '';
-    return `${styles[role]} ${indent} ${PARA_SPACING[role]}`;
+    // Add font-bold from PDF data when role doesn't already include bold
+    const boldClass = (para.bold && role !== 'title' && role !== 'heading') ? 'font-bold' : '';
+    return `${styles[role]} ${indent} ${boldClass} ${PARA_SPACING[role]}`;
   };
 
   // ── Render helpers for each mode ──
@@ -279,7 +291,7 @@ export const TranslationTab: FunctionComponent = () => {
               return (
                 <div key={idx} className="w-full">
                   {block.paragraphs.map(para => (
-                    <p key={para.id} className={paraClass(para.role, 'en')}>
+                    <p key={para.id} className={paraClass(para, 'en')}>
                       {renderEnglishParagraph(para)}
                     </p>
                   ))}
@@ -292,14 +304,14 @@ export const TranslationTab: FunctionComponent = () => {
                 <div key={idx} className="grid grid-cols-2 gap-5 w-full">
                   <div className="flex flex-col">
                     {leftParas.map(para => (
-                      <p key={para.id} className={paraClass(para.role, 'en')}>
+                      <p key={para.id} className={paraClass(para, 'en')}>
                         {renderEnglishParagraph(para)}
                       </p>
                     ))}
                   </div>
                   <div className="flex flex-col border-l border-dashed border-border/40 pl-5">
                     {rightParas.map(para => (
-                      <p key={para.id} className={paraClass(para.role, 'en')}>
+                      <p key={para.id} className={paraClass(para, 'en')}>
                         {renderEnglishParagraph(para)}
                       </p>
                     ))}
@@ -322,7 +334,7 @@ export const TranslationTab: FunctionComponent = () => {
         }}
       >
         {annotatedParagraphs.map((para) => (
-          <p key={para.id} className={paraClass(para.role, 'en')}>
+          <p key={para.id} className={paraClass(para, 'en')}>
             {renderEnglishParagraph(para)}
           </p>
         ))}
@@ -341,7 +353,7 @@ export const TranslationTab: FunctionComponent = () => {
               return (
                 <div key={idx} className="w-full">
                   {block.paragraphs.map(para => (
-                    <p key={para.id} className={paraClass(para.role, 'zh')}>
+                    <p key={para.id} className={paraClass(para, 'zh')}>
                       {renderChineseParagraph(para, currentPageText!.translations?.[para.id] || '')}
                     </p>
                   ))}
@@ -354,14 +366,14 @@ export const TranslationTab: FunctionComponent = () => {
                 <div key={idx} className="grid grid-cols-2 gap-5 w-full">
                   <div className="flex flex-col">
                     {leftParas.map(para => (
-                      <p key={para.id} className={paraClass(para.role, 'zh')}>
+                      <p key={para.id} className={paraClass(para, 'zh')}>
                         {renderChineseParagraph(para, currentPageText!.translations?.[para.id] || '')}
                       </p>
                     ))}
                   </div>
                   <div className="flex flex-col border-l border-dashed border-border/40 pl-5">
                     {rightParas.map(para => (
-                      <p key={para.id} className={paraClass(para.role, 'zh')}>
+                      <p key={para.id} className={paraClass(para, 'zh')}>
                         {renderChineseParagraph(para, currentPageText!.translations?.[para.id] || '')}
                       </p>
                     ))}
@@ -384,7 +396,7 @@ export const TranslationTab: FunctionComponent = () => {
         }}
       >
         {annotatedParagraphs.map((para) => (
-          <p key={para.id} className={paraClass(para.role, 'zh')}>
+          <p key={para.id} className={paraClass(para, 'zh')}>
             {renderChineseParagraph(para, currentPageText!.translations?.[para.id] || '')}
           </p>
         ))}
@@ -406,11 +418,11 @@ export const TranslationTab: FunctionComponent = () => {
                     const translation = currentPageText!.translations?.[para.id];
                     return (
                       <div key={para.id} className="mb-4 pb-3 border-b border-border/20 last:border-0">
-                        <p className={`${paraClass(para.role, 'bi-en')} mb-1.5`}>
+                        <p className={`${paraClass(para, 'bi-en')} mb-1.5`}>
                           {renderEnglishParagraph(para)}
                         </p>
                         {translation && (
-                          <p className={`${paraClass(para.role, 'bi-zh')} mt-1 border-l-2 border-primary/20 pl-3`}>
+                          <p className={`${paraClass(para, 'bi-zh')} mt-1 border-l-2 border-primary/20 pl-3`}>
                             {renderChineseParagraph(para, translation)}
                           </p>
                         )}
@@ -429,11 +441,11 @@ export const TranslationTab: FunctionComponent = () => {
                       const translation = currentPageText!.translations?.[para.id];
                       return (
                         <div key={para.id} className="mb-4 pb-3 border-b border-border/20 last:border-0">
-                          <p className={`${paraClass(para.role, 'bi-en')} mb-1.5`}>
+                          <p className={`${paraClass(para, 'bi-en')} mb-1.5`}>
                             {renderEnglishParagraph(para)}
                           </p>
                           {translation && (
-                            <p className={`${paraClass(para.role, 'bi-zh')} mt-1 border-l-2 border-primary/20 pl-3`}>
+                            <p className={`${paraClass(para, 'bi-zh')} mt-1 border-l-2 border-primary/20 pl-3`}>
                               {renderChineseParagraph(para, translation)}
                             </p>
                           )}
@@ -446,11 +458,11 @@ export const TranslationTab: FunctionComponent = () => {
                       const translation = currentPageText!.translations?.[para.id];
                       return (
                         <div key={para.id} className="mb-4 pb-3 border-b border-border/20 last:border-0">
-                          <p className={`${paraClass(para.role, 'bi-en')} mb-1.5`}>
+                          <p className={`${paraClass(para, 'bi-en')} mb-1.5`}>
                             {renderEnglishParagraph(para)}
                           </p>
                           {translation && (
-                            <p className={`${paraClass(para.role, 'bi-zh')} mt-1 border-l-2 border-primary/20 pl-3`}>
+                            <p className={`${paraClass(para, 'bi-zh')} mt-1 border-l-2 border-primary/20 pl-3`}>
                               {renderChineseParagraph(para, translation)}
                             </p>
                           )}
@@ -472,11 +484,11 @@ export const TranslationTab: FunctionComponent = () => {
           const translation = currentPageText!.translations?.[para.id];
           return (
             <div key={para.id} className="mb-5 pb-4 border-b border-border/20 last:border-0">
-              <p className={`${paraClass(para.role, 'bi-en')} mb-2`}>
+              <p className={`${paraClass(para, 'bi-en')} mb-2`}>
                 {renderEnglishParagraph(para)}
               </p>
               {translation && (
-                <p className={`${paraClass(para.role, 'bi-zh')} mt-1 border-l-2 border-primary/20 pl-3`}>
+                <p className={`${paraClass(para, 'bi-zh')} mt-1 border-l-2 border-primary/20 pl-3`}>
                   {renderChineseParagraph(para, translation)}
                 </p>
               )}

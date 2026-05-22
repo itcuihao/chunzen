@@ -91,7 +91,7 @@ async function renderCurrentPage() {
   vscode.postMessage({
     type: 'page-text-loaded',
     pageNumber: currentPage,
-    paragraphs: newParagraphs.map(p => ({ id: p.id, text: p.text, section: p.section, sentences: p.sentences, fontSize: Math.round(p.fontSize / scale * 10) / 10 })),
+    paragraphs: newParagraphs.map(p => ({ id: p.id, text: p.text, section: p.section, sentences: p.sentences, fontSize: Math.round(p.fontSize / scale * 10) / 10, bold: p.bold, blockType: p.blockType })),
     columnsCount,
     translations
   });

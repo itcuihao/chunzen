@@ -22,6 +22,8 @@ export interface Paragraph {
   fontSize: number;
   section: 'header' | 'left' | 'right' | 'footer' | 'full';
   sentences?: Array<{ id: string; text: string }>;
+  bold?: boolean;
+  blockType?: BlockType;
 }
 
 interface ColLayoutItem {
@@ -30,6 +32,7 @@ interface ColLayoutItem {
   y: number;
   width: number;
   height: number;
+  fontName: string;
 }
 
 interface LineSegment {
@@ -43,11 +46,27 @@ interface LineSegment {
   section: 'header' | 'left' | 'right' | 'footer' | 'full';
 }
 
+export type BlockType =
+  | 'title'
+  | 'authors'
+  | 'heading'
+  | 'body'
+  | 'table'
+  | 'figure-caption'
+  | 'reference'
+  | 'unknown';
+
+interface StructuralBlock {
+  type: BlockType;
+  segments: LineSegment[];
+}
+
 interface LogicalParagraph {
   id: string;
   text: string;
   items: ColLayoutItem[];
   section: 'header' | 'left' | 'right' | 'footer' | 'full';
+  blockType?: BlockType;
 }
 
 interface SentenceItem {
@@ -92,7 +111,8 @@ export function buildTextLayer(
       x: tx[4],
       y: tx[5],
       width: w,
-      height: item.height * viewport.scale
+      height: item.height * viewport.scale,
+      fontName: item.fontName || ''
     });
   }
 
@@ -354,60 +374,52 @@ export function buildTextLayer(
     }
   }
 
-  // 8. Merge segments to paragraphs
-  const logicalParas: LogicalParagraph[] = [];
-  let paraBuf = '';
-  let paraItems: ColLayoutItem[] = [];
-  let paraId = 0;
-  let currentColumnIndex: number | null = null;
-  let currentSection: 'header' | 'left' | 'right' | 'footer' | 'full' | null = null;
-
-  function flush() {
-    if (!paraBuf.trim()) { paraBuf = ''; paraItems = []; return; }
-    logicalParas.push({
-      id: `p-${paraId++}`,
-      text: paraBuf.trim(),
-      items: [...paraItems],
-      section: currentSection || 'left'
-    });
-    paraBuf = '';
-    paraItems = [];
-  }
-
-  for (let i = 0; i < orderedSegments.length; i++) {
-    const seg = orderedSegments[i];
-    const segText = seg.str;
-    if (!segText) continue;
-
-    const nextSeg = orderedSegments[i + 1];
-    const isNewColumn = currentColumnIndex !== null && seg.columnIndex !== currentColumnIndex;
-    const isNewSection = currentSection !== null && seg.section !== currentSection;
-
-    if (isNewColumn || isNewSection) {
-      flush();
+  // 7b. Compute column left margins for indent detection
+  const columnMargins = new Map<number, { left: number; width: number }>();
+  for (const seg of orderedSegments) {
+    if (seg.columnIndex < 0) continue;
+    const key = seg.columnIndex;
+    if (!columnMargins.has(key)) {
+      columnMargins.set(key, { left: seg.x, width: seg.width });
+    } else {
+      const entry = columnMargins.get(key)!;
+      entry.left = Math.min(entry.left, seg.x);
     }
-
-    currentColumnIndex = seg.columnIndex;
-    currentSection = seg.section;
-    paraBuf += (paraBuf ? ' ' : '') + segText;
-    paraItems.push(...seg.items);
-
-    const lineH = seg.height;
-    const thisY = seg.y;
-    const nextY = nextSeg?.y;
-    const yGap = nextY ? (nextY - thisY) : Infinity;
-
-    const endsWithPunct = /[.!?]$/.test(segText);
-    const lineW = seg.width;
-    const isParaEnd = !nextSeg ||
-                      nextSeg.columnIndex !== currentColumnIndex ||
-                      nextSeg.section !== currentSection ||
-                      yGap > lineH * 2.3 ||
-                      (endsWithPunct && lineW < 180);
-
-    if (isParaEnd) flush();
   }
-  flush();
+
+  // 8. Two-pass: detect structural blocks, then segment into paragraphs
+  const blocks = detectStructuralBlocks(orderedSegments, columnMargins, pageWidth);
+
+  const logicalParas: LogicalParagraph[] = [];
+  let paraId = 0;
+  for (const block of blocks) {
+    const result = segmentBlockIntoParas(block, columnMargins, pageWidth, paraId);
+    for (const para of result.paras) {
+      para.blockType = block.type;
+      logicalParas.push(para);
+    }
+    paraId = result.nextParaId;
+  }
+
+  // 8b. Post-pass: classify title/authors from first body blocks
+  const fontSizes = logicalParas.map(p => p.items.reduce((s, it) => s + it.height, 0) / (p.items.length || 1));
+  const sortedSizes = [...fontSizes].filter(s => s > 0).sort((a, b) => a - b);
+  const medianSize = sortedSizes.length > 0 ? sortedSizes[Math.floor(sortedSizes.length / 2)] : 0;
+
+  if (logicalParas.length > 0 && logicalParas[0].blockType === 'body') {
+    const firstSize = fontSizes[0];
+    if (firstSize > medianSize * 1.5) {
+      logicalParas[0].blockType = 'title';
+      // Check if next paragraph is authors (small text, contains commas/affiliations)
+      if (logicalParas.length > 1 && logicalParas[1].blockType === 'body') {
+        const secondSize = fontSizes[1];
+        const secondText = logicalParas[1].text;
+        if (secondSize < medianSize * 1.1 && (secondText.includes(',') || secondText.includes('@') || secondText.includes('University'))) {
+          logicalParas[1].blockType = 'authors';
+        }
+      }
+    }
+  }
 
   // 9. Render spans and compute paragraph bounding boxes
   const sentenceMap = new Map<string, Sentence>();
@@ -428,6 +440,13 @@ export function buildTextLayer(
     const width = Math.max(...xMaxs) - x;
     const height = Math.max(...yMaxs) - y;
     const fontSize = para.items.reduce((sum, it) => sum + it.height, 0) / para.items.length;
+
+    // Detect bold: check if majority of items (by text length) use a bold font
+    const boldScore = para.items.reduce((score, it) => {
+      return isBoldFont(it.fontName) ? score + it.str.length : score;
+    }, 0);
+    const totalLen = para.items.reduce((sum, it) => sum + it.str.length, 0);
+    const isBold = totalLen > 0 && (boldScore / totalLen) > 0.5;
 
     const sentsList: Array<{ id: string; text: string }> = [];
 
@@ -463,7 +482,9 @@ export function buildTextLayer(
       height,
       fontSize,
       section: para.section,
-      sentences: sentsList
+      sentences: sentsList,
+      bold: isBold || undefined,
+      blockType: para.blockType,
     });
   }
 
@@ -475,7 +496,337 @@ export function buildTextLayer(
   };
 }
 
-// ── Helper functions ──
+// ── Block detection predicates ──
+
+function isHeadingSegment(seg: LineSegment): boolean {
+  if (seg.items.length === 0) return false;
+  if (!isBoldFont(seg.items[0].fontName)) return false;
+  const text = seg.str.trim();
+  if (text.length > 80) return false;
+  return true;
+}
+
+function isFigureCaptionSegment(seg: LineSegment): boolean {
+  const text = seg.str.trim();
+  return /^(Figure|Fig\.?|Table)\s+\d/i.test(text);
+}
+
+function isReferenceStart(str: string): boolean {
+  const text = str.trim();
+  if (/^\[\d+\]/.test(text)) return true;
+  if (/^\[\d+[,;]/.test(text)) return true;
+  if (/^\d{1,3}\.\s/.test(text) && text.length > 10) return true;
+  if (/^[A-Z][a-z]+\s+[A-Z]/.test(text) && /\b(19|20)\d{2}\b/.test(text)) return true;
+  return false;
+}
+
+function isTableSegmentRow(segments: LineSegment[], i: number, colWidth: number): boolean {
+  if (i + 2 >= segments.length) return false;
+  const seg = segments[i];
+  const seg1 = segments[i + 1];
+  const seg2 = segments[i + 2];
+
+  // All three segments must be short (< 65% column width) and in same column
+  if (seg.width > colWidth * 0.65) return false;
+  if (seg1.width > colWidth * 0.65) return false;
+  if (seg2.width > colWidth * 0.65) return false;
+
+  // Tight Y gaps
+  const gap1 = Math.abs(seg1.y - seg.y);
+  const gap2 = Math.abs(seg2.y - seg1.y);
+  const lineH = Math.max(seg.height, 1);
+  if (gap1 > lineH * 2.0 || gap2 > lineH * 2.0) return false;
+
+  // At least 2 of 3 contain numeric data
+  let numericCount = 0;
+  for (const s of [seg, seg1, seg2]) {
+    if (/\d/.test(s.str)) numericCount++;
+  }
+  if (numericCount < 2) return false;
+
+  // Check for vertically aligned x-positions across the three segments (tabular structure)
+  const allItems = [...seg.items, ...seg1.items, ...seg2.items];
+  const xPositions = allItems.map(it => Math.round(it.x / 5) * 5);
+  const uniqueX = new Set(xPositions);
+  if (uniqueX.size >= 3) return true;
+
+  return false;
+}
+
+// ── Pass 1: detect structural blocks ──
+
+function detectStructuralBlocks(
+  segments: LineSegment[],
+  columnMargins: Map<number, { left: number; width: number }>,
+  pageWidth: number
+): StructuralBlock[] {
+  const blocks: StructuralBlock[] = [];
+  let i = 0;
+  let pastReferencesHeading = false;
+
+  while (i < segments.length) {
+    const seg = segments[i];
+    const text = seg.str.trim();
+    if (!text) { i++; continue; }
+
+    // Reference section gate
+    if (isHeadingSegment(seg) && /^(references|bibliography|works?\s+cited)/i.test(text)) {
+      blocks.push({ type: 'heading', segments: [seg] });
+      pastReferencesHeading = true;
+      i++;
+      continue;
+    }
+
+    if (pastReferencesHeading) {
+      const refSegs: LineSegment[] = [];
+      while (i < segments.length) {
+        const cur = segments[i];
+        if (!cur.str.trim()) { i++; continue; }
+        if (isHeadingSegment(cur)) break;
+        if (isFigureCaptionSegment(cur)) break;
+        if (refSegs.length === 0 || isReferenceStart(cur.str) || isContinuationOfReference(cur, refSegs[refSegs.length - 1])) {
+          refSegs.push(cur);
+          i++;
+        } else {
+          break;
+        }
+      }
+      if (refSegs.length > 0) {
+        blocks.push({ type: 'reference', segments: refSegs });
+        continue;
+      }
+    }
+
+    // Figure caption
+    if (isFigureCaptionSegment(seg)) {
+      const captionSegs = [seg];
+      i++;
+      while (i < segments.length) {
+        const next = segments[i];
+        if (!next.str.trim() || isHeadingSegment(next) || isFigureCaptionSegment(next)) break;
+        if (next.columnIndex !== seg.columnIndex && next.columnIndex >= 0) break;
+        captionSegs.push(next);
+        i++;
+      }
+      blocks.push({ type: 'figure-caption', segments: captionSegs });
+      continue;
+    }
+
+    // Heading
+    if (isHeadingSegment(seg)) {
+      blocks.push({ type: 'heading', segments: [seg] });
+      i++;
+      continue;
+    }
+
+    // Table detection (lookahead)
+    const colWidth = columnMargins.get(seg.columnIndex)?.width ?? pageWidth;
+    if (isTableSegmentRow(segments, i, colWidth)) {
+      const tableSegs = [seg];
+      i++;
+      while (i < segments.length && isTableSegmentRow(segments, i, colWidth)) {
+        tableSegs.push(segments[i]);
+        i++;
+      }
+      // Also collect trailing short lines that are part of the table
+      while (i < segments.length) {
+        const next = segments[i];
+        if (!next.str.trim()) break;
+        if (next.width > colWidth * 0.7) break;
+        if (isHeadingSegment(next) || isFigureCaptionSegment(next)) break;
+        // Check Y gap - must be close to previous table row
+        const prev = tableSegs[tableSegs.length - 1];
+        if (Math.abs(next.y - prev.y) > Math.max(prev.height, 1) * 2.5) break;
+        tableSegs.push(next);
+        i++;
+      }
+      blocks.push({ type: 'table', segments: tableSegs });
+      continue;
+    }
+
+    // Body (default)
+    const bodySegs = [seg];
+    i++;
+    while (i < segments.length) {
+      const next = segments[i];
+      if (!next.str.trim()) { i++; continue; }
+      if (isHeadingSegment(next)) break;
+      if (isFigureCaptionSegment(next)) break;
+      const nextColWidth = columnMargins.get(next.columnIndex)?.width ?? pageWidth;
+      if (isTableSegmentRow(segments, i, nextColWidth)) break;
+      if (isHeadingSegment(next) && /^(references|bibliography)/i.test(next.str.trim())) break;
+      bodySegs.push(next);
+      i++;
+    }
+    blocks.push({ type: 'body', segments: bodySegs });
+  }
+
+  return blocks;
+}
+
+function isContinuationOfReference(cur: LineSegment, prev: LineSegment): boolean {
+  if (isReferenceStart(cur.str)) return true;
+  if (cur.columnIndex !== prev.columnIndex) return false;
+  const yGap = Math.abs(cur.y - prev.y);
+  const lineH = Math.max(prev.height, 1);
+  return yGap < lineH * 1.8;
+}
+
+// ── Pass 2: segment blocks into paragraphs ──
+
+function segmentBlockIntoParas(
+  block: StructuralBlock,
+  columnMargins: Map<number, { left: number; width: number }>,
+  pageWidth: number,
+  paraIdStart: number
+): { paras: LogicalParagraph[]; nextParaId: number } {
+  const paras: LogicalParagraph[] = [];
+  let paraId = paraIdStart;
+
+  const flushPara = (text: string, items: ColLayoutItem[], section: 'header' | 'left' | 'right' | 'footer' | 'full') => {
+    if (!text.trim()) return;
+    paras.push({
+      id: `p-${paraId++}`,
+      text: text.trim(),
+      items: [...items],
+      section,
+    });
+  };
+
+  const segs = block.segments.filter(s => s.str.trim());
+
+  switch (block.type) {
+    case 'title':
+    case 'authors':
+    case 'heading':
+    case 'figure-caption': {
+      // Entire block = one paragraph
+      if (segs.length === 0) break;
+      const allText = segs.map(s => s.str).join(' ').trim();
+      const allItems = segs.flatMap(s => s.items);
+      flushPara(allText, allItems, segs[0].section);
+      break;
+    }
+
+    case 'table': {
+      // Each segment row = one paragraph, tab-separated cells
+      for (const seg of segs) {
+        let text = '';
+        for (let j = 0; j < seg.items.length; j++) {
+          if (j > 0) {
+            const prevRight = seg.items[j - 1].x + seg.items[j - 1].width;
+            const gap = seg.items[j].x - prevRight;
+            text += gap > seg.items[j].height * 0.5 ? '\t' : ' ';
+          }
+          text += seg.items[j].str;
+        }
+        flushPara(text, seg.items, seg.section);
+      }
+      break;
+    }
+
+    case 'reference': {
+      // Split by reference entry boundaries
+      let refBuf = '';
+      let refItems: ColLayoutItem[] = [];
+      let refSection: 'header' | 'left' | 'right' | 'footer' | 'full' = 'left';
+
+      for (const seg of segs) {
+        if (isReferenceStart(seg.str) && refBuf.trim()) {
+          flushPara(refBuf, refItems, refSection);
+          refBuf = '';
+          refItems = [];
+        }
+        refBuf += (refBuf ? ' ' : '') + seg.str;
+        refItems.push(...seg.items);
+        refSection = seg.section;
+      }
+      if (refBuf.trim()) flushPara(refBuf, refItems, refSection);
+      break;
+    }
+
+    case 'body':
+    case 'unknown':
+    default: {
+      // Body paragraph heuristics: indent, Y gap, punctuation, font change
+      let paraBuf = '';
+      let paraItems: ColLayoutItem[] = [];
+      let currentColumnIndex: number | null = null;
+      let currentSection: 'header' | 'left' | 'right' | 'footer' | 'full' | null = null;
+
+      const flushBody = () => {
+        if (!paraBuf.trim()) { paraBuf = ''; paraItems = []; return; }
+        paras.push({
+          id: `p-${paraId++}`,
+          text: paraBuf.trim(),
+          items: [...paraItems],
+          section: currentSection || 'left',
+        });
+        paraBuf = '';
+        paraItems = [];
+      };
+
+      for (let si = 0; si < segs.length; si++) {
+        const seg = segs[si];
+        const segText = seg.str;
+        if (!segText) continue;
+
+        const nextSeg = segs[si + 1];
+        const isNewColumn = currentColumnIndex !== null && seg.columnIndex !== currentColumnIndex;
+        const isNewSection = currentSection !== null && seg.section !== currentSection;
+
+        if (isNewColumn || isNewSection) {
+          flushBody();
+        }
+
+        const colMargin = columnMargins.get(nextSeg?.columnIndex ?? -1);
+        const nextHasIndent = nextSeg && colMargin &&
+          nextSeg.columnIndex >= 0 &&
+          nextSeg.x - colMargin.left > seg.height * 1.5;
+
+        const curBold = seg.items.length > 0 && isBoldFont(seg.items[0].fontName);
+        const nextBold = nextSeg && nextSeg.items.length > 0 && isBoldFont(nextSeg.items[0].fontName);
+        const fontChanged = nextSeg && curBold !== nextBold;
+
+        currentColumnIndex = seg.columnIndex;
+        currentSection = seg.section;
+        paraBuf += (paraBuf ? ' ' : '') + segText;
+        paraItems.push(...seg.items);
+
+        const lineH = seg.height;
+        const thisY = seg.y;
+        const nextY = nextSeg?.y;
+        const yGap = nextY ? (nextY - thisY) : Infinity;
+
+        const endsWithPunct = /[.!?]$/.test(segText);
+        const colWidth = columnMargins.get(seg.columnIndex)?.width || pageWidth;
+        const isNarrowLine = seg.width < colWidth * 0.75;
+
+        const isParaEnd = !nextSeg ||
+                          nextSeg.columnIndex !== currentColumnIndex ||
+                          nextSeg.section !== currentSection ||
+                          yGap > lineH * 2.0 ||
+                          (endsWithPunct && isNarrowLine) ||
+                          (endsWithPunct && nextHasIndent) ||
+                          fontChanged;
+
+        if (isParaEnd) flushBody();
+      }
+      flushBody();
+      break;
+    }
+  }
+
+  return { paras, nextParaId: paraId };
+}
+
+// ── Existing Helper functions ──
+
+function isBoldFont(fontName: string): boolean {
+  if (!fontName) return false;
+  const lower = fontName.toLowerCase();
+  return /bold|heavy|black|demi|extrabold|semibold|medium/i.test(lower);
+}
 
 function createSegment(lineItems: ColLayoutItem[], colIndex: number): LineSegment {
   const xs = lineItems.map(it => it.x);
