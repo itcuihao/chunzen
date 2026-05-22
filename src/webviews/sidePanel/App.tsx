@@ -27,6 +27,7 @@ export const App: FunctionComponent = () => {
   const setEngineConfigs = useStore((state) => state.setEngineConfigs);
   const setJournalSource = useStore((state) => state.setJournalSource);
   const setCacheMaxSize = useStore((state) => state.setCacheMaxSize);
+  const setLayoutConfig = useStore((state) => state.setLayoutConfig);
 
   const handleInitState = useCallback((msg: InitStateMessage) => {
     setGlossaryTerms(msg.glossary);
@@ -36,6 +37,7 @@ export const App: FunctionComponent = () => {
     setEngineConfigs(msg.engineConfigs);
     setJournalSource(msg.journalSource);
     setCacheMaxSize(msg.cacheMaxSize);
+    setLayoutConfig(msg.layoutConfig);
   }, [
     setGlossaryTerms,
     setTranslationHistory,
@@ -43,7 +45,8 @@ export const App: FunctionComponent = () => {
     setEnginePriority,
     setEngineConfigs,
     setJournalSource,
-    setCacheMaxSize
+    setCacheMaxSize,
+    setLayoutConfig
   ]);
 
   const handleMessage = useCallback((msg: ExtToPanelMessage) => {

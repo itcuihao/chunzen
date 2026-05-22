@@ -6,6 +6,7 @@ import { TranslationService } from '../services/translationService';
 import { GlossaryService } from '../services/glossaryService';
 import { HistoryService } from '../services/historyService';
 import { ConfigService } from '../services/configService';
+import { LayoutConfig } from '../types/config';
 
 export class SidePanelProvider {
   public static readonly viewType = 'chunzen.sidePanel';
@@ -15,14 +16,16 @@ export class SidePanelProvider {
   private glossaryService: GlossaryService;
   private historyService: HistoryService;
   private configService: ConfigService;
+  private layoutTerminal: vscode.Terminal | undefined;
 
   public onTranslatePageRequested?: (pageNumber: number, paragraphs: Array<{ id: string; text: string }>) => Promise<void>;
   public onRefreshPageTextRequested?: () => Promise<void>;
   public onPanelHoverRequested?: (id?: string) => Promise<void>;
+  public onLayoutConfigChanged?: (layoutConfig: LayoutConfig) => Promise<void> | void;
 
   private lastPageText: {
     pageNumber: number;
-    paragraphs: Array<{ id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' | 'full'; fontSize?: number; bold?: boolean; blockType?: string }>;
+    paragraphs: Array<{ id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' | 'full'; columnIndex?: number; fontSize?: number; bold?: boolean; blockType?: string }>;
     columnsCount: number;
     translations?: Array<{ id: string; translatedText: string }>;
   } | null = null;
@@ -39,6 +42,12 @@ export class SidePanelProvider {
     this.glossaryService = glossaryService;
     this.historyService = historyService;
     this.configService = configService;
+
+    vscode.window.onDidCloseTerminal((terminal) => {
+      if (this.layoutTerminal === terminal) {
+        this.layoutTerminal = undefined;
+      }
+    }, undefined, this.context.subscriptions);
   }
 
   show(): void {
@@ -98,6 +107,18 @@ export class SidePanelProvider {
               engines: this.configService.getEngineStatuses()
             });
             break;
+          case 'save-general-settings':
+            await this.configService.saveGeneralSettings(msg.settings);
+            this.sendInitState();
+            if (msg.settings.layout && typeof msg.settings.layout.useModel === 'boolean') {
+              if (this.configService.getLayoutConfig().useModel) {
+                await this.ensureLayoutEndpointStarted();
+              } else {
+                this.stopLayoutEndpoint();
+              }
+            }
+            await this.onLayoutConfigChanged?.(this.configService.getLayoutConfig());
+            break;
           case 'import-glossary':
             vscode.window.showInformationMessage('术语导入功能即将推出');
             break;
@@ -150,7 +171,7 @@ export class SidePanelProvider {
 
   syncPageText(
     pageNumber: number,
-    paragraphs: Array<{ id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' | 'full'; fontSize?: number }>,
+    paragraphs: Array<{ id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' | 'full'; columnIndex?: number; fontSize?: number }>,
     columnsCount: number,
     translations?: Array<{ id: string; translatedText: string }>
   ): void {
@@ -196,7 +217,8 @@ export class SidePanelProvider {
       priority: this.configService.getTranslationConfig().priority,
       engineConfigs: this.configService.getEngineConfigs(),
       journalSource: { type: 'letpub' },
-      cacheMaxSize: this.configService.getCacheConfig().maxSize
+      cacheMaxSize: this.configService.getCacheConfig().maxSize,
+      layoutConfig: this.configService.getLayoutConfig()
     });
     if (this.lastPageText) {
       this.postMessage({
@@ -270,6 +292,32 @@ export class SidePanelProvider {
       language: format === 'markdown' ? 'markdown' : 'plaintext'
     });
     await vscode.window.showTextDocument(doc);
+  }
+
+  private async ensureLayoutEndpointStarted(): Promise<void> {
+    if (this.layoutTerminal) {
+      this.layoutTerminal.show(true);
+      return;
+    }
+    const scriptUri = vscode.Uri.joinPath(this.context.extensionUri, 'scripts', 'start_layout_endpoint.sh');
+    const scriptPath = scriptUri.fsPath;
+    const normalizedPath = scriptPath.replace(/\\/g, '/');
+    const workspaceCwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    const terminal = vscode.window.createTerminal({
+      name: '春蝉版面服务',
+      cwd: workspaceCwd
+    });
+    this.layoutTerminal = terminal;
+    terminal.show(true);
+    terminal.sendText(`bash "${normalizedPath}"`, true);
+    vscode.window.showInformationMessage('已启动本地版面服务。首次安装依赖可能需要几分钟。');
+  }
+
+  private stopLayoutEndpoint(): void {
+    if (!this.layoutTerminal) return;
+    this.layoutTerminal.dispose();
+    this.layoutTerminal = undefined;
+    vscode.window.showInformationMessage('已停止本地版面服务。');
   }
 
   private getHtml(webview: vscode.Webview): string {

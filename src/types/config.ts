@@ -16,6 +16,13 @@ export interface JournalSource {
 }
 
 export interface GeneralSettings {
-  cacheMaxSize: number;
-  journalEnabled: boolean;
+  cacheMaxSize?: number;
+  journalEnabled?: boolean;
+  layout?: LayoutConfig;
+}
+
+export interface LayoutConfig {
+  useModel: boolean;
+  modelEndpoint: string;
+  timeoutMs: number;
 }

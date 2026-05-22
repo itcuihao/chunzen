@@ -30,7 +30,8 @@ export function activate(context: vscode.ExtensionContext) {
     translationService,
     journalService,
     sidePanel,
-    historyService
+    historyService,
+    configService
   );
 
   sidePanel.onTranslatePageRequested = async (pageNumber, paragraphs) => {
@@ -41,6 +42,10 @@ export function activate(context: vscode.ExtensionContext) {
   };
   sidePanel.onPanelHoverRequested = async (id) => {
     pdfProvider.hoverActivePageElement(id);
+  };
+  sidePanel.onLayoutConfigChanged = async () => {
+    pdfProvider.syncLayoutConfigToAllViewers();
+    await pdfProvider.refreshActivePageText();
   };
 
   context.subscriptions.push(
