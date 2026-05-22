@@ -28,6 +28,8 @@ interface PanelState {
   // UI State
   activeTab: TabId;
   setActiveTab: (tab: TabId) => void;
+  activeSentenceId: string | null;
+  setActiveSentenceId: (id: string | null) => void;
 
   // Translation State
   currentTranslation: {
@@ -45,13 +47,13 @@ interface PanelState {
   setTranslationError: (err: string) => void;
   currentPageText: {
     pageNumber: number;
-    paragraphs: Array<{ id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' }>;
+    paragraphs: Array<{ id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' | 'full' }>;
     columnsCount: number;
     translations?: Record<string, string>;
   } | null;
   setCurrentPageText: (val: {
     pageNumber: number;
-    paragraphs: Array<{ id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' }>;
+    paragraphs: Array<{ id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' | 'full' }>;
     columnsCount: number;
     translations?: Record<string, string>;
   } | null) => void;
@@ -89,6 +91,8 @@ export const useStore = create<PanelState>((set) => ({
   // UI State initial
   activeTab: 'translation',
   setActiveTab: (activeTab) => set({ activeTab }),
+  activeSentenceId: null,
+  setActiveSentenceId: (activeSentenceId) => set({ activeSentenceId }),
 
   // Translation State initial
   currentTranslation: null,

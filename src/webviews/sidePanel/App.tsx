@@ -117,6 +117,11 @@ export const App: FunctionComponent = () => {
         setIsTranslating(false);
         break;
       }
+      case 'pdf-hover': {
+        console.log('[Side Panel Webview] received pdf-hover with id:', msg.id);
+        useStore.setState({ activeSentenceId: msg.id || null });
+        break;
+      }
       case 'sync-page-translation': {
         const transRecord: Record<string, string> = {};
         for (const item of msg.translations) {

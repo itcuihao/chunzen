@@ -39,6 +39,9 @@ export function activate(context: vscode.ExtensionContext) {
   sidePanel.onRefreshPageTextRequested = async () => {
     await pdfProvider.refreshActivePageText();
   };
+  sidePanel.onPanelHoverRequested = async (id) => {
+    pdfProvider.hoverActivePageElement(id);
+  };
 
   context.subscriptions.push(
     vscode.window.registerCustomEditorProvider(

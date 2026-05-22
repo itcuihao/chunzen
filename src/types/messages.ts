@@ -37,10 +37,20 @@ export interface TranslatePageParagraphsMessage {
   paragraphs: Array<{ id: string; text: string }>;
 }
 
+export interface PdfHoverMessage {
+  type: 'pdf-hover';
+  id?: string;
+}
+
 export interface PageTextLoadedMessage {
   type: 'page-text-loaded';
   pageNumber: number;
-  paragraphs: Array<{ id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' }>;
+  paragraphs: Array<{
+    id: string;
+    text: string;
+    section?: 'header' | 'left' | 'right' | 'footer' | 'full';
+    sentences?: Array<{ id: string; text: string }>;
+  }>;
   columnsCount: number;
   translations?: Array<{ id: string; translatedText: string }>;
 }
@@ -52,7 +62,8 @@ export type PdfViewerToExtMessage =
   | TextSelectMessage
   | DoiFoundMessage
   | TranslatePageParagraphsMessage
-  | PageTextLoadedMessage;
+  | PageTextLoadedMessage
+  | PdfHoverMessage;
 
 // ── Extension → Side Panel ──
 
@@ -110,7 +121,12 @@ export interface HistorySyncMessage {
 export interface SyncPageTextMessage {
   type: 'sync-page-text';
   pageNumber: number;
-  paragraphs: Array<{ id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' }>;
+  paragraphs: Array<{
+    id: string;
+    text: string;
+    section?: 'header' | 'left' | 'right' | 'footer' | 'full';
+    sentences?: Array<{ id: string; text: string }>;
+  }>;
   columnsCount: number;
   translations?: Array<{ id: string; translatedText: string }>;
 }
@@ -132,6 +148,7 @@ export type ExtToPanelMessage =
   | HistorySyncMessage
   | SyncPageTextMessage
   | SyncPageTranslationMessage
+  | PdfHoverMessage
   | { type: 'loading'; message: string }
   | { type: 'error'; message: string }
   | { type: 'clear' };
@@ -193,6 +210,11 @@ export interface TranslatePageMessage {
   paragraphs: Array<{ id: string; text: string }>;
 }
 
+export interface PanelHoverMessage {
+  type: 'panel-hover';
+  id?: string;
+}
+
 export type PanelToExtMessage =
   | SaveEngineConfigMessage
   | TestEngineMessage
@@ -204,6 +226,7 @@ export type PanelToExtMessage =
   | ImportGlossaryMessage
   | ExportTranslationsMessage
   | TranslatePageMessage
+  | PanelHoverMessage
   | { type: 'clear-cache' }
   | { type: 'clear-history' }
   | { type: 'request-state' }
