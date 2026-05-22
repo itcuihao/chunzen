@@ -6,6 +6,11 @@ declare const pdfjsLib: {
   Util: { transform(transform: number[], viewportTransform: number[]): number[] };
 };
 
+// 模块级变量：当前页正文字体（由 buildTextLayer 每次渲染时更新）
+let _bodyFont = '';
+let _fontCharCountMap = new Map<string, number>();
+let _totalFontChars = 0;
+
 export interface Sentence {
   id: string;
   text: string;
@@ -54,6 +59,7 @@ interface LineSegment {
 }
 
 export type BlockType =
+  | 'header'
   | 'title'
   | 'authors'
   | 'heading'
@@ -156,6 +162,9 @@ export function buildTextLayer(
     const tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
     if (!tx || isNaN(tx[4]) || isNaN(tx[5])) continue;
 
+    // Filter out items that are strictly off-screen to prevent pageWidth/midX contamination
+    if (tx[4] < 0 || tx[4] > viewport.width) continue;
+
     // Filter math symbols and LaTeX commands
     if (isMathArtifact(item.str)) continue;
 
@@ -225,11 +234,23 @@ export function buildTextLayer(
     return { sentences: new Map(), spanToSentence: new Map(), paragraphs: [], columnsCount: 1 };
   }
   const xs = bodyItems.map(it => it.x);
-  const xMaxs = bodyItems.map(it => it.x + it.width);
   const minX = Math.min(...xs);
-  const maxX = Math.max(...xMaxs);
-  const pageWidth = maxX - minX;
-  const midX = minX + pageWidth / 2;
+  // Use viewport.width for page width/center to avoid stamp contamination
+  const pageWidth = viewport.width - 2 * minX;
+  const midX = viewport.width / 2;
+
+  // Detect start of body (Abstract or Introduction)
+  let firstBodyY = 0;
+  for (const line of filteredRawLines) {
+    const lineStr = line.map(it => it.str).join(' ').trim();
+    if (/\b(abstract|introduction)\b/i.test(lineStr)) {
+      firstBodyY = line[0].y;
+      break;
+    }
+  }
+  if (firstBodyY === 0) {
+    firstBodyY = viewport.height * 0.45;
+  }
 
   // 4. Split lines into segments & count splits (Two-pass analysis for hybrid layouts)
   let splitCount = 0;
@@ -240,6 +261,7 @@ export function buildTextLayer(
   // Pass 1: Find split count and Y-coordinates of physically split lines
   for (const line of filteredRawLines) {
     if (line.length === 0) continue;
+    if (line[0].y < firstBodyY - 5) continue;
     let hasSplit = false;
     for (let j = 0; j < line.length - 1; j++) {
       const item1 = line[j];
@@ -293,7 +315,7 @@ export function buildTextLayer(
   let sidebarGutterX = 0;
   {
     // Find items that cluster on the right side (x-center > 60% of page) and are narrow.
-    const flatItems = filteredRawLines.flat();
+    const flatItems = filteredRawLines.filter(line => line[0].y >= firstBodyY - 5).flat();
     const narrowRight = flatItems.filter(it => {
       const center = it.x + it.width / 2;
       return center > minX + pageWidth * 0.55 && it.width < pageWidth * 0.45;
@@ -302,7 +324,9 @@ export function buildTextLayer(
       const center = it.x + it.width / 2;
       return center < minX + pageWidth * 0.55 && it.width < pageWidth * 0.7;
     });
-    const hasSidebarHeading = filteredRawLines.some(line => /^(sections?|contents?)$/i.test(composeLineText(line)));
+    const hasSidebarHeading = filteredRawLines
+      .filter(line => line[0].y >= firstBodyY - 5)
+      .some(line => /^(sections?|contents?)$/i.test(composeLineText(line)));
 
     if (narrowRight.length >= 3 && narrowLeft.length > narrowRight.length) {
       // Find the gap between left and right clusters.
@@ -365,7 +389,7 @@ export function buildTextLayer(
       detectedColumnsCount = baselineDetectedColumnsCount;
     }
   }
-  // Guard rail: current production parser only supports reliable single/double-column reconstruction.
+    // Guard rail: current production parser only supports reliable single/double-column reconstruction.
   // If model returns multiple gutters, keep the strongest one to avoid pseudo-3-column fragmentation.
   if (!hasSidebar && effectiveGutters.length > 1) {
     const scored = effectiveGutters.map((g) => ({
@@ -383,9 +407,12 @@ export function buildTextLayer(
     const lineLeft = line[0].x;
     const lineRight = line[line.length - 1].x + line[line.length - 1].width;
     const rawLineWidth = lineRight - lineLeft;
+    const lineY = line[0].y;
 
     const splitIndices = new Set<number>();
-    if (effectiveGutters.length > 0 && (!hasSidebar || rawLineWidth < pageWidth * 0.72)) {
+    
+    // Only allow splits and column assignments below body separator (firstBodyY - 5)
+    if (lineY >= firstBodyY - 5 && effectiveGutters.length > 0 && (!hasSidebar || rawLineWidth < pageWidth * 0.72)) {
       // Prefer splitting around detected gutters so same-Y multi-column content doesn't get merged.
       for (let j = 0; j < line.length - 1; j++) {
         const item1 = line[j];
@@ -404,7 +431,7 @@ export function buildTextLayer(
       }
     }
 
-    if (splitIndices.size === 0) {
+    if (lineY >= firstBodyY - 5 && splitIndices.size === 0) {
       for (let j = 0; j < line.length - 1; j++) {
         const item1 = line[j];
         const item2 = line[j + 1];
@@ -426,14 +453,14 @@ export function buildTextLayer(
       for (const splitIndex of sortedSplitIndices) {
         const part = line.slice(start, splitIndex + 1);
         if (part.length > 0) {
-          const partSeg = createSegment(part, estimateColumnIndex(part, effectiveGutters, pageWidth));
+          const partSeg = createSegment(part, lineY >= firstBodyY - 5 ? estimateColumnIndex(part, effectiveGutters, pageWidth) : 0);
           segments.push(partSeg);
         }
         start = splitIndex + 1;
       }
       const tail = line.slice(start);
       if (tail.length > 0) {
-        const tailSeg = createSegment(tail, estimateColumnIndex(tail, effectiveGutters, pageWidth));
+        const tailSeg = createSegment(tail, lineY >= firstBodyY - 5 ? estimateColumnIndex(tail, effectiveGutters, pageWidth) : 0);
         segments.push(tailSeg);
       }
     } else {
@@ -446,24 +473,25 @@ export function buildTextLayer(
       const lineCenter = (lineLeft + lineRight) / 2;
 
       let colIndex = -1;
-      if (hasSidebar) {
-        // Sidebar layout: assign by x-position relative to detected gutter.
-        // Only assign to col 1 if the line is to the right of the gutter and narrow.
-        if (lineLeft >= sidebarGutterX - 5 && lineWidth < pageWidth * 0.45) {
-          colIndex = 1; // Sidebar (right)
-        } else if (lineRight <= sidebarGutterX + 5 || lineWidth >= pageWidth * 0.65) {
-          colIndex = 0; // Main text (left) or full-width
+      if (lineY >= firstBodyY - 5) {
+        if (hasSidebar) {
+          // Sidebar layout: assign by x-position relative to detected gutter.
+          // Only assign to col 1 if the line is to the right of the gutter and narrow.
+          if (lineLeft >= sidebarGutterX - 5 && lineWidth < pageWidth * 0.45) {
+            colIndex = 1; // Sidebar (right)
+          } else if (lineRight <= sidebarGutterX + 5 || lineWidth >= pageWidth * 0.65) {
+            colIndex = 0; // Main text (left) or full-width
+          }
+          // lineWidth between 0.45 and 0.65 of pageWidth stays colIndex = -1 (full-width)
+        } else if (isDoubleColumn) {
+          // In a dual-column layout, restrict column 0/1 to lines inside a DoubleColumnZone.
+          const inDoubleColumnZone = expandedZones.some(zone => lineY >= zone.minY && lineY <= zone.maxY);
+          if (inDoubleColumnZone && lineWidth < pageWidth * 0.55) {
+            colIndex = lineCenter < midX ? 0 : 1;
+          }
+        } else if (effectiveGutters.length > 0 && lineWidth < pageWidth * 0.82) {
+          colIndex = estimateColumnIndex(line, effectiveGutters, pageWidth);
         }
-        // lineWidth between 0.45 and 0.65 of pageWidth stays colIndex = -1 (full-width)
-      } else if (isDoubleColumn) {
-        // In a dual-column layout, restrict column 0/1 to lines inside a DoubleColumnZone.
-        const lineY = line[0].y;
-        const inDoubleColumnZone = expandedZones.some(zone => lineY >= zone.minY && lineY <= zone.maxY);
-        if (inDoubleColumnZone && lineWidth < pageWidth * 0.55) {
-          colIndex = lineCenter < midX ? 0 : 1;
-        }
-      } else if (effectiveGutters.length > 0 && lineWidth < pageWidth * 0.82) {
-        colIndex = estimateColumnIndex(line, effectiveGutters, pageWidth);
       }
       segments.push(createSegment(line, colIndex));
     }
@@ -738,7 +766,8 @@ export function buildTextLayer(
             expandedZones,
             hasSidebar,
             sidebarGutterX,
-            effectiveGutters
+            effectiveGutters,
+            firstBodyY
           );
           mergedLogicalParas.push(para);
         }
@@ -766,7 +795,8 @@ export function buildTextLayer(
               expandedZones,
               hasSidebar,
               sidebarGutterX,
-              effectiveGutters
+              effectiveGutters,
+              firstBodyY
             );
             mergedLogicalParas.push(para);
           }
@@ -801,22 +831,97 @@ export function buildTextLayer(
     mergedLogicalParas = mergeOverSplitBodyParagraphs(logicalParas);
   }
 
-  // 8b. Post-pass: classify title/authors from first body blocks
-  const fontSizes = mergedLogicalParas.map(p => p.items.reduce((s, it) => s + it.height, 0) / (p.items.length || 1));
-  const sortedSizes = [...fontSizes].filter(s => s > 0).sort((a, b) => a - b);
-  const medianSize = sortedSizes.length > 0 ? sortedSizes[Math.floor(sortedSizes.length / 2)] : 0;
+  // 8b. Post-pass: classify title/authors/headers/abstracts from top region (y < firstBodyY - 5)
+  const topParas = mergedLogicalParas.filter(p => {
+    const avgY = p.items.reduce((sum, it) => sum + it.y, 0) / (p.items.length || 1);
+    return avgY < firstBodyY - 5;
+  });
 
-  if (mergedLogicalParas.length > 0 && mergedLogicalParas[0].blockType === 'body') {
-    const firstSize = fontSizes[0];
-    if (firstSize > medianSize * 1.5) {
-      mergedLogicalParas[0].blockType = 'title';
-      // Check if next paragraph is authors (small text, contains commas/affiliations)
-      if (mergedLogicalParas.length > 1 && mergedLogicalParas[1].blockType === 'body') {
-        const secondSize = fontSizes[1];
-        const secondText = mergedLogicalParas[1].text;
-        if (secondSize < medianSize * 1.1 && (secondText.includes(',') || secondText.includes('@') || secondText.includes('University'))) {
-          mergedLogicalParas[1].blockType = 'authors';
+  let titlePara: LogicalParagraph | null = null;
+  let maxFontSize = 0;
+
+  for (const p of topParas) {
+    const text = p.text.trim();
+    const lowerText = text.toLowerCase();
+    const isHeaderOrMetadataCandidate =
+      lowerText.includes('sciencedirect') ||
+      lowerText.includes('article') ||
+      lowerText.includes('consensus statement') ||
+      lowerText.includes('check for updates') ||
+      lowerText.includes('downloaded') ||
+      lowerText.includes('http') ||
+      lowerText.includes('volume') ||
+      lowerText.includes('issue') ||
+      lowerText.includes('copyright') ||
+      lowerText.includes('©') ||
+      lowerText.includes('issn');
+
+    if (isHeaderOrMetadataCandidate) {
+      continue;
+    }
+
+    const fontSize = p.items.reduce((sum, it) => sum + it.height, 0) / (p.items.length || 1);
+    if (fontSize > maxFontSize) {
+      maxFontSize = fontSize;
+      titlePara = p;
+    }
+  }
+
+  const titleY = titlePara ? titlePara.items.reduce((sum, it) => sum + it.y, 0) / (titlePara.items.length || 1) : 0;
+
+  for (const p of mergedLogicalParas) {
+    const avgY = p.items.reduce((sum, it) => sum + it.y, 0) / (p.items.length || 1);
+    if (avgY < firstBodyY - 5) {
+      if (p === titlePara) {
+        p.blockType = 'title';
+      } else if (avgY < titleY) {
+        p.blockType = 'header';
+      } else {
+        const text = p.text.trim();
+        const lowerText = text.toLowerCase();
+
+        // Check if it is metadata/download stamp
+        const isMetadata =
+          lowerText.includes('downloaded') ||
+          lowerText.includes('http') ||
+          lowerText.includes('doi:') ||
+          lowerText.includes('doi.org') ||
+          lowerText.includes('issn') ||
+          lowerText.includes('published by') ||
+          lowerText.includes('elsevier') ||
+          lowerText.includes('springer') ||
+          lowerText.includes('nature') ||
+          lowerText.includes('volume') ||
+          lowerText.includes('issue');
+
+        // Check if it is affiliation / footnote
+        const isAffiliationOrFootnote =
+          lowerText.includes('university') ||
+          lowerText.includes('department of') ||
+          lowerText.includes('institute') ||
+          lowerText.includes('school of') ||
+          lowerText.includes('hospital') ||
+          lowerText.includes('laboratory') ||
+          lowerText.includes('correspondence to') ||
+          lowerText.includes('e-mail:') ||
+          lowerText.includes('email:') ||
+          lowerText.includes('@') ||
+          lowerText.includes('contributed equally') ||
+          lowerText.includes('creative commons') ||
+          lowerText.includes('license');
+
+        if (isMetadata) {
+          p.blockType = 'header';
+        } else if (isAffiliationOrFootnote || isLikelyAuthorList(text)) {
+          p.blockType = 'authors';
+        } else {
+          // Subtitle or Abstract/Summary in the top region
+          p.blockType = 'body';
         }
+      }
+    } else {
+      if (!p.blockType || p.blockType === 'unknown' || p.blockType === 'body') {
+        p.blockType = 'body';
       }
     }
   }
@@ -829,6 +934,11 @@ export function buildTextLayer(
   let sentenceId = 0;
   for (const para of mergedLogicalParas) {
     if (!para.items.length) continue;
+
+    // Filter out paragraphs that should be skipped for translation/overlays
+    if (shouldSkipParagraphForTranslation(para, viewport.height, firstBodyY, hasSidebar)) {
+      continue;
+    }
 
     // Compute bounding box
     const xs = para.items.map(it => it.x);
@@ -1340,11 +1450,6 @@ function segmentBlockIntoParas(
 
 // ── Existing Helper functions ──
 
-// 模块级变量：当前页正文字体（由 buildTextLayer 每次渲染时更新）
-let _bodyFont = '';
-let _fontCharCountMap = new Map<string, number>();
-let _totalFontChars = 0;
-
 /**
  * 判断某字体是否为「非正文」（即可能是粗体/标题）
  * 策略：
@@ -1657,6 +1762,16 @@ function shouldStartNewBodyParagraph(
     return true;
   }
 
+  // Font-size change split to prevent titles and author lists from merging
+  const prevFontSize = prev.items.reduce((s, it) => s + it.height, 0) / (prev.items.length || 1);
+  const curFontSize = cur.items.reduce((s, it) => s + it.height, 0) / (cur.items.length || 1);
+  if (prevFontSize > 0 && curFontSize > 0) {
+    const fontRatio = Math.max(prevFontSize / curFontSize, curFontSize / prevFontSize);
+    if (fontRatio > 1.25) {
+      return true;
+    }
+  }
+
   const colWidth = columnMargins.get(cur.columnIndex)?.width || pageWidth;
   const colMargin = columnMargins.get(cur.columnIndex)?.left ?? cur.x;
 
@@ -1846,7 +1961,8 @@ function assignLayoutToParagraph(
   expandedZones: Array<{ minY: number; maxY: number }>,
   hasSidebar: boolean,
   sidebarGutterX: number,
-  effectiveGutters: number[]
+  effectiveGutters: number[],
+  firstBodyY: number
 ) {
   if (para.items.length === 0) return;
 
@@ -1860,21 +1976,119 @@ function assignLayoutToParagraph(
   const paraWidth = maxParaX - minParaX;
 
   let colIndex = -1;
-  if (hasSidebar) {
-    if (minParaX >= sidebarGutterX - 5 && paraWidth < pageWidth * 0.45) {
-      colIndex = 1;
-    } else if (maxParaX <= sidebarGutterX + 5 || paraWidth >= pageWidth * 0.65) {
-      colIndex = 0;
+  // Only assign columns below body separator
+  if (avgY >= firstBodyY - 5) {
+    if (hasSidebar) {
+      if (minParaX >= sidebarGutterX - 5 && paraWidth < pageWidth * 0.45) {
+        colIndex = 1;
+      } else if (maxParaX <= sidebarGutterX + 5 || paraWidth >= pageWidth * 0.65) {
+        colIndex = 0;
+      }
+    } else if (isDoubleColumn) {
+      const inDoubleColumnZone = expandedZones.some(zone => avgY >= zone.minY && avgY <= zone.maxY);
+      if (inDoubleColumnZone && paraWidth < pageWidth * 0.55) {
+        colIndex = avgX < midX ? 0 : 1;
+      }
+    } else if (effectiveGutters.length > 0 && paraWidth < pageWidth * 0.82) {
+      colIndex = estimateColumnIndex(para.items, effectiveGutters, pageWidth);
     }
-  } else if (isDoubleColumn) {
-    const inDoubleColumnZone = expandedZones.some(zone => avgY >= zone.minY && avgY <= zone.maxY);
-    if (inDoubleColumnZone && paraWidth < pageWidth * 0.55) {
-      colIndex = avgX < midX ? 0 : 1;
-    }
-  } else if (effectiveGutters.length > 0 && paraWidth < pageWidth * 0.82) {
-    colIndex = estimateColumnIndex(para.items, effectiveGutters, pageWidth);
   }
 
   para.columnIndex = colIndex >= 0 ? colIndex : undefined;
   para.section = sectionFromColumnIndex(colIndex);
+}
+
+function shouldSkipParagraphForTranslation(
+  para: LogicalParagraph,
+  viewportHeight: number,
+  firstBodyY: number,
+  hasSidebar: boolean
+): boolean {
+  const text = para.text.trim();
+  if (!text) return true;
+
+  // 0. DOI/ISSN Exception: If it contains a DOI or ISSN, KEEP it (never skip).
+  if (/\b10\.\d{4,9}\//.test(text) || /\b\d{4}-\d{3}[\dX]\b/.test(text)) {
+    return false;
+  }
+
+  // 1. Sidebar / TOC
+  if (hasSidebar && para.columnIndex === 1) return true;
+
+  // 2. Authors/Headers blockType
+  if (para.blockType === 'authors' || para.blockType === 'header') return true;
+
+  // Coordinate thresholds
+  const ys = para.items.map(it => it.y);
+  const avgY = ys.reduce((s, y) => s + y, 0) / (ys.length || 1);
+  const isExtremeTop = avgY < viewportHeight * 0.08;
+  const isExtremeBottom = avgY > viewportHeight * 0.92;
+  const lowerText = text.toLowerCase();
+
+  // 3. Running Headers / Footers metadata
+  if (isExtremeTop || isExtremeBottom) {
+    if (lowerText.includes('copyright') || lowerText.includes('©') || lowerText.includes('all rights reserved')) return true;
+    if (lowerText.includes('doi:') || lowerText.includes('doi.org')) return true;
+    if (lowerText.includes('issn') || lowerText.includes('e-issn') || lowerText.includes('eissn')) return true;
+    if (lowerText.includes('http://') || lowerText.includes('https://') || lowerText.includes('www.')) return true;
+    if (/^\d+$/.test(text)) return true;
+    if (/^page\s+\d+$/i.test(text)) return true;
+    if (/^\d+\s+of\s+\d+$/i.test(text)) return true;
+    if (lowerText.includes('downloaded from') || lowerText.includes('published by') || lowerText.includes('sciencedirect')) return true;
+    if (lowerText.includes('consensus statement') || lowerText.includes('check for updates')) return true;
+  }
+
+  // Additional metadata/DOIs anywhere on first page
+  const isMetadata = lowerText.includes('doi:') || lowerText.includes('doi.org') || lowerText.includes('elsevier') || lowerText.includes('edited by') || lowerText.includes('current opinion') || lowerText.includes('sciencedirect') || lowerText.includes('check for updates');
+  if (isMetadata && avgY < firstBodyY + 100) return true;
+
+  // 4. Affiliations, Footnotes, Correspondence
+  const isAffiliationOrFootnote =
+    lowerText.includes('university') ||
+    lowerText.includes('department of') ||
+    lowerText.includes('institute') ||
+    lowerText.includes('school of') ||
+    lowerText.includes('hospital') ||
+    lowerText.includes('correspondence to') ||
+    lowerText.includes('e-mail:') ||
+    lowerText.includes('email:') ||
+    lowerText.includes('@') ||
+    lowerText.includes('contributed equally') ||
+    lowerText.includes('creative commons') ||
+    lowerText.includes('license');
+
+  if (isAffiliationOrFootnote) {
+    if (avgY < firstBodyY - 5 || avgY > viewportHeight * 0.65) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function isLikelyAuthorList(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+
+  // If it is just superscript numbers/symbols/spaces (e.g. footnote pointers like "1 1,2" or "1,2*")
+  if (/^[\d\s,;.*†‡§¶]+$/.test(trimmed) && trimmed.length < 30) {
+    return true;
+  }
+
+  // Calculate ratio of capitalized words
+  const words = trimmed.split(/\s+/).filter(w => w.length > 0);
+  if (words.length === 0) return false;
+
+  const titleCaseWords = words.filter(w => /^[A-Z]/.test(w)).length;
+  const ratio = titleCaseWords / words.length;
+
+  const hasCommas = (trimmed.match(/,/g) || []).length >= 2;
+  const hasAnd = /\band\b/i.test(trimmed);
+
+  // Author lists typically have a high proportion of titlecase words and are separated by commas/and, or are very short
+  if (ratio > 0.65 && (hasCommas || hasAnd || words.length <= 8) && trimmed.length < 250) {
+    return true;
+  }
+
+  return false;
 }

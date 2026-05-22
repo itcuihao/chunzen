@@ -59,10 +59,10 @@ const EngineSettings: FunctionComponent = () => {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
 
-  const enginePriority = useStore((state) => state.enginePriority);
-  const engineStatuses = useStore((state) => state.engineStatuses);
-  const engineConfigs = useStore((state) => state.engineConfigs);
-  const testResults = useStore((state) => state.testResults);
+  const enginePriority = useStore((state) => state.enginePriority) || [];
+  const engineStatuses = useStore((state) => state.engineStatuses) || [];
+  const engineConfigs = useStore((state) => state.engineConfigs) || {};
+  const testResults = useStore((state) => state.testResults) || {};
 
   const handleTest = (engineName: string) => {
     setTesting(engineName);
@@ -315,7 +315,7 @@ const EngineConfigForm: FunctionComponent<EngineConfigFormProps> = ({
 // ── JournalSourceSettings ──
 
 const JournalSourceSettings: FunctionComponent = () => {
-  const journalSource = useStore((state) => state.journalSource);
+  const journalSource = useStore((state) => state.journalSource) || { type: 'letpub' };
   const setJournalSource = useStore((state) => state.setJournalSource);
 
   const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -332,7 +332,7 @@ const JournalSourceSettings: FunctionComponent = () => {
         <div className="relative">
           <select
             className="w-full px-3 py-2 text-xs rounded-md border border-border bg-card/25 text-foreground outline-none focus:border-accent/60 focus:ring-1 focus:ring-accent/20 appearance-none cursor-pointer pr-10"
-            value={journalSource.type}
+            value={journalSource?.type || 'letpub'}
             onChange={handleChange}
           >
             <option value="letpub">LetPub 数据源 (免费公开数据)</option>
@@ -349,17 +349,17 @@ const JournalSourceSettings: FunctionComponent = () => {
 
 const LayoutSettings: FunctionComponent = () => {
   const defaultEndpoint = 'http://127.0.0.1:8765/layout';
-  const layoutConfig = useStore((state) => state.layoutConfig);
-  const [useModel, setUseModel] = useState(layoutConfig.useModel);
-  const [modelEndpoint, setModelEndpoint] = useState(layoutConfig.modelEndpoint);
-  const [timeoutMs, setTimeoutMs] = useState(String(layoutConfig.timeoutMs));
+  const layoutConfig = useStore((state) => state.layoutConfig) || { useModel: false, modelEndpoint: '', timeoutMs: 3500 };
+  const [useModel, setUseModel] = useState(layoutConfig?.useModel ?? false);
+  const [modelEndpoint, setModelEndpoint] = useState(layoutConfig?.modelEndpoint ?? '');
+  const [timeoutMs, setTimeoutMs] = useState(String(layoutConfig?.timeoutMs ?? 3500));
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    setUseModel(layoutConfig.useModel);
-    setModelEndpoint(layoutConfig.modelEndpoint);
-    setTimeoutMs(String(layoutConfig.timeoutMs));
-  }, [layoutConfig.useModel, layoutConfig.modelEndpoint, layoutConfig.timeoutMs]);
+    setUseModel(layoutConfig?.useModel ?? false);
+    setModelEndpoint(layoutConfig?.modelEndpoint ?? '');
+    setTimeoutMs(String(layoutConfig?.timeoutMs ?? 3500));
+  }, [layoutConfig?.useModel, layoutConfig?.modelEndpoint, layoutConfig?.timeoutMs]);
 
   const handleSave = () => {
     const timeout = Number(timeoutMs);
@@ -461,7 +461,7 @@ const LayoutSettings: FunctionComponent = () => {
 // ── GeneralSettings ──
 
 const GeneralSettings: FunctionComponent = () => {
-  const cacheMaxSize = useStore((state) => state.cacheMaxSize);
+  const cacheMaxSize = useStore((state) => state.cacheMaxSize) ?? 500;
 
   const handleClearCache = () => postMessage({ type: 'clear-cache' });
   const handleClearHistory = () => postMessage({ type: 'clear-history' });

@@ -9,36 +9,36 @@
 
 /* VS Code theme colors and custom variable overrides */
 body.vscode-dark {
-  /* Warm Dark Theme - "暖冬深褐" */
-  --vscode-sideBar-background: #1c1917; /* stone-900 */
-  --vscode-editor-background: #1c1917;
-  --vscode-sideBar-foreground: #d6d3d1; /* stone-300 */
-  --vscode-editor-foreground: #f5f5f4; /* stone-100 */
-  --vscode-sideBar-border: #332f2c;
-  --vscode-widget-border: #332f2c;
+  /* Warm Dark Theme - "琥珀深褐" (Warm Amber & Coffee Dark) */
+  --vscode-sideBar-background: #241e15; /* deep coffee / dark amber yellow */
+  --vscode-editor-background: #241e15;
+  --vscode-sideBar-foreground: #ffffff; /* crisp white text */
+  --vscode-editor-foreground: #ffffff; /* crisp white text */
+  --vscode-sideBar-border: #453929; /* warm amber gold border */
+  --vscode-widget-border: #453929;
   
-  --vscode-button-background: #d97706; /* amber-600 */
-  --vscode-button-hoverBackground: #b45309; /* amber-700 */
-  --vscode-button-foreground: #ffffff;
+  --vscode-button-background: #f59e0b; /* amber yellow */
+  --vscode-button-hoverBackground: #d97706; 
+  --vscode-button-foreground: #241e15; 
   
-  --vscode-button-secondaryBackground: #292524; /* stone-800 */
-  --vscode-button-secondaryForeground: #d6d3d1;
-  --vscode-button-secondaryHoverBackground: #44403c;
+  --vscode-button-secondaryBackground: #32291d; 
+  --vscode-button-secondaryForeground: #f4efe6;
+  --vscode-button-secondaryHoverBackground: #453929;
   
-  --vscode-list-hoverBackground: rgba(217, 119, 6, 0.08); /* amber-glow */
-  --vscode-scrollbarSlider-background: rgba(217, 119, 6, 0.15);
-  --vscode-scrollbarSlider-hoverBackground: rgba(217, 119, 6, 0.25);
+  --vscode-list-hoverBackground: rgba(245, 158, 11, 0.08); 
+  --vscode-scrollbarSlider-background: rgba(245, 158, 11, 0.15);
+  --vscode-scrollbarSlider-hoverBackground: rgba(245, 158, 11, 0.25);
 
   /* Custom variables */
-  --accent: #f59e0b; /* warm amber gold */
+  --accent: #f59e0b; 
   --accent-glow: rgba(245, 158, 11, 0.12);
-  --success: #84cc16;
-  --warning: #f59e0b;
-  --error: #f87171;
-  --cached: #84cc16;
-  --card-bg: rgba(41, 37, 36, 0.4); /* stone-800 based */
+  --success: #a3e635; 
+  --warning: #f59e0b; 
+  --error: #f87171; 
+  --cached: #a3e635;
+  --card-bg: rgba(50, 41, 29, 0.45); 
   --card-border: rgba(255, 255, 255, 0.05);
-  --card-hover: rgba(41, 37, 36, 0.6);
+  --card-hover: rgba(50, 41, 29, 0.65);
 }
 
 body.vscode-light {
