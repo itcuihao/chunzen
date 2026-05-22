@@ -27,19 +27,19 @@ module.exports = {
         
         // Custom Academic & Premium colors
         accent: {
-          DEFAULT: '#4f8ef7',
-          glow: 'rgba(79, 142, 247, 0.15)',
+          DEFAULT: 'var(--accent, #4f8ef7)',
+          glow: 'var(--accent-glow, rgba(79, 142, 247, 0.15))',
         },
-        success: '#48bb78',
-        warning: '#f6ad55',
-        error: '#fc8181',
-        cached: '#68d391',
+        success: 'var(--success, #48bb78)',
+        warning: 'var(--warning, #f6ad55)',
+        error: 'var(--error, #fc8181)',
+        cached: 'var(--cached, #68d391)',
         
         // Dark theme cards with glassmorphism values
         card: {
-          DEFAULT: 'rgba(30, 41, 59, 0.4)',
-          border: 'rgba(255, 255, 255, 0.05)',
-          hover: 'rgba(30, 41, 59, 0.6)',
+          DEFAULT: 'var(--card-bg, rgba(30, 41, 59, 0.4))',
+          border: 'var(--card-border, rgba(255, 255, 255, 0.05))',
+          hover: 'var(--card-hover, rgba(30, 41, 59, 0.6))',
         }
       },
       borderRadius: {

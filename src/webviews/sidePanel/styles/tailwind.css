@@ -7,6 +7,73 @@
   --radius: 10px;
 }
 
+/* VS Code theme colors and custom variable overrides */
+body.vscode-dark {
+  /* Warm Dark Theme - "暖冬深褐" */
+  --vscode-sideBar-background: #1c1917; /* stone-900 */
+  --vscode-editor-background: #1c1917;
+  --vscode-sideBar-foreground: #d6d3d1; /* stone-300 */
+  --vscode-editor-foreground: #f5f5f4; /* stone-100 */
+  --vscode-sideBar-border: #332f2c;
+  --vscode-widget-border: #332f2c;
+  
+  --vscode-button-background: #d97706; /* amber-600 */
+  --vscode-button-hoverBackground: #b45309; /* amber-700 */
+  --vscode-button-foreground: #ffffff;
+  
+  --vscode-button-secondaryBackground: #292524; /* stone-800 */
+  --vscode-button-secondaryForeground: #d6d3d1;
+  --vscode-button-secondaryHoverBackground: #44403c;
+  
+  --vscode-list-hoverBackground: rgba(217, 119, 6, 0.08); /* amber-glow */
+  --vscode-scrollbarSlider-background: rgba(217, 119, 6, 0.15);
+  --vscode-scrollbarSlider-hoverBackground: rgba(217, 119, 6, 0.25);
+
+  /* Custom variables */
+  --accent: #f59e0b; /* warm amber gold */
+  --accent-glow: rgba(245, 158, 11, 0.12);
+  --success: #84cc16;
+  --warning: #f59e0b;
+  --error: #f87171;
+  --cached: #84cc16;
+  --card-bg: rgba(41, 37, 36, 0.4); /* stone-800 based */
+  --card-border: rgba(255, 255, 255, 0.05);
+  --card-hover: rgba(41, 37, 36, 0.6);
+}
+
+body.vscode-light {
+  /* Warm Light Theme - "春蝉暖木" */
+  --vscode-sideBar-background: #FAF7F0; /* warm paper cream ivory */
+  --vscode-editor-background: #FAF7F0;
+  --vscode-sideBar-foreground: #5c544f; /* espresso muted */
+  --vscode-editor-foreground: #2c2724; /* espresso primary */
+  --vscode-sideBar-border: #e8dfd0; /* warm sand-border */
+  --vscode-widget-border: #e8dfd0;
+  
+  --vscode-button-background: #b45309; /* amber-700 */
+  --vscode-button-hoverBackground: #92400e; /* amber-800 */
+  --vscode-button-foreground: #ffffff;
+  
+  --vscode-button-secondaryBackground: #f3ede2; /* warm light gray-beige card */
+  --vscode-button-secondaryForeground: #5c544f;
+  --vscode-button-secondaryHoverBackground: #ebe3d5;
+  
+  --vscode-list-hoverBackground: rgba(180, 83, 9, 0.06); /* light amber hover */
+  --vscode-scrollbarSlider-background: rgba(180, 83, 9, 0.1);
+  --vscode-scrollbarSlider-hoverBackground: rgba(180, 83, 9, 0.2);
+
+  /* Custom variables */
+  --accent: #b45309;
+  --accent-glow: rgba(180, 83, 9, 0.08);
+  --success: #166534; /* forest green */
+  --warning: #b45309; /* amber */
+  --error: #991b1b; /* deep crimson */
+  --cached: #166534;
+  --card-bg: rgba(243, 237, 226, 0.55);
+  --card-border: rgba(0, 0, 0, 0.04);
+  --card-hover: rgba(243, 237, 226, 0.85);
+}
+
 /* Custom Scrollbars to look neat inside VS Code side panel */
 ::-webkit-scrollbar {
   width: 6px;
@@ -28,10 +95,10 @@
 
 /* Glassmorphism custom card panel */
 .glass-panel {
-  background: rgba(30, 41, 59, 0.35);
+  background: var(--card-bg, rgba(30, 41, 59, 0.35));
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--card-border, rgba(255, 255, 255, 0.05));
 }
 
 /* Glow animations */
