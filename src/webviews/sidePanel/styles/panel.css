@@ -834,3 +834,9 @@ body {
   border-bottom: 1.5px solid var(--vscode-button-background, #4f8ef7);
   font-weight: 600;
 }
+
+/* ── Heading paragraph decoration ── */
+.para-heading {
+  border-top: 1px solid var(--vscode-widget-border, rgba(255, 255, 255, 0.06));
+  padding-top: 0.5em;
+}

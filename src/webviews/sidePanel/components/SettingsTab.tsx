@@ -2,6 +2,7 @@ import { FunctionComponent, useState } from 'react';
 import { useStore, EngineStatus, EngineConfigFields } from '../store';
 import { postMessage } from '../vscode';
 import { Database, Sparkles, Trash2, Settings, ChevronDown, ChevronUp, Network, Play, CheckCircle2, XCircle, Info, Lock, Eye, EyeOff } from 'lucide-react';
+import { BUILD_INFO } from '../../../build-info';
 
 export const SettingsTab: FunctionComponent = () => {
   return (
@@ -9,6 +10,7 @@ export const SettingsTab: FunctionComponent = () => {
       <EngineSettings />
       <JournalSourceSettings />
       <GeneralSettings />
+      <BuildInfo />
     </div>
   );
 };
@@ -382,6 +384,35 @@ const GeneralSettings: FunctionComponent = () => {
             <Trash2 className="w-3.5 h-3.5" />
             清空历史记录
           </button>
+        </div>
+      </div>
+    </section>
+  );
+};
+
+// ── BuildInfo ──
+
+const BuildInfo: FunctionComponent = () => {
+  return (
+    <section className="glass-panel rounded-lg overflow-hidden border border-border shadow-sm">
+      <div className="flex items-center gap-2 px-3.5 py-2 border-b border-border bg-card">
+        <Info className="w-4 h-4 text-secondary-foreground/80" />
+        <span className="text-[11px] font-semibold tracking-wider text-secondary-foreground uppercase">版本信息</span>
+      </div>
+      <div className="p-3.5">
+        <div className="flex flex-col gap-2 text-xs text-secondary-foreground font-mono">
+          <div className="flex justify-between">
+            <span>Version</span>
+            <span className="text-foreground">{BUILD_INFO.version}</span>
+          </div>
+          <div className="flex justify-between">
+            <span>Git</span>
+            <span className="text-foreground">{BUILD_INFO.hash}</span>
+          </div>
+          <div className="flex justify-between">
+            <span>Build</span>
+            <span className="text-foreground">{BUILD_INFO.date || 'dev'}</span>
+          </div>
         </div>
       </div>
     </section>

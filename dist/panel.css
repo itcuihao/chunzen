@@ -642,8 +642,14 @@ video {
 .inline-flex {
   display: inline-flex;
 }
+.table {
+  display: table;
+}
 .grid {
   display: grid;
+}
+.contents {
+  display: contents;
 }
 .h-0\.5 {
   height: 0.125rem;
@@ -1125,14 +1131,29 @@ video {
 .text-\[11px\] {
   font-size: 11px;
 }
-.text-\[14\.5px\] {
-  font-size: 14.5px;
+.text-\[12px\] {
+  font-size: 12px;
+}
+.text-\[13px\] {
+  font-size: 13px;
 }
 .text-\[14px\] {
   font-size: 14px;
 }
+.text-\[15px\] {
+  font-size: 15px;
+}
+.text-\[16px\] {
+  font-size: 16px;
+}
+.text-\[18px\] {
+  font-size: 18px;
+}
 .text-\[8px\] {
   font-size: 8px;
+}
+.text-\[9\.5px\] {
+  font-size: 9.5px;
 }
 .text-\[9px\] {
   font-size: 9px;
@@ -1168,14 +1189,26 @@ video {
 .italic {
   font-style: italic;
 }
+.leading-\[1\.4\] {
+  line-height: 1.4;
+}
+.leading-\[1\.5\] {
+  line-height: 1.5;
+}
+.leading-\[1\.65\] {
+  line-height: 1.65;
+}
+.leading-\[1\.6\] {
+  line-height: 1.6;
+}
+.leading-\[1\.7\] {
+  line-height: 1.7;
+}
+.leading-\[1\.8\] {
+  line-height: 1.8;
+}
 .leading-\[2\.0\] {
   line-height: 2.0;
-}
-.leading-\[2\.1\] {
-  line-height: 2.1;
-}
-.leading-\[2\] {
-  line-height: 2;
 }
 .leading-normal {
   line-height: 1.5;
@@ -1568,3 +1601,5 @@ video {
   transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
 }
 
+
+/*# sourceMappingURL=panel.css.map*/
