@@ -16,8 +16,13 @@ interface AnnotatedPara {
   columnIndex?: number;
   sentences?: Array<{ id: string; text: string }>;
   fontSize?: number;
+  height?: number;
   bold?: boolean;
   blockType?: string;
+  skipped?: boolean;
+  lineMarker?: 'horizontal-rule';
+  ruleX1?: number;
+  ruleX2?: number;
   role: ParagraphRole;
 }
 
@@ -274,10 +279,13 @@ export const TranslationTab: FunctionComponent = () => {
   const handleTranslatePage = () => {
     if (!currentPageText) return;
     useStore.setState({ isTranslating: true });
+    const translatableParagraphs = currentPageText.paragraphs
+      .filter(para => !para.skipped && para.lineMarker !== 'horizontal-rule' && !!para.text.trim())
+      .map(para => ({ id: para.id, text: para.text }));
     postMessage({
       type: 'translate-page',
       pageNumber: currentPageText.pageNumber,
-      paragraphs: currentPageText.paragraphs
+      paragraphs: translatableParagraphs
     });
   };
 
@@ -327,6 +335,13 @@ export const TranslationTab: FunctionComponent = () => {
   };
 
   const renderOriginalParagraphNode = (para: AnnotatedPara) => {
+    if (para.lineMarker === 'horizontal-rule') {
+      return <hr key={para.id} className="border-0 border-t border-border/45 my-4" />;
+    }
+    if (para.skipped) {
+      const h = Math.max(4, Math.min(220, para.height || para.fontSize || 12));
+      return <div key={para.id} className="opacity-0 pointer-events-none" style={{ height: `${h}px` }} aria-hidden />;
+    }
     const className = paraClass(para, 'en');
     if (para.blockType === 'table') {
       return renderTableRow(para.id, para.text, className);
@@ -339,6 +354,13 @@ export const TranslationTab: FunctionComponent = () => {
   };
 
   const renderTranslatedParagraphNode = (para: AnnotatedPara) => {
+    if (para.lineMarker === 'horizontal-rule') {
+      return <hr key={para.id} className="border-0 border-t border-border/45 my-4" />;
+    }
+    if (para.skipped) {
+      const h = Math.max(4, Math.min(220, para.height || para.fontSize || 12));
+      return <div key={para.id} className="opacity-0 pointer-events-none" style={{ height: `${h}px` }} aria-hidden />;
+    }
     const className = paraClass(para, 'zh');
     const translated = currentPageText!.translations?.[para.id] || '';
     if (para.blockType === 'table') {
@@ -352,6 +374,13 @@ export const TranslationTab: FunctionComponent = () => {
   };
 
   const renderBilingualParagraphNode = (para: AnnotatedPara) => {
+    if (para.lineMarker === 'horizontal-rule') {
+      return <hr key={para.id} className="border-0 border-t border-border/45 my-4" />;
+    }
+    if (para.skipped) {
+      const h = Math.max(4, Math.min(220, para.height || para.fontSize || 12));
+      return <div key={para.id} className="opacity-0 pointer-events-none" style={{ height: `${h}px` }} aria-hidden />;
+    }
     const translation = currentPageText!.translations?.[para.id];
     return (
       <div key={para.id} className="mb-4 pb-3 border-b border-border/20 last:border-0">

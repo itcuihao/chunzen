@@ -52,8 +52,13 @@ export interface PageTextLoadedMessage {
     columnIndex?: number;
     sentences?: Array<{ id: string; text: string }>;
     fontSize?: number;
+    height?: number;
     bold?: boolean;
     blockType?: string;
+    skipped?: boolean;
+    lineMarker?: 'horizontal-rule';
+    ruleX1?: number;
+    ruleX2?: number;
   }>;
   columnsCount: number;
   translations?: Array<{ id: string; translatedText: string }>;
@@ -133,8 +138,13 @@ export interface SyncPageTextMessage {
     columnIndex?: number;
     sentences?: Array<{ id: string; text: string }>;
     fontSize?: number;
+    height?: number;
     bold?: boolean;
     blockType?: string;
+    skipped?: boolean;
+    lineMarker?: 'horizontal-rule';
+    ruleX1?: number;
+    ruleX2?: number;
   }>;
   columnsCount: number;
   translations?: Array<{ id: string; translatedText: string }>;
