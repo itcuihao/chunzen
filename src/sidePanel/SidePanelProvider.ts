@@ -22,7 +22,7 @@ export class SidePanelProvider {
 
   private lastPageText: {
     pageNumber: number;
-    paragraphs: Array<{ id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' | 'full'; fontSize?: number }>;
+    paragraphs: Array<{ id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' | 'full'; fontSize?: number; bold?: boolean; blockType?: string }>;
     columnsCount: number;
     translations?: Array<{ id: string; translatedText: string }>;
   } | null = null;
