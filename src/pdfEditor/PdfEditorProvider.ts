@@ -82,6 +82,11 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
             this.sidePanel.show();
             break;
 
+          case 'pdf-hover':
+            console.log('[Extension] PdfEditorProvider received pdf-hover from webview, forwarding to sidePanel with id:', msg.id);
+            this.sidePanel.postMessage({ type: 'pdf-hover', id: msg.id });
+            break;
+
           case 'sentence-hover':
             await this.handleSentenceHover(msg.text);
             break;
@@ -200,24 +205,48 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
   }
 
   public async translateActivePage(pageNumber: number, paragraphs: Array<{ id: string; text: string }>): Promise<void> {
-    if (!this.activeWebviewPanel) {
+    let panel = this.activeWebviewPanel;
+    if (!panel && this.webviews.size > 0) {
+      panel = Array.from(this.webviews.values())[0];
+    }
+    if (!panel) {
       vscode.window.showWarningMessage('未检测到活动的 PDF 编辑器，请确保 PDF 编辑器处于打开状态。');
       return;
     }
     // Instruct the active webview panel to show translation loading state
-    this.activeWebviewPanel.webview.postMessage({
+    panel.webview.postMessage({
       type: 'translate-page-paragraphs-loading',
       pageNumber
     });
-    await this.handleTranslatePageParagraphs(this.activeWebviewPanel, pageNumber, paragraphs);
+    await this.handleTranslatePageParagraphs(panel, pageNumber, paragraphs);
+  }
+
+  public hoverActivePageElement(id?: string): void {
+    let panel = this.activeWebviewPanel;
+    if (!panel && this.webviews.size > 0) {
+      panel = Array.from(this.webviews.values())[0];
+    }
+    if (panel) {
+      console.log('[Extension] PdfEditorProvider hoverActivePageElement, posting sync-panel-hover to active PDF viewer webview with id:', id);
+      panel.webview.postMessage({
+        type: 'sync-panel-hover',
+        id
+      });
+    } else {
+      console.warn('[Extension] PdfEditorProvider hoverActivePageElement, no activeWebviewPanel or other panels found to send sync-panel-hover.');
+    }
   }
 
   public async refreshActivePageText(): Promise<void> {
-    if (!this.activeWebviewPanel) {
+    let panel = this.activeWebviewPanel;
+    if (!panel && this.webviews.size > 0) {
+      panel = Array.from(this.webviews.values())[0];
+    }
+    if (!panel) {
       vscode.window.showWarningMessage('未检测到活动的 PDF 编辑器，请确保 PDF 编辑器处于打开状态。');
       return;
     }
-    this.activeWebviewPanel.webview.postMessage({
+    panel.webview.postMessage({
       type: 'trigger-page-text-extract'
     });
   }
@@ -262,8 +291,6 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
       <span id="pdf-title" class="pdf-title"></span>
     </div>
     <div class="toolbar-right">
-      <button id="btn-translate" class="btn-text" title="翻译此页">翻译此页</button>
-      <button id="btn-toggle-translation" class="btn-text hidden" title="显示原文">显示原文</button>
       <button id="btn-zoom-out" title="缩小">−</button>
       <span id="zoom-level">100%</span>
       <button id="btn-zoom-in" title="放大">+</button>

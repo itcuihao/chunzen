@@ -18,6 +18,7 @@ export class SidePanelProvider {
 
   public onTranslatePageRequested?: (pageNumber: number, paragraphs: Array<{ id: string; text: string }>) => Promise<void>;
   public onRefreshPageTextRequested?: () => Promise<void>;
+  public onPanelHoverRequested?: (id?: string) => Promise<void>;
 
   constructor(
     context: vscode.ExtensionContext,
@@ -102,6 +103,10 @@ export class SidePanelProvider {
           case 'refresh-page-text':
             await this.onRefreshPageTextRequested?.();
             break;
+          case 'panel-hover':
+            console.log('[Extension] SidePanelProvider received panel-hover from side panel webview with id:', msg.id);
+            await this.onPanelHoverRequested?.(msg.id);
+            break;
         }
       },
       undefined,
@@ -118,7 +123,14 @@ export class SidePanelProvider {
   }
 
   postMessage(msg: ExtToPanelMessage): void {
-    this.panel?.webview.postMessage(msg);
+    if (msg.type === 'pdf-hover') {
+      console.log('[Extension] SidePanelProvider postMessage (pdf-hover): forwarding to sidePanel webview panel with id:', msg.id);
+    }
+    if (this.panel) {
+      this.panel.webview.postMessage(msg);
+    } else {
+      console.warn(`[Extension] SidePanelProvider postMessage: panel is undefined. Message type: ${msg.type} was not posted.`);
+    }
   }
 
   updateTranslation(original: string, translated: string, engine: string, cached: boolean): void {
@@ -131,7 +143,7 @@ export class SidePanelProvider {
 
   syncPageText(
     pageNumber: number,
-    paragraphs: Array<{ id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' }>,
+    paragraphs: Array<{ id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' | 'full' }>,
     columnsCount: number,
     translations?: Array<{ id: string; translatedText: string }>
   ): void {

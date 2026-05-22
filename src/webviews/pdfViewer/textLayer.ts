@@ -20,7 +20,8 @@ export interface Paragraph {
   width: number;
   height: number;
   fontSize: number;
-  section: 'header' | 'left' | 'right' | 'footer';
+  section: 'header' | 'left' | 'right' | 'footer' | 'full';
+  sentences?: Array<{ id: string; text: string }>;
 }
 
 interface ColLayoutItem {
@@ -39,14 +40,14 @@ interface LineSegment {
   height: number;
   columnIndex: number; // -1: Full-width, 0: Left, 1: Right
   str: string;
-  section: 'header' | 'left' | 'right' | 'footer';
+  section: 'header' | 'left' | 'right' | 'footer' | 'full';
 }
 
 interface LogicalParagraph {
   id: string;
   text: string;
   items: ColLayoutItem[];
-  section: 'header' | 'left' | 'right' | 'footer';
+  section: 'header' | 'left' | 'right' | 'footer' | 'full';
 }
 
 interface SentenceItem {
@@ -87,7 +88,7 @@ export function buildTextLayer(
 
     const w = item.width * viewport.scale;
     allItems.push({
-      str: item.str,
+      str: item.str.trim(),
       x: tx[4],
       y: tx[5],
       width: w,
@@ -147,12 +148,63 @@ export function buildTextLayer(
   const pageWidth = maxX - minX;
   const midX = minX + pageWidth / 2;
 
-  // 4. Split lines into segments & count splits
+  // 4. Split lines into segments & count splits (Two-pass analysis for hybrid layouts)
   let splitCount = 0;
-  const segments: LineSegment[] = [];
+  const splitLineYs: number[] = [];
   const GUTTER_MIN_WIDTH = 15; // px
   const centerRange = pageWidth * 0.2; // gutter midpoint must be within 20% of page center
 
+  // Pass 1: Find split count and Y-coordinates of physically split lines
+  for (const line of filteredRawLines) {
+    if (line.length === 0) continue;
+    let hasSplit = false;
+    for (let j = 0; j < line.length - 1; j++) {
+      const item1 = line[j];
+      const item2 = line[j + 1];
+      const rightSide1 = item1.x + item1.width;
+      const leftSide2 = item2.x;
+      const gapWidth = leftSide2 - rightSide1;
+      const gapMid = (rightSide1 + leftSide2) / 2;
+
+      if (gapWidth > GUTTER_MIN_WIDTH && Math.abs(gapMid - midX) < centerRange) {
+        hasSplit = true;
+        break;
+      }
+    }
+    if (hasSplit) {
+      splitCount++;
+      splitLineYs.push(line[0].y);
+    }
+  }
+
+  // 5. Layout classification
+  const isDoubleColumn = splitCount >= 3 || (filteredRawLines.length > 0 && splitCount / filteredRawLines.length > 0.08);
+
+  // Group split lines into continuous DoubleColumnZones
+  const doubleColumnZones: Array<{ minY: number; maxY: number }> = [];
+  if (isDoubleColumn && splitLineYs.length > 0) {
+    splitLineYs.sort((a, b) => a - b);
+    let currentZone = { minY: splitLineYs[0], maxY: splitLineYs[0] };
+    for (let i = 1; i < splitLineYs.length; i++) {
+      const y = splitLineYs[i];
+      if (y - currentZone.maxY < 150) {
+        currentZone.maxY = y;
+      } else {
+        doubleColumnZones.push(currentZone);
+        currentZone = { minY: y, maxY: y };
+      }
+    }
+    doubleColumnZones.push(currentZone);
+  }
+
+  // Expand double-column zones slightly (by 30px padding) to capture column start/end boundaries
+  const expandedZones = doubleColumnZones.map(zone => ({
+    minY: zone.minY - 30,
+    maxY: zone.maxY + 30
+  }));
+
+  // Pass 2: Split lines into segments & assign column indices
+  const segments: LineSegment[] = [];
   for (const line of filteredRawLines) {
     if (line.length === 0) continue;
 
@@ -172,7 +224,6 @@ export function buildTextLayer(
     }
 
     if (splitIndex !== -1) {
-      splitCount++;
       segments.push(createSegment(line.slice(0, splitIndex + 1), 0));
       segments.push(createSegment(line.slice(splitIndex + 1), 1));
     } else {
@@ -185,22 +236,21 @@ export function buildTextLayer(
       const lineCenter = (lineLeft + lineRight) / 2;
 
       let colIndex = -1;
-      // In a dual-column layout, each column is less than 50% width.
-      // We check if the segment width is smaller than 55% of the page width.
-      // If so, we assign it to left/right column based on its center alignment relative to the page middle.
-      if (lineWidth < pageWidth * 0.55) {
-        if (lineCenter < midX) {
-          colIndex = 0; // Left column
-        } else {
-          colIndex = 1; // Right column
+      // In a dual-column layout, we restrict column 0/1 assignment to lines inside a DoubleColumnZone.
+      if (isDoubleColumn) {
+        const lineY = line[0].y;
+        const inDoubleColumnZone = expandedZones.some(zone => lineY >= zone.minY && lineY <= zone.maxY);
+        if (inDoubleColumnZone && lineWidth < pageWidth * 0.55) {
+          if (lineCenter < midX) {
+            colIndex = 0; // Left column
+          } else {
+            colIndex = 1; // Right column
+          }
         }
       }
       segments.push(createSegment(line, colIndex));
     }
   }
-
-  // 5. Layout classification
-  const isDoubleColumn = splitCount >= 3 || (filteredRawLines.length > 0 && splitCount / filteredRawLines.length > 0.08);
 
   // 6. Segment ordering (reading flow reconstruction)
   let orderedSegments: LineSegment[] = [];
@@ -212,52 +262,61 @@ export function buildTextLayer(
     }
     orderedSegments = [...segments].sort((a, b) => a.y - b.y);
   } else {
-    // Double column: partition header, left col, right col, footer
-    const colSegments = segments.filter(seg => seg.columnIndex === 0 || seg.columnIndex === 1);
-    const bodyMinY = colSegments.length > 0 ? Math.min(...colSegments.map(s => s.y)) : 0;
-    const bodyMaxY = colSegments.length > 0 ? Math.max(...colSegments.map(s => s.y + s.height)) : viewport.height;
+    // Double column page: group segments into blocks of 'single' (columnIndex === -1)
+    // and 'double' (columnIndex === 0 or 1) based on their Y-sorted order.
+    const sortedSegs = [...segments].sort((a, b) => a.y - b.y);
+    const blocks: Array<{ type: 'single' | 'double'; segments: LineSegment[] }> = [];
 
-    const headerGroup: LineSegment[] = [];
-    const leftGroup: LineSegment[] = [];
-    const rightGroup: LineSegment[] = [];
-    const footerGroup: LineSegment[] = [];
-
-    const bodyMidY = (bodyMinY + bodyMaxY) / 2;
-
-    for (const seg of segments) {
-      if (seg.columnIndex === 0) {
-        seg.section = 'left';
-        leftGroup.push(seg);
-      } else if (seg.columnIndex === 1) {
-        seg.section = 'right';
-        rightGroup.push(seg);
+    for (const seg of sortedSegs) {
+      const type = seg.columnIndex === -1 ? 'single' : 'double';
+      if (blocks.length === 0 || blocks[blocks.length - 1].type !== type) {
+        blocks.push({ type, segments: [seg] });
       } else {
-        // Full-width (columnIndex === -1)
-        if (seg.y < bodyMinY) {
-          seg.section = 'header';
-          headerGroup.push(seg);
-        } else if (seg.y > bodyMaxY) {
-          seg.section = 'footer';
-          footerGroup.push(seg);
-        } else {
-          // Middle full-width: assign depending on vertical half
-          if (seg.y < bodyMidY) {
-            seg.section = 'left';
-            leftGroup.push(seg);
-          } else {
-            seg.section = 'right';
-            rightGroup.push(seg);
-          }
-        }
+        blocks[blocks.length - 1].segments.push(seg);
       }
     }
 
-    headerGroup.sort((a, b) => a.y - b.y);
-    leftGroup.sort((a, b) => a.y - b.y);
-    rightGroup.sort((a, b) => a.y - b.y);
-    footerGroup.sort((a, b) => a.y - b.y);
+    const firstDoubleIndex = blocks.findIndex(b => b.type === 'double');
+    const lastDoubleIndex = blocks.map(b => b.type).lastIndexOf('double');
 
-    orderedSegments = [...headerGroup, ...leftGroup, ...rightGroup, ...footerGroup];
+    for (let bIdx = 0; bIdx < blocks.length; bIdx++) {
+      const block = blocks[bIdx];
+      if (block.type === 'single') {
+        let section: 'header' | 'footer' | 'left' | 'full' = 'left';
+        if (firstDoubleIndex !== -1) {
+          if (bIdx < firstDoubleIndex) {
+            section = 'header';
+          } else if (bIdx > lastDoubleIndex) {
+            section = 'footer';
+          } else {
+            section = 'full';
+          }
+        }
+        for (const seg of block.segments) {
+          seg.section = section;
+          seg.columnIndex = -1; // Keep as full-width
+          orderedSegments.push(seg);
+        }
+      } else {
+        const leftGroup: LineSegment[] = [];
+        const rightGroup: LineSegment[] = [];
+        for (const seg of block.segments) {
+          if (seg.columnIndex === 0) {
+            seg.section = 'left';
+            leftGroup.push(seg);
+          } else if (seg.columnIndex === 1) {
+            seg.section = 'right';
+            rightGroup.push(seg);
+          } else {
+            seg.section = 'left';
+            leftGroup.push(seg);
+          }
+        }
+        leftGroup.sort((a, b) => a.y - b.y);
+        rightGroup.sort((a, b) => a.y - b.y);
+        orderedSegments.push(...leftGroup, ...rightGroup);
+      }
+    }
   }
 
   // 7. Dehyphenate segments in-place
@@ -270,6 +329,27 @@ export function buildTextLayer(
         const firstWord = firstWordMatch[1];
         current.str = current.str.slice(0, -1) + firstWord;
         next.str = next.str.slice(firstWord.length).trim();
+
+        // Mutate corresponding ColLayoutItems in-place to keep them in sync with logical string
+        if (current.items.length > 0 && next.items.length > 0) {
+          const lastItem = current.items[current.items.length - 1];
+          const firstItem = next.items[0];
+
+          if (lastItem.str.endsWith('-')) {
+            lastItem.str = lastItem.str.slice(0, -1) + firstWord;
+          } else {
+            lastItem.str += firstWord;
+          }
+
+          if (firstItem.str.startsWith(firstWord)) {
+            firstItem.str = firstItem.str.slice(firstWord.length);
+          } else {
+            const idx = firstItem.str.indexOf(firstWord);
+            if (idx !== -1) {
+              firstItem.str = firstItem.str.slice(0, idx) + firstItem.str.slice(idx + firstWord.length);
+            }
+          }
+        }
       }
     }
   }
@@ -280,7 +360,7 @@ export function buildTextLayer(
   let paraItems: ColLayoutItem[] = [];
   let paraId = 0;
   let currentColumnIndex: number | null = null;
-  let currentSection: 'header' | 'left' | 'right' | 'footer' | null = null;
+  let currentSection: 'header' | 'left' | 'right' | 'footer' | 'full' | null = null;
 
   function flush() {
     if (!paraBuf.trim()) { paraBuf = ''; paraItems = []; return; }
@@ -349,22 +429,14 @@ export function buildTextLayer(
     const height = Math.max(...yMaxs) - y;
     const fontSize = para.items.reduce((sum, it) => sum + it.height, 0) / para.items.length;
 
-    paragraphs.push({
-      id: para.id,
-      text: para.text,
-      x,
-      y,
-      width,
-      height,
-      fontSize,
-      section: para.section
-    });
+    const sentsList: Array<{ id: string; text: string }> = [];
 
     // Split paragraph into sentences for highlight/selection
     const sents = splitParagraphIntoSentences(para);
     for (const sent of sents) {
       if (!sent.text || sent.text.length < 5) continue;
       const sid = String(sentenceId++);
+      sentsList.push({ id: sid, text: sent.text });
       const spans: HTMLSpanElement[] = [];
 
       for (const item of sent.items) {
@@ -381,6 +453,18 @@ export function buildTextLayer(
 
       sentenceMap.set(sid, { id: sid, text: sent.text, spans });
     }
+
+    paragraphs.push({
+      id: para.id,
+      text: para.text,
+      x,
+      y,
+      width,
+      height,
+      fontSize,
+      section: para.section,
+      sentences: sentsList
+    });
   }
 
   return {
@@ -416,19 +500,57 @@ function createSegment(lineItems: ColLayoutItem[], colIndex: number): LineSegmen
   };
 }
 
+function computeItemOffsets(text: string, items: ColLayoutItem[]): Array<{ start: number; end: number }> {
+  const offsets: Array<{ start: number; end: number }> = [];
+  let currentIndex = 0;
+
+  for (const item of items) {
+    const str = item.str;
+    if (!str) {
+      offsets.push({ start: currentIndex, end: currentIndex });
+      continue;
+    }
+
+    let start = text.indexOf(str, currentIndex);
+    if (start === -1) {
+      // Fallback 1: case-insensitive search
+      const lowerText = text.toLowerCase();
+      const lowerStr = str.toLowerCase();
+      start = lowerText.indexOf(lowerStr, currentIndex);
+    }
+
+    if (start === -1) {
+      // Fallback 2: align at the current index
+      start = currentIndex;
+    }
+
+    const end = start + str.length;
+    offsets.push({ start, end });
+    currentIndex = end;
+  }
+
+  return offsets;
+}
+
 function splitParagraphIntoSentences(para: LogicalParagraph): SentenceItem[] {
   const result: SentenceItem[] = [];
+  const offsets = computeItemOffsets(para.text, para.items);
   const segs = splitIntoSentences(para.text);
   let pos = 0;
   for (const seg of segs) {
     const start = pos;
     const end = pos + seg.length;
-    const count = para.items.length;
-    const s0 = Math.floor((start / para.text.length) * count);
-    const s1 = Math.max(s0 + 1, Math.ceil((end / para.text.length) * count));
     const txt = seg.trim();
     if (txt.length >= 5) {
-      result.push({ text: txt, items: para.items.slice(s0, s1) });
+      const sentenceItems: ColLayoutItem[] = [];
+      for (let idx = 0; idx < para.items.length; idx++) {
+        const offset = offsets[idx];
+        const itemCenter = (offset.start + offset.end) / 2;
+        if (itemCenter >= start && itemCenter <= end) {
+          sentenceItems.push(para.items[idx]);
+        }
+      }
+      result.push({ text: txt, items: sentenceItems });
     }
     pos = end;
   }

@@ -1,14 +1,163 @@
-import { FunctionComponent, useState } from 'react';
+import { FunctionComponent, useState, useEffect } from 'react';
 import { useStore } from '../store';
 import { Languages, FileCheck, RefreshCw } from 'lucide-react';
 import { postMessage } from '../vscode';
+
+interface LayoutBlock {
+  type: 'single' | 'double';
+  paragraphs: Array<{
+    id: string;
+    text: string;
+    section?: 'header' | 'left' | 'right' | 'footer' | 'full';
+    sentences?: Array<{ id: string; text: string }>;
+  }>;
+}
+
+function groupParagraphsIntoBlocks(
+  paragraphs: Array<{
+    id: string;
+    text: string;
+    section?: 'header' | 'left' | 'right' | 'footer' | 'full';
+    sentences?: Array<{ id: string; text: string }>;
+  }>
+): LayoutBlock[] {
+  const blocks: LayoutBlock[] = [];
+  for (const para of paragraphs) {
+    const type = (para.section === 'left' || para.section === 'right') ? 'double' : 'single';
+    if (blocks.length === 0 || blocks[blocks.length - 1].type !== type) {
+      blocks.push({ type, paragraphs: [para] });
+    } else {
+      blocks[blocks.length - 1].paragraphs.push(para);
+    }
+  }
+  return blocks;
+}
 
 export const TranslationTab: FunctionComponent = () => {
   const loading = useStore((state) => state.isTranslating);
   const error = useStore((state) => state.translationError);
   const currentPageText = useStore((state) => state.currentPageText);
+  const activeSentenceId = useStore((state) => state.activeSentenceId);
 
-  const [layoutMode, setLayoutMode] = useState<'translation' | 'bilingual' | 'original'>('original');
+  const [layoutMode, setLayoutMode] = useState<'translation' | 'bilingual' | 'original'>('bilingual');
+
+  const hasTranslations = !!(currentPageText?.translations && Object.keys(currentPageText.translations).length > 0);
+
+  // Automatically switch layout mode to bilingual when translations are loaded/completed
+  useEffect(() => {
+    if (hasTranslations && layoutMode === 'original') {
+      setLayoutMode('bilingual');
+    }
+  }, [hasTranslations]);
+
+  // Scroll active sentence into view
+  useEffect(() => {
+    console.log('[Side Panel Webview] activeSentenceId changed:', activeSentenceId);
+    if (activeSentenceId) {
+      // Find both original (English) and translated (Chinese) spans if they exist
+      const elements = document.querySelectorAll(`span[data-sentence-id="${activeSentenceId}"]`);
+      if (elements.length > 0) {
+        console.log('[Side Panel Webview] Scrolling active sentence element into view. Found elements count:', elements.length);
+        // Scroll the first element (usually original English, or bilingual English/Chinese) into view
+        elements[0].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      } else {
+        console.warn('[Side Panel Webview] Active sentence span element not found for id:', activeSentenceId);
+      }
+    }
+  }, [activeSentenceId]);
+
+  const handleSentenceHover = (id: string | null) => {
+    console.log('[Side Panel Webview] handleSentenceHover (user hover) id:', id);
+    useStore.setState({ activeSentenceId: id });
+    postMessage({
+      type: 'panel-hover',
+      id: id || undefined
+    });
+  };
+
+  const splitChineseSentences = (text: string): string[] => {
+    const results: string[] = [];
+    const re = /[^。！？]*[。！？]+(?:\s|$)/g;
+    let m: RegExpExecArray | null;
+    let last = 0;
+    while ((m = re.exec(text)) !== null) {
+      results.push(m[0]);
+      last = re.lastIndex;
+    }
+    if (last < text.length) {
+      const rest = text.slice(last).trim();
+      if (rest) results.push(rest);
+    }
+    return results.filter(s => s.trim().length > 0);
+  };
+
+  const alignSentences = (
+    englishSentences: Array<{ id: string; text: string }> | undefined,
+    translatedText: string
+  ): Array<{ id: string; text: string }> => {
+    if (!translatedText) return [];
+    if (!englishSentences || englishSentences.length === 0) {
+      return [{ id: '', text: translatedText }];
+    }
+
+    const chineseSentences = splitChineseSentences(translatedText);
+
+    if (chineseSentences.length === englishSentences.length) {
+      return englishSentences.map((eng, idx) => ({
+        id: eng.id,
+        text: chineseSentences[idx]
+      }));
+    }
+
+    if (englishSentences.length === 1) {
+      return [{ id: englishSentences[0].id, text: translatedText }];
+    }
+
+    return [{ id: englishSentences[0].id, text: translatedText }];
+  };
+
+  const renderEnglishParagraph = (para: { id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' | 'full'; sentences?: Array<{ id: string; text: string }> }) => {
+    if (para.sentences && para.sentences.length > 0) {
+      return para.sentences.map((sent) => (
+        <span
+          key={sent.id}
+          data-sentence-id={sent.id}
+          onMouseEnter={() => handleSentenceHover(sent.id)}
+          onMouseLeave={() => handleSentenceHover(null)}
+          className={`translation-tab-sentence ${
+            activeSentenceId === sent.id ? 'active' : ''
+          }`}
+        >
+          {sent.text}{' '}
+        </span>
+      ));
+    }
+    return para.text;
+  };
+
+  const renderChineseParagraph = (
+    para: { id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' | 'full'; sentences?: Array<{ id: string; text: string }> },
+    translation: string
+  ) => {
+    if (!translation) return '';
+    const aligned = alignSentences(para.sentences, translation);
+    if (aligned.length > 0) {
+      return aligned.map((sent) => (
+        <span
+          key={sent.id || para.id}
+          data-sentence-id={sent.id || undefined}
+          onMouseEnter={() => sent.id ? handleSentenceHover(sent.id) : undefined}
+          onMouseLeave={() => sent.id ? handleSentenceHover(null) : undefined}
+          className={`translation-tab-sentence ${
+            sent.id && activeSentenceId === sent.id ? 'active' : ''
+          }`}
+        >
+          {sent.text}
+        </span>
+      ));
+    }
+    return translation;
+  };
 
   const handleTranslatePage = () => {
     if (!currentPageText) return;
@@ -25,8 +174,6 @@ export const TranslationTab: FunctionComponent = () => {
       type: 'refresh-page-text'
     });
   };
-
-  const hasTranslations = !!(currentPageText?.translations && Object.keys(currentPageText.translations).length > 0);
 
   return (
     <div className="flex flex-col gap-4 animate-in fade-in duration-200">
@@ -110,47 +257,55 @@ export const TranslationTab: FunctionComponent = () => {
                 (() => {
                   const hasSections = currentPageText.paragraphs.some(p => p.section !== undefined);
                   if (currentPageText.columnsCount > 1 && hasSections) {
-                    const headerParas = currentPageText.paragraphs.filter(p => p.section === 'header');
-                    const leftParas = currentPageText.paragraphs.filter(p => p.section === 'left');
-                    const rightParas = currentPageText.paragraphs.filter(p => p.section === 'right');
-                    const footerParas = currentPageText.paragraphs.filter(p => p.section === 'footer');
+                    const blocks = groupParagraphsIntoBlocks(currentPageText.paragraphs);
 
                     return (
                       <div className="select-text selection:bg-accent/30 break-words leading-relaxed text-justify font-serif text-[11px] text-foreground animate-in fade-in duration-300 flex flex-col gap-3">
-                        {headerParas.length > 0 && (
-                          <div className="w-full mb-2">
-                            {headerParas.map(para => (
-                              <p key={para.id} className="mb-3 indent-4 leading-relaxed text-justify font-semibold">
-                                {para.text}
-                              </p>
-                            ))}
-                          </div>
-                        )}
-                        <div className="grid grid-cols-2 gap-5 w-full">
-                          <div className="flex flex-col">
-                            {leftParas.map(para => (
-                              <p key={para.id} className="mb-3 indent-4 leading-relaxed text-justify">
-                                {para.text}
-                              </p>
-                            ))}
-                          </div>
-                          <div className="flex flex-col border-l border-dashed border-border/40 pl-5">
-                            {rightParas.map(para => (
-                              <p key={para.id} className="mb-3 indent-4 leading-relaxed text-justify">
-                                {para.text}
-                              </p>
-                            ))}
-                          </div>
-                        </div>
-                        {footerParas.length > 0 && (
-                          <div className="w-full mt-2 border-t border-dashed border-border/40 pt-2">
-                            {footerParas.map(para => (
-                              <p key={para.id} className="mb-3 indent-4 leading-relaxed text-justify text-secondary-foreground/80">
-                                {para.text}
-                              </p>
-                            ))}
-                          </div>
-                        )}
+                        {blocks.map((block, idx) => {
+                          if (block.type === 'single') {
+                            return (
+                              <div key={idx} className="w-full">
+                                {block.paragraphs.map(para => {
+                                  const isHeader = para.section === 'header';
+                                  const isFooter = para.section === 'footer';
+                                  return (
+                                    <p
+                                      key={para.id}
+                                      className={`mb-3 indent-4 leading-relaxed text-justify ${
+                                        isHeader ? 'font-semibold mb-2' : ''
+                                      } ${
+                                        isFooter ? 'text-secondary-foreground/80' : ''
+                                      }`}
+                                    >
+                                      {renderEnglishParagraph(para)}
+                                    </p>
+                                  );
+                                })}
+                              </div>
+                            );
+                          } else {
+                            const leftParas = block.paragraphs.filter(p => p.section === 'left');
+                            const rightParas = block.paragraphs.filter(p => p.section === 'right');
+                            return (
+                              <div key={idx} className="grid grid-cols-2 gap-5 w-full">
+                                <div className="flex flex-col">
+                                  {leftParas.map(para => (
+                                    <p key={para.id} className="mb-3 indent-4 leading-relaxed text-justify">
+                                      {renderEnglishParagraph(para)}
+                                    </p>
+                                  ))}
+                                </div>
+                                <div className="flex flex-col border-l border-dashed border-border/40 pl-5">
+                                  {rightParas.map(para => (
+                                    <p key={para.id} className="mb-3 indent-4 leading-relaxed text-justify">
+                                      {renderEnglishParagraph(para)}
+                                    </p>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          }
+                        })}
                       </div>
                     );
                   }
@@ -166,7 +321,7 @@ export const TranslationTab: FunctionComponent = () => {
                     >
                       {currentPageText.paragraphs.map((para) => (
                         <p key={para.id} className="mb-3 indent-4 leading-relaxed text-justify">
-                          {para.text}
+                          {renderEnglishParagraph(para)}
                         </p>
                       ))}
                     </div>
@@ -200,47 +355,55 @@ export const TranslationTab: FunctionComponent = () => {
               (() => {
                 const hasSections = currentPageText.paragraphs.some(p => p.section !== undefined);
                 if (currentPageText.columnsCount > 1 && hasSections) {
-                  const headerParas = currentPageText.paragraphs.filter(p => p.section === 'header');
-                  const leftParas = currentPageText.paragraphs.filter(p => p.section === 'left');
-                  const rightParas = currentPageText.paragraphs.filter(p => p.section === 'right');
-                  const footerParas = currentPageText.paragraphs.filter(p => p.section === 'footer');
+                  const blocks = groupParagraphsIntoBlocks(currentPageText.paragraphs);
 
                   return (
                     <div className="select-text selection:bg-accent/30 break-words leading-relaxed text-justify font-zhSerif text-[14px] leading-[2.0] text-foreground font-medium tracking-wide animate-in fade-in duration-300 flex flex-col gap-4">
-                      {headerParas.length > 0 && (
-                        <div className="w-full mb-2">
-                          {headerParas.map(para => (
-                            <p key={para.id} className="mb-3 indent-8 text-justify font-semibold">
-                              {currentPageText.translations?.[para.id] || ''}
-                            </p>
-                          ))}
-                        </div>
-                      )}
-                      <div className="grid grid-cols-2 gap-5 w-full">
-                        <div className="flex flex-col">
-                          {leftParas.map(para => (
-                            <p key={para.id} className="mb-3 indent-8 text-justify">
-                              {currentPageText.translations?.[para.id] || ''}
-                            </p>
-                          ))}
-                        </div>
-                        <div className="flex flex-col border-l border-dashed border-border/40 pl-5">
-                          {rightParas.map(para => (
-                            <p key={para.id} className="mb-3 indent-8 text-justify">
-                              {currentPageText.translations?.[para.id] || ''}
-                            </p>
-                          ))}
-                        </div>
-                      </div>
-                      {footerParas.length > 0 && (
-                        <div className="w-full mt-2 border-t border-dashed border-border/40 pt-2">
-                          {footerParas.map(para => (
-                            <p key={para.id} className="mb-3 indent-8 text-justify text-secondary-foreground/80">
-                              {currentPageText.translations?.[para.id] || ''}
-                            </p>
-                          ))}
-                        </div>
-                      )}
+                      {blocks.map((block, idx) => {
+                        if (block.type === 'single') {
+                          return (
+                            <div key={idx} className="w-full">
+                              {block.paragraphs.map(para => {
+                                const isHeader = para.section === 'header';
+                                const isFooter = para.section === 'footer';
+                                return (
+                                  <p
+                                    key={para.id}
+                                    className={`mb-3 indent-8 text-justify ${
+                                      isHeader ? 'font-semibold' : ''
+                                    } ${
+                                      isFooter ? 'text-secondary-foreground/80' : ''
+                                    }`}
+                                  >
+                                    {renderChineseParagraph(para, currentPageText.translations?.[para.id] || '')}
+                                  </p>
+                                );
+                              })}
+                            </div>
+                          );
+                        } else {
+                          const leftParas = block.paragraphs.filter(p => p.section === 'left');
+                          const rightParas = block.paragraphs.filter(p => p.section === 'right');
+                          return (
+                            <div key={idx} className="grid grid-cols-2 gap-5 w-full">
+                              <div className="flex flex-col">
+                                {leftParas.map(para => (
+                                  <p key={para.id} className="mb-3 indent-8 text-justify">
+                                    {renderChineseParagraph(para, currentPageText.translations?.[para.id] || '')}
+                                  </p>
+                                ))}
+                              </div>
+                              <div className="flex flex-col border-l border-dashed border-border/40 pl-5">
+                                {rightParas.map(para => (
+                                  <p key={para.id} className="mb-3 indent-8 text-justify">
+                                    {renderChineseParagraph(para, currentPageText.translations?.[para.id] || '')}
+                                  </p>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        }
+                      })}
                     </div>
                   );
                 }
@@ -256,7 +419,7 @@ export const TranslationTab: FunctionComponent = () => {
                   >
                     {currentPageText.paragraphs.map((para) => (
                       <p key={para.id} className="mb-4 indent-8 text-justify">
-                        {currentPageText.translations?.[para.id] || ''}
+                        {renderChineseParagraph(para, currentPageText.translations?.[para.id] || '')}
                       </p>
                     ))}
                   </div>
@@ -266,87 +429,84 @@ export const TranslationTab: FunctionComponent = () => {
               (() => {
                 const hasSections = currentPageText.paragraphs.some(p => p.section !== undefined);
                 if (currentPageText.columnsCount > 1 && hasSections) {
-                  const headerParas = currentPageText.paragraphs.filter(p => p.section === 'header');
-                  const leftParas = currentPageText.paragraphs.filter(p => p.section === 'left');
-                  const rightParas = currentPageText.paragraphs.filter(p => p.section === 'right');
-                  const footerParas = currentPageText.paragraphs.filter(p => p.section === 'footer');
+                  const blocks = groupParagraphsIntoBlocks(currentPageText.paragraphs);
 
                   return (
                     <div className="select-text selection:bg-accent/30 break-words leading-relaxed text-justify animate-in fade-in duration-300 flex flex-col gap-4">
-                      {headerParas.length > 0 && (
-                        <div className="w-full mb-2">
-                          {headerParas.map(para => {
-                            const translation = currentPageText.translations?.[para.id];
-                            return (
-                              <div key={para.id} className="mb-4 pb-3 border-b border-border/20 last:border-0">
-                                <p className="font-serif text-[11px] text-secondary-foreground leading-relaxed italic mb-1.5 font-semibold">
-                                  {para.text}
-                                </p>
-                                {translation && (
-                                  <p className="font-zhSerif text-[14px] leading-[2] text-foreground font-medium tracking-wide indent-8 mt-1 border-l-2 border-primary/20 pl-3 font-semibold">
-                                    {translation}
-                                  </p>
-                                )}
+                      {blocks.map((block, idx) => {
+                        if (block.type === 'single') {
+                          return (
+                            <div key={idx} className="w-full">
+                              {block.paragraphs.map(para => {
+                                const translation = currentPageText.translations?.[para.id];
+                                const isHeader = para.section === 'header';
+                                const isFooter = para.section === 'footer';
+                                return (
+                                  <div key={para.id} className="mb-4 pb-3 border-b border-border/20 last:border-0">
+                                    <p className={`font-serif text-[11px] leading-relaxed italic mb-1.5 ${
+                                      isHeader ? 'font-semibold' : ''
+                                    } ${
+                                      isFooter ? 'text-secondary-foreground/80' : 'text-secondary-foreground'
+                                    }`}>
+                                      {renderEnglishParagraph(para)}
+                                    </p>
+                                    {translation && (
+                                      <p className={`font-zhSerif text-[14px] leading-[2] text-foreground font-medium tracking-wide indent-8 mt-1 border-l-2 border-primary/20 pl-3 ${
+                                        isHeader ? 'font-semibold' : ''
+                                      } ${
+                                        isFooter ? 'text-secondary-foreground/80' : ''
+                                      }`}>
+                                        {renderChineseParagraph(para, translation)}
+                                      </p>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        } else {
+                          const leftParas = block.paragraphs.filter(p => p.section === 'left');
+                          const rightParas = block.paragraphs.filter(p => p.section === 'right');
+                          return (
+                            <div key={idx} className="grid grid-cols-2 gap-5 w-full">
+                              <div className="flex flex-col">
+                                {leftParas.map(para => {
+                                  const translation = currentPageText.translations?.[para.id];
+                                  return (
+                                    <div key={para.id} className="mb-4 pb-3 border-b border-border/20 last:border-0">
+                                      <p className="font-serif text-[11px] text-secondary-foreground leading-relaxed italic mb-1.5">
+                                        {renderEnglishParagraph(para)}
+                                      </p>
+                                      {translation && (
+                                        <p className="font-zhSerif text-[14px] leading-[2] text-foreground font-medium tracking-wide indent-8 mt-1 border-l-2 border-primary/20 pl-3">
+                                          {renderChineseParagraph(para, translation)}
+                                        </p>
+                                      )}
+                                    </div>
+                                  );
+                                })}
                               </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                      <div className="grid grid-cols-2 gap-5 w-full">
-                        <div className="flex flex-col">
-                          {leftParas.map(para => {
-                            const translation = currentPageText.translations?.[para.id];
-                            return (
-                              <div key={para.id} className="mb-4 pb-3 border-b border-border/20 last:border-0">
-                                <p className="font-serif text-[11px] text-secondary-foreground leading-relaxed italic mb-1.5">
-                                  {para.text}
-                                </p>
-                                {translation && (
-                                  <p className="font-zhSerif text-[14px] leading-[2] text-foreground font-medium tracking-wide indent-8 mt-1 border-l-2 border-primary/20 pl-3">
-                                    {translation}
-                                  </p>
-                                )}
+                              <div className="flex flex-col border-l border-dashed border-border/40 pl-5">
+                                {rightParas.map(para => {
+                                  const translation = currentPageText.translations?.[para.id];
+                                  return (
+                                    <div key={para.id} className="mb-4 pb-3 border-b border-border/20 last:border-0">
+                                      <p className="font-serif text-[11px] text-secondary-foreground leading-relaxed italic mb-1.5">
+                                        {renderEnglishParagraph(para)}
+                                      </p>
+                                      {translation && (
+                                        <p className="font-zhSerif text-[14px] leading-[2] text-foreground font-medium tracking-wide indent-8 mt-1 border-l-2 border-primary/20 pl-3">
+                                          {renderChineseParagraph(para, translation)}
+                                        </p>
+                                      )}
+                                    </div>
+                                  );
+                                })}
                               </div>
-                            );
-                          })}
-                        </div>
-                        <div className="flex flex-col border-l border-dashed border-border/40 pl-5">
-                          {rightParas.map(para => {
-                            const translation = currentPageText.translations?.[para.id];
-                            return (
-                              <div key={para.id} className="mb-4 pb-3 border-b border-border/20 last:border-0">
-                                <p className="font-serif text-[11px] text-secondary-foreground leading-relaxed italic mb-1.5">
-                                  {para.text}
-                                </p>
-                                {translation && (
-                                  <p className="font-zhSerif text-[14px] leading-[2] text-foreground font-medium tracking-wide indent-8 mt-1 border-l-2 border-primary/20 pl-3">
-                                    {translation}
-                                  </p>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                      {footerParas.length > 0 && (
-                        <div className="w-full mt-2 border-t border-dashed border-border/40 pt-2">
-                          {footerParas.map(para => {
-                            const translation = currentPageText.translations?.[para.id];
-                            return (
-                              <div key={para.id} className="mb-4 pb-3 border-b border-border/20 last:border-0">
-                                <p className="font-serif text-[11px] text-secondary-foreground/80 leading-relaxed italic mb-1.5">
-                                  {para.text}
-                                </p>
-                                {translation && (
-                                  <p className="font-zhSerif text-[14px] leading-[2] text-secondary-foreground/80 font-medium tracking-wide indent-8 mt-1 border-l-2 border-primary/20 pl-3">
-                                    {translation}
-                                  </p>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
+                            </div>
+                          );
+                        }
+                      })}
                     </div>
                   );
                 }
@@ -358,11 +518,11 @@ export const TranslationTab: FunctionComponent = () => {
                       return (
                         <div key={para.id} className="mb-5 pb-4 border-b border-border/20 last:border-0">
                           <p className="font-serif text-[11px] text-secondary-foreground leading-relaxed italic mb-2">
-                            {para.text}
+                            {renderEnglishParagraph(para)}
                           </p>
                           {translation && (
                             <p className="font-zhSerif text-[14px] leading-[2] text-foreground font-medium tracking-wide indent-4 mt-1 border-l-2 border-primary/20 pl-3">
-                              {translation}
+                              {renderChineseParagraph(para, translation)}
                             </p>
                           )}
                         </div>

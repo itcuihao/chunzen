@@ -19,8 +19,6 @@ let renderTask: { cancel(): void } | null = null;
 // Translation states
 let currentParagraphs: Paragraph[] = [];
 const pageTranslationsCache = new Map<number, Record<string, string>>();
-let isTranslationMode = false;
-let isTranslating = false;
 
 // DOM refs
 const container = document.getElementById('pdf-container')!;
@@ -38,25 +36,6 @@ wrapper.id = 'canvas-wrapper';
 container.appendChild(wrapper);
 wrapper.appendChild(canvas);
 wrapper.appendChild(textLayer);
-
-// Translation structures
-const translationLayer = document.createElement('div');
-translationLayer.id = 'translation-layer';
-translationLayer.classList.add('hidden');
-wrapper.appendChild(translationLayer);
-
-const translationLoading = document.createElement('div');
-translationLoading.id = 'translation-loading';
-translationLoading.classList.add('hidden');
-translationLoading.innerHTML = `
-  <div class="spinner"></div>
-  <div class="loading-text">正在翻译当前页面...</div>
-`;
-wrapper.appendChild(translationLoading);
-
-// Toolbar buttons
-const btnTranslateEl = document.getElementById('btn-translate');
-const btnToggleTranslationEl = document.getElementById('btn-toggle-translation');
 
 async function loadPdfDocument() {
   try {
@@ -97,10 +76,6 @@ async function renderCurrentPage() {
   textLayer.style.width = viewport.width + 'px';
   textLayer.style.height = viewport.height + 'px';
 
-  // Position the translation overlay layer as well
-  translationLayer.style.width = viewport.width + 'px';
-  translationLayer.style.height = viewport.height + 'px';
-
   const items = await getPageText(page);
   const { paragraphs: newParagraphs, columnsCount } = buildTextLayer(textLayer, items, viewport);
 
@@ -116,14 +91,10 @@ async function renderCurrentPage() {
   vscode.postMessage({
     type: 'page-text-loaded',
     pageNumber: currentPage,
-    paragraphs: newParagraphs.map(p => ({ id: p.id, text: p.text, section: p.section })),
+    paragraphs: newParagraphs.map(p => ({ id: p.id, text: p.text, section: p.section, sentences: p.sentences })),
     columnsCount,
     translations
   });
-
-  // Render translations overlay if mode is active and update toolbar buttons
-  renderTranslationOverlay();
-  updateToolbarButtons();
 }
 
 // Removed unused hover text events to avoid single sentence translation
@@ -162,6 +133,42 @@ function hideLoading() {
   setTimeout(() => { loadingOverlay.style.display = 'none'; }, 400);
 }
 
+// Highlight PDF sentences
+function highlightPdfSentence(sid: string) {
+  clearPdfHighlight();
+  const spans = document.querySelectorAll(`span[data-sentence-id="${sid}"]`);
+  spans.forEach(span => {
+    (span as HTMLElement).classList.add('sentence-active');
+  });
+}
+
+function clearPdfHighlight() {
+  const spans = document.querySelectorAll('.sentence-active');
+  spans.forEach(span => {
+    (span as HTMLElement).classList.remove('sentence-active');
+  });
+}
+
+// Hover event listeners on textLayer
+textLayer.addEventListener('mouseover', (e) => {
+  const target = e.target as HTMLElement;
+  if (target && target.tagName === 'SPAN' && target.dataset.sentenceId) {
+    const sid = target.dataset.sentenceId;
+    console.log('[PDF Viewer] mouseover sentence id:', sid);
+    highlightPdfSentence(sid);
+    vscode.postMessage({ type: 'pdf-hover', id: sid });
+  }
+});
+
+textLayer.addEventListener('mouseout', (e) => {
+  const target = e.target as HTMLElement;
+  if (target && target.tagName === 'SPAN' && target.dataset.sentenceId) {
+    console.log('[PDF Viewer] mouseout sentence id:', target.dataset.sentenceId);
+    clearPdfHighlight();
+    vscode.postMessage({ type: 'pdf-hover' });
+  }
+});
+
 // Toolbar
 document.getElementById('btn-prev')?.addEventListener('click', () => goToPage(currentPage - 1));
 document.getElementById('btn-next')?.addEventListener('click', () => goToPage(currentPage + 1));
@@ -180,11 +187,6 @@ document.addEventListener('keydown', e => {
 async function goToPage(n: number) {
   if (!pdfDoc) return;
   n = Math.max(1, Math.min(totalPages, n));
-  if (n !== currentPage) {
-    isTranslationMode = pageTranslationsCache.has(n);
-    isTranslating = false;
-    translationLoading.classList.add('hidden');
-  }
   currentPage = n;
   pageInputEl.value = String(n);
   await renderCurrentPage();
@@ -206,97 +208,6 @@ function fitWidth() {
   });
 }
 
-// Bind translation buttons
-btnTranslateEl?.addEventListener('click', startPageTranslation);
-btnToggleTranslationEl?.addEventListener('click', toggleTranslationMode);
-
-function startPageTranslation() {
-  if (!pdfDoc || isTranslating) return;
-
-  const pageCache = pageTranslationsCache.get(currentPage);
-  if (pageCache) {
-    isTranslationMode = true;
-    renderTranslationOverlay();
-    updateToolbarButtons();
-    return;
-  }
-
-  if (currentParagraphs.length === 0) {
-    alert('当前页面未检测到可翻译的段落文本');
-    return;
-  }
-
-  isTranslating = true;
-  translationLoading.classList.remove('hidden');
-
-  vscode.postMessage({
-    type: 'translate-page-paragraphs',
-    pageNumber: currentPage,
-    paragraphs: currentParagraphs.map(p => ({ id: p.id, text: p.text }))
-  });
-}
-
-function toggleTranslationMode() {
-  isTranslationMode = !isTranslationMode;
-  renderTranslationOverlay();
-  updateToolbarButtons();
-}
-
-function renderTranslationOverlay() {
-  translationLayer.innerHTML = '';
-  if (!isTranslationMode) {
-    translationLayer.classList.add('hidden');
-    return;
-  }
-
-  const pageCache = pageTranslationsCache.get(currentPage);
-  if (!pageCache) {
-    translationLayer.classList.add('hidden');
-    return;
-  }
-
-  translationLayer.classList.remove('hidden');
-
-  for (const para of currentParagraphs) {
-    const translatedText = pageCache[para.id];
-    if (!translatedText) continue;
-
-    const div = document.createElement('div');
-    div.className = 'translated-para';
-    div.textContent = translatedText;
-
-    div.style.left = para.x + 'px';
-    div.style.top = para.y + 'px';
-    div.style.width = para.width + 'px';
-    div.style.height = para.height + 'px';
-
-    const fs = Math.max(12, para.fontSize);
-    div.style.fontSize = fs + 'px';
-
-    translationLayer.appendChild(div);
-  }
-}
-
-function updateToolbarButtons() {
-  if (!btnTranslateEl || !btnToggleTranslationEl) return;
-
-  const hasCache = pageTranslationsCache.has(currentPage);
-  if (hasCache) {
-    btnTranslateEl.classList.add('hidden');
-    btnToggleTranslationEl.classList.remove('hidden');
-    if (isTranslationMode) {
-      btnToggleTranslationEl.textContent = '显示原文';
-      btnToggleTranslationEl.title = '显示原文';
-    } else {
-      btnToggleTranslationEl.textContent = '显示译文';
-      btnToggleTranslationEl.title = '显示译文';
-    }
-  } else {
-    btnTranslateEl.classList.remove('hidden');
-    btnToggleTranslationEl.classList.add('hidden');
-  }
-}
-
 // Receive messages from extension host
 window.addEventListener('message', event => {
   const message = event.data;
@@ -304,10 +215,6 @@ window.addEventListener('message', event => {
 
   switch (message.type) {
     case 'translate-page-paragraphs-loading': {
-      if (message.pageNumber === currentPage) {
-        isTranslating = true;
-        translationLoading.classList.remove('hidden');
-      }
       break;
     }
     case 'translate-page-paragraphs-result': {
@@ -316,26 +223,26 @@ window.addEventListener('message', event => {
         cacheObj[item.id] = item.translatedText;
       }
       pageTranslationsCache.set(message.pageNumber, cacheObj);
-
-      if (message.pageNumber === currentPage) {
-        translationLoading.classList.add('hidden');
-        isTranslating = false;
-        isTranslationMode = true;
-        renderTranslationOverlay();
-        updateToolbarButtons();
-      }
       break;
     }
     case 'translate-page-paragraphs-error': {
-      if (message.pageNumber === currentPage) {
-        translationLoading.classList.add('hidden');
-        isTranslating = false;
-        alert('翻译失败: ' + message.message);
-      }
       break;
     }
     case 'trigger-page-text-extract': {
       renderCurrentPage();
+      break;
+    }
+    case 'sync-panel-hover': {
+      console.log('[PDF Viewer] received sync-panel-hover with id:', message.id);
+      if (message.id) {
+        highlightPdfSentence(message.id);
+        const firstSpan = textLayer.querySelector(`span[data-sentence-id="${message.id}"]`);
+        if (firstSpan) {
+          firstSpan.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      } else {
+        clearPdfHighlight();
+      }
       break;
     }
   }
