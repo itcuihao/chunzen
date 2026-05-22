@@ -89,10 +89,42 @@ export function buildTextLayer(
   container.innerHTML = '';
 
   // 1. Transform to layout coordinates and filter math/headers
-  // We use a safe 2% margin to prevent discarding actual body text at page boundaries.
   const headerY = viewport.height * 0.02;
   const footerY = viewport.height * 0.98;
   const allItems: ColLayoutItem[] = [];
+
+  // ── 字体频率分析：先统计每个 fontName 出现的字符数 ──
+  // PDF.js 使用混淆名（g_d0_f1 等），不含 bold 关键词
+  // 策略：字符数最多的字体 = 正文字体，其余字体 = 非正文（可能是标题/粗体）
+  const fontCharCount = new Map<string, number>();
+  for (const item of items) {
+    if (!item.str || !item.str.trim() || !item.fontName) continue;
+    const tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
+    if (!tx || isNaN(tx[4]) || isNaN(tx[5])) continue;
+    if (tx[5] < headerY || tx[5] > footerY) continue;
+    fontCharCount.set(
+      item.fontName,
+      (fontCharCount.get(item.fontName) || 0) + item.str.length
+    );
+  }
+
+  // 找出正文字体（字符数最多的）
+  let bodyFont = '';
+  let bodyFontCount = 0;
+  for (const [name, count] of fontCharCount) {
+    if (count > bodyFontCount) {
+      bodyFontCount = count;
+      bodyFont = name;
+    }
+  }
+  // 将正文字体暴露给辅助函数
+  _bodyFont = bodyFont;
+
+  console.log('[ChunZen] Font frequency:', [...fontCharCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8));
+  console.log('[ChunZen] Body font (most frequent):', bodyFont);
+
+  // Debug: collect unique font names
+  const fontNames = new Set<string>();
 
   for (const item of items) {
     if (!item.str || !item.str.trim()) continue;
@@ -114,6 +146,7 @@ export function buildTextLayer(
       height: item.height * viewport.scale,
       fontName: item.fontName || ''
     });
+    fontNames.add(item.fontName || '');
   }
 
   if (allItems.length === 0) {
@@ -488,6 +521,11 @@ export function buildTextLayer(
     });
   }
 
+  // Debug: log font names and block types
+  console.log('[ChunZen] Font names:', [...fontNames]);
+  console.log('[ChunZen] Blocks:', blocks.map((b: StructuralBlock) => `${b.type}(${b.segments.length}segs)`));
+  console.log('[ChunZen] Paragraphs:', paragraphs.map(p => `${p.blockType || '?'} bold=${p.bold} "${p.text.slice(0, 50)}..."`));
+
   return {
     sentences: sentenceMap,
     spanToSentence,
@@ -500,10 +538,22 @@ export function buildTextLayer(
 
 function isHeadingSegment(seg: LineSegment): boolean {
   if (seg.items.length === 0) return false;
-  if (!isBoldFont(seg.items[0].fontName)) return false;
   const text = seg.str.trim();
-  if (text.length > 80) return false;
-  return true;
+  if (!text) return false;
+
+  // 长度限制：heading 不应超过 120 字符
+  if (text.length > 120) return false;
+
+  // 检测大多数 items 是否使用非正文字体（即 bold/heading 字体）
+  // 用字符数加权，避免少量标点干扰
+  const boldChars = seg.items.reduce(
+    (sum, it) => (isBoldFont(it.fontName) ? sum + it.str.length : sum), 0
+  );
+  const totalChars = seg.items.reduce((sum, it) => sum + it.str.length, 0);
+  if (totalChars === 0) return false;
+
+  // 超过 50% 字符使用非正文字体 → 判定为 heading
+  return boldChars / totalChars > 0.5;
 }
 
 function isFigureCaptionSegment(seg: LineSegment): boolean {
@@ -822,10 +872,26 @@ function segmentBlockIntoParas(
 
 // ── Existing Helper functions ──
 
+// 模块级变量：当前页正文字体（由 buildTextLayer 每次渲染时更新）
+let _bodyFont = '';
+
+/**
+ * 判断某字体是否为「非正文」（即可能是粗体/标题）
+ * 策略：
+ *   1. 若字体名含 bold/heavy/black 等关键词 → 直接判为粗体
+ *   2. 否则：若该字体不是正文字体（最高频字体）→ 视为非正文
+ *      注意：空 fontName 不做判断，返回 false
+ */
 function isBoldFont(fontName: string): boolean {
   if (!fontName) return false;
-  const lower = fontName.toLowerCase();
-  return /bold|heavy|black|demi|extrabold|semibold|medium/i.test(lower);
+
+  // 方式一：fontName 含明确 bold 关键词（非混淆 PDF 有效）
+  if (/bold|heavy|black|demi|extrabold|semibold/i.test(fontName)) return true;
+
+  // 方式二：基于频率推断 — 非正文字体视为 bold/heading
+  if (_bodyFont && fontName !== _bodyFont) return true;
+
+  return false;
 }
 
 function createSegment(lineItems: ColLayoutItem[], colIndex: number): LineSegment {
