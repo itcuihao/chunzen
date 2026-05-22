@@ -50,6 +50,7 @@ export interface PageTextLoadedMessage {
     text: string;
     section?: 'header' | 'left' | 'right' | 'footer' | 'full';
     sentences?: Array<{ id: string; text: string }>;
+    fontSize?: number;
   }>;
   columnsCount: number;
   translations?: Array<{ id: string; translatedText: string }>;
@@ -126,6 +127,7 @@ export interface SyncPageTextMessage {
     text: string;
     section?: 'header' | 'left' | 'right' | 'footer' | 'full';
     sentences?: Array<{ id: string; text: string }>;
+    fontSize?: number;
   }>;
   columnsCount: number;
   translations?: Array<{ id: string; translatedText: string }>;

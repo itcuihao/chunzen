@@ -47,13 +47,13 @@ interface PanelState {
   setTranslationError: (err: string) => void;
   currentPageText: {
     pageNumber: number;
-    paragraphs: Array<{ id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' | 'full' }>;
+    paragraphs: Array<{ id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' | 'full'; fontSize?: number }>;
     columnsCount: number;
     translations?: Record<string, string>;
   } | null;
   setCurrentPageText: (val: {
     pageNumber: number;
-    paragraphs: Array<{ id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' | 'full' }>;
+    paragraphs: Array<{ id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' | 'full'; fontSize?: number }>;
     columnsCount: number;
     translations?: Record<string, string>;
   } | null) => void;

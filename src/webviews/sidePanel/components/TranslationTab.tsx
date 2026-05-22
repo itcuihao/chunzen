@@ -1,26 +1,109 @@
-import { FunctionComponent, useState, useEffect } from 'react';
+import { FunctionComponent, useState, useEffect, useMemo } from 'react';
 import { useStore } from '../store';
 import { Languages, FileCheck, RefreshCw } from 'lucide-react';
 import { postMessage } from '../vscode';
 
-interface LayoutBlock {
-  type: 'single' | 'double';
-  paragraphs: Array<{
-    id: string;
-    text: string;
-    section?: 'header' | 'left' | 'right' | 'footer' | 'full';
-    sentences?: Array<{ id: string; text: string }>;
-  }>;
+// ── Paragraph role classification ──
+
+type ParagraphRole = 'title' | 'heading' | 'body' | 'small';
+
+const HEADING_RE = /^(?:abstract|introduction|background|methods|materials?\s+and\s+methods?|methodology|results|discussion|conclusion|conclusions|references|acknowledgments?|summary|keywords?|key\s+words|related\s+work|literature\s+review|objectives?|purpose|aims?|scope|table\s+of\s+contents|appendix|supplementary|figure\s+\d|table\s+\d|fig\.\s+\d)/i;
+
+interface AnnotatedPara {
+  id: string;
+  text: string;
+  section?: 'header' | 'left' | 'right' | 'footer' | 'full';
+  sentences?: Array<{ id: string; text: string }>;
+  fontSize?: number;
+  role: ParagraphRole;
 }
 
-function groupParagraphsIntoBlocks(
-  paragraphs: Array<{
-    id: string;
-    text: string;
-    section?: 'header' | 'left' | 'right' | 'footer' | 'full';
-    sentences?: Array<{ id: string; text: string }>;
-  }>
-): LayoutBlock[] {
+function classifyParagraphs(
+  paragraphs: Array<{ text: string; fontSize?: number }>
+): ParagraphRole[] {
+  const sizes = paragraphs.map(p => p.fontSize).filter((s): s is number => s !== undefined && s > 0);
+
+  if (sizes.length === 0) {
+    return paragraphs.map(() => 'body');
+  }
+
+  const sorted = [...sizes].sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)];
+
+  return paragraphs.map(para => {
+    const fs = para.fontSize;
+    if (!fs) return 'body';
+
+    const ratio = fs / median;
+    const text = para.text.trim();
+
+    if (ratio >= 1.5) return 'title';
+    if (ratio >= 1.15 && text.length < 80) return 'heading';
+    if (HEADING_RE.test(text) && text.length < 60) return 'heading';
+    if (ratio < 0.85) return 'small';
+    return 'body';
+  });
+}
+
+// ── Role-based style maps ──
+
+const EN_STYLES: Record<ParagraphRole, string> = {
+  title: 'font-serif text-[16px] font-bold text-center leading-[1.4] tracking-wide',
+  heading: 'font-serif text-[12px] font-bold leading-[1.5]',
+  body: 'font-serif text-[11px] leading-[1.65] text-justify',
+  small: 'font-serif text-[9.5px] leading-[1.5] text-secondary-foreground/80',
+};
+
+const ZH_STYLES: Record<ParagraphRole, string> = {
+  title: 'font-zhSerif text-[18px] font-bold text-center leading-[1.6] tracking-wider',
+  heading: 'font-zhSerif text-[15px] font-bold leading-[1.7]',
+  body: 'font-zhSerif text-[14px] font-medium leading-[2.0] tracking-wide text-justify',
+  small: 'font-zhSerif text-[12px] leading-[1.7]',
+};
+
+const BI_EN_STYLES: Record<ParagraphRole, string> = {
+  title: 'font-serif text-[13px] font-bold text-center leading-[1.4] italic',
+  heading: 'font-serif text-[11px] font-bold leading-[1.4] italic',
+  body: 'font-serif text-[11px] leading-[1.5] italic text-secondary-foreground',
+  small: 'font-serif text-[9.5px] leading-[1.4] italic text-secondary-foreground/60',
+};
+
+const BI_ZH_STYLES: Record<ParagraphRole, string> = {
+  title: 'font-zhSerif text-[16px] font-bold text-center leading-[1.6] tracking-wide',
+  heading: 'font-zhSerif text-[14px] font-bold leading-[1.8] tracking-wide',
+  body: 'font-zhSerif text-[14px] leading-[2.0] font-medium tracking-wide text-foreground',
+  small: 'font-zhSerif text-[12px] leading-[1.7] text-secondary-foreground',
+};
+
+const PARA_SPACING: Record<ParagraphRole, string> = {
+  title: 'mb-5',
+  heading: 'mb-3 mt-4 para-heading',
+  body: 'mb-3',
+  small: 'mb-2',
+};
+
+const ZH_INDENT: Record<ParagraphRole, string> = {
+  title: '',
+  heading: '',
+  body: 'indent-8',
+  small: '',
+};
+
+const EN_INDENT: Record<ParagraphRole, string> = {
+  title: '',
+  heading: '',
+  body: 'indent-4',
+  small: '',
+};
+
+// ── Layout block helpers ──
+
+interface LayoutBlock {
+  type: 'single' | 'double';
+  paragraphs: AnnotatedPara[];
+}
+
+function groupParagraphsIntoBlocks(paragraphs: AnnotatedPara[]): LayoutBlock[] {
   const blocks: LayoutBlock[] = [];
   for (const para of paragraphs) {
     const type = (para.section === 'left' || para.section === 'right') ? 'double' : 'single';
@@ -33,41 +116,38 @@ function groupParagraphsIntoBlocks(
   return blocks;
 }
 
+// ── Component ──
+
 export const TranslationTab: FunctionComponent = () => {
   const loading = useStore((state) => state.isTranslating);
   const error = useStore((state) => state.translationError);
   const currentPageText = useStore((state) => state.currentPageText);
   const activeSentenceId = useStore((state) => state.activeSentenceId);
 
-  const [layoutMode, setLayoutMode] = useState<'translation' | 'bilingual' | 'original'>('bilingual');
+  const [layoutMode, setLayoutMode] = useState<'translation' | 'bilingual' | 'original'>('original');
 
   const hasTranslations = !!(currentPageText?.translations && Object.keys(currentPageText.translations).length > 0);
 
-  // Automatically switch layout mode to bilingual when translations are loaded/completed
-  useEffect(() => {
-    if (hasTranslations && layoutMode === 'original') {
-      setLayoutMode('bilingual');
-    }
-  }, [hasTranslations]);
+  const annotatedParagraphs: AnnotatedPara[] = useMemo(() => {
+    if (!currentPageText?.paragraphs) return [];
+    const roles = classifyParagraphs(currentPageText.paragraphs);
+    return currentPageText.paragraphs.map((p, i) => ({
+      ...p,
+      role: roles[i],
+    }));
+  }, [currentPageText?.paragraphs]);
 
   // Scroll active sentence into view
   useEffect(() => {
-    console.log('[Side Panel Webview] activeSentenceId changed:', activeSentenceId);
     if (activeSentenceId) {
-      // Find both original (English) and translated (Chinese) spans if they exist
       const elements = document.querySelectorAll(`span[data-sentence-id="${activeSentenceId}"]`);
       if (elements.length > 0) {
-        console.log('[Side Panel Webview] Scrolling active sentence element into view. Found elements count:', elements.length);
-        // Scroll the first element (usually original English, or bilingual English/Chinese) into view
         elements[0].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      } else {
-        console.warn('[Side Panel Webview] Active sentence span element not found for id:', activeSentenceId);
       }
     }
   }, [activeSentenceId]);
 
   const handleSentenceHover = (id: string | null) => {
-    console.log('[Side Panel Webview] handleSentenceHover (user hover) id:', id);
     useStore.setState({ activeSentenceId: id });
     postMessage({
       type: 'panel-hover',
@@ -116,7 +196,7 @@ export const TranslationTab: FunctionComponent = () => {
     return [{ id: englishSentences[0].id, text: translatedText }];
   };
 
-  const renderEnglishParagraph = (para: { id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' | 'full'; sentences?: Array<{ id: string; text: string }> }) => {
+  const renderEnglishParagraph = (para: AnnotatedPara) => {
     if (para.sentences && para.sentences.length > 0) {
       return para.sentences.map((sent) => (
         <span
@@ -136,7 +216,7 @@ export const TranslationTab: FunctionComponent = () => {
   };
 
   const renderChineseParagraph = (
-    para: { id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' | 'full'; sentences?: Array<{ id: string; text: string }> },
+    para: AnnotatedPara,
     translation: string
   ) => {
     if (!translation) return '';
@@ -173,6 +253,238 @@ export const TranslationTab: FunctionComponent = () => {
     postMessage({
       type: 'refresh-page-text'
     });
+  };
+
+  const paraClass = (role: ParagraphRole, mode: 'en' | 'zh' | 'bi-en' | 'bi-zh'): string => {
+    const styles = mode === 'en' ? EN_STYLES
+      : mode === 'zh' ? ZH_STYLES
+      : mode === 'bi-en' ? BI_EN_STYLES
+      : BI_ZH_STYLES;
+    const indent = (mode === 'en') ? EN_INDENT[role]
+      : (mode === 'zh') ? ZH_INDENT[role]
+      : '';
+    return `${styles[role]} ${indent} ${PARA_SPACING[role]}`;
+  };
+
+  // ── Render helpers for each mode ──
+
+  const renderOriginalBlockLayout = () => {
+    const hasSections = annotatedParagraphs.some(p => p.section !== undefined);
+    if (currentPageText!.columnsCount > 1 && hasSections) {
+      const blocks = groupParagraphsIntoBlocks(annotatedParagraphs);
+      return (
+        <div className="select-text selection:bg-accent/30 break-words text-foreground animate-in fade-in duration-300 flex flex-col gap-3">
+          {blocks.map((block, idx) => {
+            if (block.type === 'single') {
+              return (
+                <div key={idx} className="w-full">
+                  {block.paragraphs.map(para => (
+                    <p key={para.id} className={paraClass(para.role, 'en')}>
+                      {renderEnglishParagraph(para)}
+                    </p>
+                  ))}
+                </div>
+              );
+            } else {
+              const leftParas = block.paragraphs.filter(p => p.section === 'left');
+              const rightParas = block.paragraphs.filter(p => p.section === 'right');
+              return (
+                <div key={idx} className="grid grid-cols-2 gap-5 w-full">
+                  <div className="flex flex-col">
+                    {leftParas.map(para => (
+                      <p key={para.id} className={paraClass(para.role, 'en')}>
+                        {renderEnglishParagraph(para)}
+                      </p>
+                    ))}
+                  </div>
+                  <div className="flex flex-col border-l border-dashed border-border/40 pl-5">
+                    {rightParas.map(para => (
+                      <p key={para.id} className={paraClass(para.role, 'en')}>
+                        {renderEnglishParagraph(para)}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              );
+            }
+          })}
+        </div>
+      );
+    }
+
+    return (
+      <div
+        className="select-text selection:bg-accent/30 break-words text-foreground animate-in fade-in duration-300"
+        style={{
+          columnCount: currentPageText!.columnsCount > 1 ? currentPageText!.columnsCount : undefined,
+          columnGap: '20px',
+          columnRule: currentPageText!.columnsCount > 1 ? '1px dashed var(--border)' : undefined,
+        }}
+      >
+        {annotatedParagraphs.map((para) => (
+          <p key={para.id} className={paraClass(para.role, 'en')}>
+            {renderEnglishParagraph(para)}
+          </p>
+        ))}
+      </div>
+    );
+  };
+
+  const renderTranslationBlockLayout = () => {
+    const hasSections = annotatedParagraphs.some(p => p.section !== undefined);
+    if (currentPageText!.columnsCount > 1 && hasSections) {
+      const blocks = groupParagraphsIntoBlocks(annotatedParagraphs);
+      return (
+        <div className="select-text selection:bg-accent/30 break-words animate-in fade-in duration-300 flex flex-col gap-4">
+          {blocks.map((block, idx) => {
+            if (block.type === 'single') {
+              return (
+                <div key={idx} className="w-full">
+                  {block.paragraphs.map(para => (
+                    <p key={para.id} className={paraClass(para.role, 'zh')}>
+                      {renderChineseParagraph(para, currentPageText!.translations?.[para.id] || '')}
+                    </p>
+                  ))}
+                </div>
+              );
+            } else {
+              const leftParas = block.paragraphs.filter(p => p.section === 'left');
+              const rightParas = block.paragraphs.filter(p => p.section === 'right');
+              return (
+                <div key={idx} className="grid grid-cols-2 gap-5 w-full">
+                  <div className="flex flex-col">
+                    {leftParas.map(para => (
+                      <p key={para.id} className={paraClass(para.role, 'zh')}>
+                        {renderChineseParagraph(para, currentPageText!.translations?.[para.id] || '')}
+                      </p>
+                    ))}
+                  </div>
+                  <div className="flex flex-col border-l border-dashed border-border/40 pl-5">
+                    {rightParas.map(para => (
+                      <p key={para.id} className={paraClass(para.role, 'zh')}>
+                        {renderChineseParagraph(para, currentPageText!.translations?.[para.id] || '')}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              );
+            }
+          })}
+        </div>
+      );
+    }
+
+    return (
+      <div
+        className="select-text selection:bg-accent/30 break-words animate-in fade-in duration-300"
+        style={{
+          columnCount: currentPageText!.columnsCount > 1 ? currentPageText!.columnsCount : undefined,
+          columnGap: '20px',
+          columnRule: currentPageText!.columnsCount > 1 ? '1px dashed var(--border)' : undefined,
+        }}
+      >
+        {annotatedParagraphs.map((para) => (
+          <p key={para.id} className={paraClass(para.role, 'zh')}>
+            {renderChineseParagraph(para, currentPageText!.translations?.[para.id] || '')}
+          </p>
+        ))}
+      </div>
+    );
+  };
+
+  const renderBilingualBlockLayout = () => {
+    const hasSections = annotatedParagraphs.some(p => p.section !== undefined);
+    if (currentPageText!.columnsCount > 1 && hasSections) {
+      const blocks = groupParagraphsIntoBlocks(annotatedParagraphs);
+      return (
+        <div className="select-text selection:bg-accent/30 break-words animate-in fade-in duration-300 flex flex-col gap-4">
+          {blocks.map((block, idx) => {
+            if (block.type === 'single') {
+              return (
+                <div key={idx} className="w-full">
+                  {block.paragraphs.map(para => {
+                    const translation = currentPageText!.translations?.[para.id];
+                    return (
+                      <div key={para.id} className="mb-4 pb-3 border-b border-border/20 last:border-0">
+                        <p className={`${paraClass(para.role, 'bi-en')} mb-1.5`}>
+                          {renderEnglishParagraph(para)}
+                        </p>
+                        {translation && (
+                          <p className={`${paraClass(para.role, 'bi-zh')} mt-1 border-l-2 border-primary/20 pl-3`}>
+                            {renderChineseParagraph(para, translation)}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            } else {
+              const leftParas = block.paragraphs.filter(p => p.section === 'left');
+              const rightParas = block.paragraphs.filter(p => p.section === 'right');
+              return (
+                <div key={idx} className="grid grid-cols-2 gap-5 w-full">
+                  <div className="flex flex-col">
+                    {leftParas.map(para => {
+                      const translation = currentPageText!.translations?.[para.id];
+                      return (
+                        <div key={para.id} className="mb-4 pb-3 border-b border-border/20 last:border-0">
+                          <p className={`${paraClass(para.role, 'bi-en')} mb-1.5`}>
+                            {renderEnglishParagraph(para)}
+                          </p>
+                          {translation && (
+                            <p className={`${paraClass(para.role, 'bi-zh')} mt-1 border-l-2 border-primary/20 pl-3`}>
+                              {renderChineseParagraph(para, translation)}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="flex flex-col border-l border-dashed border-border/40 pl-5">
+                    {rightParas.map(para => {
+                      const translation = currentPageText!.translations?.[para.id];
+                      return (
+                        <div key={para.id} className="mb-4 pb-3 border-b border-border/20 last:border-0">
+                          <p className={`${paraClass(para.role, 'bi-en')} mb-1.5`}>
+                            {renderEnglishParagraph(para)}
+                          </p>
+                          {translation && (
+                            <p className={`${paraClass(para.role, 'bi-zh')} mt-1 border-l-2 border-primary/20 pl-3`}>
+                              {renderChineseParagraph(para, translation)}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            }
+          })}
+        </div>
+      );
+    }
+
+    return (
+      <div className="select-text selection:bg-accent/30 break-words animate-in fade-in duration-300">
+        {annotatedParagraphs.map((para) => {
+          const translation = currentPageText!.translations?.[para.id];
+          return (
+            <div key={para.id} className="mb-5 pb-4 border-b border-border/20 last:border-0">
+              <p className={`${paraClass(para.role, 'bi-en')} mb-2`}>
+                {renderEnglishParagraph(para)}
+              </p>
+              {translation && (
+                <p className={`${paraClass(para.role, 'bi-zh')} mt-1 border-l-2 border-primary/20 pl-3`}>
+                  {renderChineseParagraph(para, translation)}
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
   };
 
   return (
@@ -222,8 +534,8 @@ export const TranslationTab: FunctionComponent = () => {
 
       {/* The Academic PDF Paper Sheet */}
       <article className="relative bg-editor-bg border border-border/80 shadow-md rounded-md p-6 min-h-[300px] flex flex-col justify-between transition-all duration-300">
-        
-        {/* Page Header (Academic Style Decoration) */}
+
+        {/* Page Header */}
         <div className="flex justify-between items-center border-b border-border/40 pb-2 mb-4">
           <span className="text-[8px] font-mono tracking-widest text-secondary-foreground/60 uppercase">
             {layoutMode === 'original' && 'CHUNZEN ACADEMIC READER // ORIGINAL VIEW'}
@@ -253,80 +565,8 @@ export const TranslationTab: FunctionComponent = () => {
             </div>
           ) : currentPageText ? (
             layoutMode === 'original' ? (
-              currentPageText.paragraphs.length > 0 ? (
-                (() => {
-                  const hasSections = currentPageText.paragraphs.some(p => p.section !== undefined);
-                  if (currentPageText.columnsCount > 1 && hasSections) {
-                    const blocks = groupParagraphsIntoBlocks(currentPageText.paragraphs);
-
-                    return (
-                      <div className="select-text selection:bg-accent/30 break-words leading-relaxed text-justify font-serif text-[11px] text-foreground animate-in fade-in duration-300 flex flex-col gap-3">
-                        {blocks.map((block, idx) => {
-                          if (block.type === 'single') {
-                            return (
-                              <div key={idx} className="w-full">
-                                {block.paragraphs.map(para => {
-                                  const isHeader = para.section === 'header';
-                                  const isFooter = para.section === 'footer';
-                                  return (
-                                    <p
-                                      key={para.id}
-                                      className={`mb-3 indent-4 leading-relaxed text-justify ${
-                                        isHeader ? 'font-semibold mb-2' : ''
-                                      } ${
-                                        isFooter ? 'text-secondary-foreground/80' : ''
-                                      }`}
-                                    >
-                                      {renderEnglishParagraph(para)}
-                                    </p>
-                                  );
-                                })}
-                              </div>
-                            );
-                          } else {
-                            const leftParas = block.paragraphs.filter(p => p.section === 'left');
-                            const rightParas = block.paragraphs.filter(p => p.section === 'right');
-                            return (
-                              <div key={idx} className="grid grid-cols-2 gap-5 w-full">
-                                <div className="flex flex-col">
-                                  {leftParas.map(para => (
-                                    <p key={para.id} className="mb-3 indent-4 leading-relaxed text-justify">
-                                      {renderEnglishParagraph(para)}
-                                    </p>
-                                  ))}
-                                </div>
-                                <div className="flex flex-col border-l border-dashed border-border/40 pl-5">
-                                  {rightParas.map(para => (
-                                    <p key={para.id} className="mb-3 indent-4 leading-relaxed text-justify">
-                                      {renderEnglishParagraph(para)}
-                                    </p>
-                                  ))}
-                                </div>
-                              </div>
-                            );
-                          }
-                        })}
-                      </div>
-                    );
-                  }
-
-                  return (
-                    <div
-                      className="select-text selection:bg-accent/30 break-words leading-relaxed text-justify font-serif text-[11px] text-foreground animate-in fade-in duration-300"
-                      style={{
-                        columnCount: currentPageText.columnsCount > 1 ? currentPageText.columnsCount : undefined,
-                        columnGap: '20px',
-                        columnRule: currentPageText.columnsCount > 1 ? '1px dashed var(--border)' : undefined,
-                      }}
-                    >
-                      {currentPageText.paragraphs.map((para) => (
-                        <p key={para.id} className="mb-3 indent-4 leading-relaxed text-justify">
-                          {renderEnglishParagraph(para)}
-                        </p>
-                      ))}
-                    </div>
-                  );
-                })()
+              annotatedParagraphs.length > 0 ? (
+                renderOriginalBlockLayout()
               ) : (
                 <div className="flex-1 flex flex-col items-center justify-center text-center py-10 opacity-70">
                   <FileCheck className="w-12 h-12 mb-3 text-secondary-foreground/40 stroke-[1.2]" />
@@ -352,185 +592,9 @@ export const TranslationTab: FunctionComponent = () => {
                 </button>
               </div>
             ) : layoutMode === 'translation' ? (
-              (() => {
-                const hasSections = currentPageText.paragraphs.some(p => p.section !== undefined);
-                if (currentPageText.columnsCount > 1 && hasSections) {
-                  const blocks = groupParagraphsIntoBlocks(currentPageText.paragraphs);
-
-                  return (
-                    <div className="select-text selection:bg-accent/30 break-words leading-relaxed text-justify font-zhSerif text-[14px] leading-[2.0] text-foreground font-medium tracking-wide animate-in fade-in duration-300 flex flex-col gap-4">
-                      {blocks.map((block, idx) => {
-                        if (block.type === 'single') {
-                          return (
-                            <div key={idx} className="w-full">
-                              {block.paragraphs.map(para => {
-                                const isHeader = para.section === 'header';
-                                const isFooter = para.section === 'footer';
-                                return (
-                                  <p
-                                    key={para.id}
-                                    className={`mb-3 indent-8 text-justify ${
-                                      isHeader ? 'font-semibold' : ''
-                                    } ${
-                                      isFooter ? 'text-secondary-foreground/80' : ''
-                                    }`}
-                                  >
-                                    {renderChineseParagraph(para, currentPageText.translations?.[para.id] || '')}
-                                  </p>
-                                );
-                              })}
-                            </div>
-                          );
-                        } else {
-                          const leftParas = block.paragraphs.filter(p => p.section === 'left');
-                          const rightParas = block.paragraphs.filter(p => p.section === 'right');
-                          return (
-                            <div key={idx} className="grid grid-cols-2 gap-5 w-full">
-                              <div className="flex flex-col">
-                                {leftParas.map(para => (
-                                  <p key={para.id} className="mb-3 indent-8 text-justify">
-                                    {renderChineseParagraph(para, currentPageText.translations?.[para.id] || '')}
-                                  </p>
-                                ))}
-                              </div>
-                              <div className="flex flex-col border-l border-dashed border-border/40 pl-5">
-                                {rightParas.map(para => (
-                                  <p key={para.id} className="mb-3 indent-8 text-justify">
-                                    {renderChineseParagraph(para, currentPageText.translations?.[para.id] || '')}
-                                  </p>
-                                ))}
-                              </div>
-                            </div>
-                          );
-                        }
-                      })}
-                    </div>
-                  );
-                }
-
-                return (
-                  <div
-                    className="select-text selection:bg-accent/30 break-words leading-relaxed text-justify font-zhSerif text-[14.5px] leading-[2.1] text-foreground font-medium tracking-wide animate-in fade-in duration-300"
-                    style={{
-                      columnCount: currentPageText.columnsCount > 1 ? currentPageText.columnsCount : undefined,
-                      columnGap: '20px',
-                      columnRule: currentPageText.columnsCount > 1 ? '1px dashed var(--border)' : undefined,
-                    }}
-                  >
-                    {currentPageText.paragraphs.map((para) => (
-                      <p key={para.id} className="mb-4 indent-8 text-justify">
-                        {renderChineseParagraph(para, currentPageText.translations?.[para.id] || '')}
-                      </p>
-                    ))}
-                  </div>
-                );
-              })()
+              renderTranslationBlockLayout()
             ) : (
-              (() => {
-                const hasSections = currentPageText.paragraphs.some(p => p.section !== undefined);
-                if (currentPageText.columnsCount > 1 && hasSections) {
-                  const blocks = groupParagraphsIntoBlocks(currentPageText.paragraphs);
-
-                  return (
-                    <div className="select-text selection:bg-accent/30 break-words leading-relaxed text-justify animate-in fade-in duration-300 flex flex-col gap-4">
-                      {blocks.map((block, idx) => {
-                        if (block.type === 'single') {
-                          return (
-                            <div key={idx} className="w-full">
-                              {block.paragraphs.map(para => {
-                                const translation = currentPageText.translations?.[para.id];
-                                const isHeader = para.section === 'header';
-                                const isFooter = para.section === 'footer';
-                                return (
-                                  <div key={para.id} className="mb-4 pb-3 border-b border-border/20 last:border-0">
-                                    <p className={`font-serif text-[11px] leading-relaxed italic mb-1.5 ${
-                                      isHeader ? 'font-semibold' : ''
-                                    } ${
-                                      isFooter ? 'text-secondary-foreground/80' : 'text-secondary-foreground'
-                                    }`}>
-                                      {renderEnglishParagraph(para)}
-                                    </p>
-                                    {translation && (
-                                      <p className={`font-zhSerif text-[14px] leading-[2] text-foreground font-medium tracking-wide indent-8 mt-1 border-l-2 border-primary/20 pl-3 ${
-                                        isHeader ? 'font-semibold' : ''
-                                      } ${
-                                        isFooter ? 'text-secondary-foreground/80' : ''
-                                      }`}>
-                                        {renderChineseParagraph(para, translation)}
-                                      </p>
-                                    )}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          );
-                        } else {
-                          const leftParas = block.paragraphs.filter(p => p.section === 'left');
-                          const rightParas = block.paragraphs.filter(p => p.section === 'right');
-                          return (
-                            <div key={idx} className="grid grid-cols-2 gap-5 w-full">
-                              <div className="flex flex-col">
-                                {leftParas.map(para => {
-                                  const translation = currentPageText.translations?.[para.id];
-                                  return (
-                                    <div key={para.id} className="mb-4 pb-3 border-b border-border/20 last:border-0">
-                                      <p className="font-serif text-[11px] text-secondary-foreground leading-relaxed italic mb-1.5">
-                                        {renderEnglishParagraph(para)}
-                                      </p>
-                                      {translation && (
-                                        <p className="font-zhSerif text-[14px] leading-[2] text-foreground font-medium tracking-wide indent-8 mt-1 border-l-2 border-primary/20 pl-3">
-                                          {renderChineseParagraph(para, translation)}
-                                        </p>
-                                      )}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                              <div className="flex flex-col border-l border-dashed border-border/40 pl-5">
-                                {rightParas.map(para => {
-                                  const translation = currentPageText.translations?.[para.id];
-                                  return (
-                                    <div key={para.id} className="mb-4 pb-3 border-b border-border/20 last:border-0">
-                                      <p className="font-serif text-[11px] text-secondary-foreground leading-relaxed italic mb-1.5">
-                                        {renderEnglishParagraph(para)}
-                                      </p>
-                                      {translation && (
-                                        <p className="font-zhSerif text-[14px] leading-[2] text-foreground font-medium tracking-wide indent-8 mt-1 border-l-2 border-primary/20 pl-3">
-                                          {renderChineseParagraph(para, translation)}
-                                        </p>
-                                      )}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          );
-                        }
-                      })}
-                    </div>
-                  );
-                }
-
-                return (
-                  <div className="select-text selection:bg-accent/30 break-words leading-relaxed text-justify animate-in fade-in duration-300">
-                    {currentPageText.paragraphs.map((para) => {
-                      const translation = currentPageText.translations?.[para.id];
-                      return (
-                        <div key={para.id} className="mb-5 pb-4 border-b border-border/20 last:border-0">
-                          <p className="font-serif text-[11px] text-secondary-foreground leading-relaxed italic mb-2">
-                            {renderEnglishParagraph(para)}
-                          </p>
-                          {translation && (
-                            <p className="font-zhSerif text-[14px] leading-[2] text-foreground font-medium tracking-wide indent-4 mt-1 border-l-2 border-primary/20 pl-3">
-                              {renderChineseParagraph(para, translation)}
-                            </p>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })()
+              renderBilingualBlockLayout()
             )
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center text-center py-10 opacity-70">
@@ -543,7 +607,7 @@ export const TranslationTab: FunctionComponent = () => {
           )}
         </div>
 
-        {/* Page Footer (Academic Style Decoration) */}
+        {/* Page Footer */}
         <div className="flex justify-between items-center border-t border-border/30 pt-2.5 mt-5 text-[8px] font-mono text-secondary-foreground/40">
           <span>DOCUMENT TRANSLATION SERVICE</span>
           <span>PAGE {currentPageText?.pageNumber || 1}</span>

@@ -20,6 +20,13 @@ export class SidePanelProvider {
   public onRefreshPageTextRequested?: () => Promise<void>;
   public onPanelHoverRequested?: (id?: string) => Promise<void>;
 
+  private lastPageText: {
+    pageNumber: number;
+    paragraphs: Array<{ id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' | 'full'; fontSize?: number }>;
+    columnsCount: number;
+    translations?: Array<{ id: string; translatedText: string }>;
+  } | null = null;
+
   constructor(
     context: vscode.ExtensionContext,
     translationService: TranslationService,
@@ -143,10 +150,11 @@ export class SidePanelProvider {
 
   syncPageText(
     pageNumber: number,
-    paragraphs: Array<{ id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' | 'full' }>,
+    paragraphs: Array<{ id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' | 'full'; fontSize?: number }>,
     columnsCount: number,
     translations?: Array<{ id: string; translatedText: string }>
   ): void {
+    this.lastPageText = { pageNumber, paragraphs, columnsCount, translations };
     this.postMessage({
       type: 'sync-page-text',
       pageNumber,
@@ -190,6 +198,15 @@ export class SidePanelProvider {
       journalSource: { type: 'letpub' },
       cacheMaxSize: this.configService.getCacheConfig().maxSize
     });
+    if (this.lastPageText) {
+      this.postMessage({
+        type: 'sync-page-text',
+        pageNumber: this.lastPageText.pageNumber,
+        paragraphs: this.lastPageText.paragraphs,
+        columnsCount: this.lastPageText.columnsCount,
+        translations: this.lastPageText.translations
+      });
+    }
   }
 
   syncGlossary(): void {
