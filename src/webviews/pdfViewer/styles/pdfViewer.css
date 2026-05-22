@@ -3,18 +3,64 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --bg: #1a1d27;
-  --toolbar-bg: #13151f;
-  --toolbar-border: #2a2d3e;
-  --btn-bg: #252836;
-  --btn-hover: #2f3347;
-  --btn-active: #374060;
-  --text: #d4d9e8;
-  --text-muted: #6b7280;
-  --accent: #5b8af5;
-  --highlight-bg: rgba(91, 138, 245, 0.18);
-  --highlight-border: rgba(91, 138, 245, 0.6);
-  --sentence-hover: rgba(91, 138, 245, 0.12);
+  /* Default Cozy Warm Dark (same as body.vscode-dark) */
+  --bg: #1c1917;
+  --toolbar-bg: #161412;
+  --toolbar-border: #332f2c;
+  --btn-bg: #292524;
+  --btn-hover: #44403c;
+  --btn-active: #57534e;
+  --text: #f5f5f4;
+  --text-muted: #a8a29e;
+  --accent: #f59e0b;
+  --highlight-bg: rgba(245, 158, 11, 0.18);
+  --highlight-border: rgba(245, 158, 11, 0.6);
+  --sentence-hover: rgba(245, 158, 11, 0.12);
+  --scrollbar-thumb: #3a3532;
+  --scrollbar-thumb-hover: #57534e;
+  --overlay-bg: #292524;
+  --overlay-text: #f5f5f4;
+  --loading-overlay-bg: rgba(28, 25, 23, 0.85);
+}
+
+body.vscode-dark {
+  --bg: #1c1917;
+  --toolbar-bg: #161412;
+  --toolbar-border: #332f2c;
+  --btn-bg: #292524;
+  --btn-hover: #44403c;
+  --btn-active: #57534e;
+  --text: #f5f5f4;
+  --text-muted: #a8a29e;
+  --accent: #f59e0b;
+  --highlight-bg: rgba(245, 158, 11, 0.18);
+  --highlight-border: rgba(245, 158, 11, 0.6);
+  --sentence-hover: rgba(245, 158, 11, 0.12);
+  --scrollbar-thumb: #3a3532;
+  --scrollbar-thumb-hover: #57534e;
+  --overlay-bg: #292524;
+  --overlay-text: #f5f5f4;
+  --loading-overlay-bg: rgba(28, 25, 23, 0.85);
+}
+
+body.vscode-light {
+  --bg: #FAF7F0; /* Spring Cicada warm cream ivory */
+  --toolbar-bg: #f3ede2;
+  --toolbar-border: #e8dfd0;
+  --btn-bg: #FAF7F0;
+  --btn-hover: #ebe3d5;
+  --btn-active: #ddd2bf;
+  --text: #2c2724; /* deep espresso */
+  --text-muted: #8e8278;
+  --accent: #b45309; /* warm amber */
+  --highlight-bg: rgba(180, 83, 9, 0.14);
+  --highlight-border: rgba(180, 83, 9, 0.5);
+  --sentence-hover: rgba(180, 83, 9, 0.08);
+  --scrollbar-thumb: #d7cebf;
+  --scrollbar-thumb-hover: #bcae97;
+  --overlay-bg: #f3ede2;
+  --overlay-text: #2c2724;
+  --loading-overlay-bg: rgba(250, 247, 240, 0.85);
 }
 
 html, body {
@@ -138,8 +184,8 @@ html, body {
 /* 滚动条美化 */
 #pdf-container::-webkit-scrollbar { width: 8px; height: 8px; }
 #pdf-container::-webkit-scrollbar-track { background: transparent; }
-#pdf-container::-webkit-scrollbar-thumb { background: #2d3150; border-radius: 4px; }
-#pdf-container::-webkit-scrollbar-thumb:hover { background: #3d4170; }
+#pdf-container::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 4px; }
+#pdf-container::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
 
 /* ── Canvas + 文字层 ── */
 #canvas-wrapper {

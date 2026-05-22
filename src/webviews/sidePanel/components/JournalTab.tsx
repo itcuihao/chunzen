@@ -19,7 +19,7 @@ export const JournalTab: FunctionComponent = () => {
   const getCasColorClass = (rank: string) => {
     if (rank.includes('一')) return 'bg-success/10 border-success/30 text-success shadow-[0_0_8px_rgba(72,187,120,0.1)]';
     if (rank.includes('二')) return 'bg-warning/10 border-warning/30 text-warning';
-    if (rank.includes('三')) return 'bg-orange-500/10 border-orange-500/30 text-orange-400';
+    if (rank.includes('三')) return 'bg-warning/10 border-warning/30 text-warning';
     return 'bg-secondary border-border text-secondary-foreground';
   };
 
@@ -70,14 +70,14 @@ export const JournalTab: FunctionComponent = () => {
           {info.jcrRanking && (
             <div className="flex flex-col p-3 rounded-lg border border-border bg-secondary/30 relative overflow-hidden group hover:border-accent/30 transition-colors">
               <div className="flex items-center gap-1.5 text-secondary-foreground">
-                <Award className="w-3.5 h-3.5 text-purple-400" />
+                <Award className="w-3.5 h-3.5 text-[var(--badge-jcr-text)]" />
                 <span className="text-[10px] font-medium tracking-wider uppercase">JCR 分区</span>
               </div>
-              <span className="text-xl font-bold text-purple-300 mt-1 tracking-tight select-text">
+              <span className="text-xl font-bold text-[var(--badge-jcr-text)] mt-1 tracking-tight select-text">
                 {info.jcrRanking}
               </span>
               <div className="absolute right-[-10px] bottom-[-10px] opacity-5 group-hover:opacity-10 transition-opacity">
-                <Award className="w-16 h-16 text-purple-400" />
+                <Award className="w-16 h-16 text-[var(--badge-jcr-text)]" />
               </div>
             </div>
           )}
