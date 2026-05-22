@@ -206,6 +206,7 @@
     "eslint": "^8.0.0",
     "lucide-react": "^0.379.0",
     "mini-css-extract-plugin": "^2.9.0",
+    "pdfjs-dist": "^5.7.284",
     "postcss": "^8.4.38",
     "postcss-loader": "^8.1.1",
     "tailwind-merge": "^2.3.0",

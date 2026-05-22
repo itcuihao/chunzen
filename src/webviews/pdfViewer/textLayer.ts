@@ -234,7 +234,7 @@ export function buildTextLayer(
   // 4. Split lines into segments & count splits (Two-pass analysis for hybrid layouts)
   let splitCount = 0;
   const splitLineYs: number[] = [];
-  const GUTTER_MIN_WIDTH = 15; // px
+  const GUTTER_MIN_WIDTH = 10; // px
   const centerRange = pageWidth * 0.2; // gutter midpoint must be within 20% of page center
 
   // Pass 1: Find split count and Y-coordinates of physically split lines
