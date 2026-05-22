@@ -10,3 +10,5 @@ pdf/**
 implementation_plan.md
 .claude/**
 scripts/**
+!scripts/layout_endpoint.py
+!scripts/start_layout_endpoint.sh

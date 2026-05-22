@@ -1,7 +1,7 @@
 // All message types for webview ↔ extension host communication
 
 import { GlossaryEntry, JournalInfo, TranslationHistoryEntry } from './models';
-import { EngineConfig, GeneralSettings, JournalSource } from './config';
+import { EngineConfig, GeneralSettings, JournalSource, LayoutConfig } from './config';
 
 // ── PDF Viewer → Extension ──
 
@@ -49,6 +49,7 @@ export interface PageTextLoadedMessage {
     id: string;
     text: string;
     section?: 'header' | 'left' | 'right' | 'footer' | 'full';
+    columnIndex?: number;
     sentences?: Array<{ id: string; text: string }>;
     fontSize?: number;
     bold?: boolean;
@@ -96,6 +97,7 @@ export interface InitStateMessage {
   priority: string[];
   journalSource: JournalSource;
   cacheMaxSize: number;
+  layoutConfig: LayoutConfig;
   engineConfigs: Record<string, Record<string, string>>;
 }
 
@@ -128,6 +130,7 @@ export interface SyncPageTextMessage {
     id: string;
     text: string;
     section?: 'header' | 'left' | 'right' | 'footer' | 'full';
+    columnIndex?: number;
     sentences?: Array<{ id: string; text: string }>;
     fontSize?: number;
     bold?: boolean;

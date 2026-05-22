@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { TranslationHistoryEntry, JournalInfo, GlossaryEntry } from '../../types/models';
+import { LayoutConfig } from '../../types/config';
 export type TabId = 'translation' | 'journal' | 'glossary' | 'settings';
 
 export type EngineStatus = {
@@ -47,13 +48,13 @@ interface PanelState {
   setTranslationError: (err: string) => void;
   currentPageText: {
     pageNumber: number;
-    paragraphs: Array<{ id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' | 'full'; fontSize?: number; bold?: boolean; blockType?: string }>;
+    paragraphs: Array<{ id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' | 'full'; columnIndex?: number; fontSize?: number; bold?: boolean; blockType?: string }>;
     columnsCount: number;
     translations?: Record<string, string>;
   } | null;
   setCurrentPageText: (val: {
     pageNumber: number;
-    paragraphs: Array<{ id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' | 'full'; fontSize?: number; bold?: boolean; blockType?: string }>;
+    paragraphs: Array<{ id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' | 'full'; columnIndex?: number; fontSize?: number; bold?: boolean; blockType?: string }>;
     columnsCount: number;
     translations?: Record<string, string>;
   } | null) => void;
@@ -82,6 +83,8 @@ interface PanelState {
   setJournalSource: (source: { type: string }) => void;
   cacheMaxSize: number;
   setCacheMaxSize: (size: number) => void;
+  layoutConfig: LayoutConfig;
+  setLayoutConfig: (config: LayoutConfig) => void;
   testResults: Record<string, { success: boolean; message: string } | null>;
   setTestResults: (results: PanelState['testResults']) => void;
   setTestResultForEngine: (engineName: string, success: boolean, message: string) => void;
@@ -135,6 +138,12 @@ export const useStore = create<PanelState>((set) => ({
   setJournalSource: (journalSource) => set({ journalSource }),
   cacheMaxSize: 500,
   setCacheMaxSize: (cacheMaxSize) => set({ cacheMaxSize }),
+  layoutConfig: {
+    useModel: false,
+    modelEndpoint: '',
+    timeoutMs: 3500
+  },
+  setLayoutConfig: (layoutConfig) => set({ layoutConfig }),
   testResults: {},
   setTestResults: (testResults) => set({ testResults }),
   setTestResultForEngine: (engineName, success, message) => 

@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { GeneralSettings, LayoutConfig } from '../types/config';
 
 export class ConfigService {
   getTranslationConfig() {
@@ -40,6 +41,16 @@ export class ConfigService {
   getCacheConfig() {
     const cfg = vscode.workspace.getConfiguration('chunzen.cache');
     return { maxSize: cfg.get<number>('maxSize', 500) };
+  }
+
+  getLayoutConfig(): LayoutConfig {
+    const cfg = vscode.workspace.getConfiguration('chunzen.layout');
+    const timeout = cfg.get<number>('timeoutMs', 3500);
+    return {
+      useModel: cfg.get<boolean>('useModel', false),
+      modelEndpoint: cfg.get<string>('modelEndpoint', '').trim(),
+      timeoutMs: Number.isFinite(timeout) ? Math.max(500, Math.min(20000, timeout)) : 3500
+    };
   }
 
   /**
@@ -94,6 +105,44 @@ export class ConfigService {
         }
       } else {
         await cfg.update(fullKey, trimmedValue, vscode.ConfigurationTarget.Global);
+      }
+    }
+  }
+
+  async saveGeneralSettings(settings: GeneralSettings): Promise<void> {
+    const cacheCfg = vscode.workspace.getConfiguration('chunzen.cache');
+    const journalCfg = vscode.workspace.getConfiguration('chunzen.journal');
+    const layoutCfg = vscode.workspace.getConfiguration('chunzen.layout');
+
+    if (typeof settings.cacheMaxSize === 'number' && Number.isFinite(settings.cacheMaxSize)) {
+      const normalized = Math.max(50, Math.min(5000, Math.round(settings.cacheMaxSize)));
+      await cacheCfg.update('maxSize', normalized, vscode.ConfigurationTarget.Global);
+    }
+
+    if (typeof settings.journalEnabled === 'boolean') {
+      await journalCfg.update('enabled', settings.journalEnabled, vscode.ConfigurationTarget.Global);
+    }
+
+    if (settings.layout) {
+      const useModelEnabled = typeof settings.layout.useModel === 'boolean'
+        ? settings.layout.useModel
+        : this.getLayoutConfig().useModel;
+      const endpointTrimmed = typeof settings.layout.modelEndpoint === 'string'
+        ? settings.layout.modelEndpoint.trim()
+        : '';
+      const normalizedEndpoint = useModelEnabled
+        ? (endpointTrimmed || 'http://127.0.0.1:8765/layout')
+        : endpointTrimmed;
+
+      if (typeof settings.layout.useModel === 'boolean') {
+        await layoutCfg.update('useModel', settings.layout.useModel, vscode.ConfigurationTarget.Global);
+      }
+      if (typeof settings.layout.modelEndpoint === 'string' || useModelEnabled) {
+        await layoutCfg.update('modelEndpoint', normalizedEndpoint, vscode.ConfigurationTarget.Global);
+      }
+      if (typeof settings.layout.timeoutMs === 'number' && Number.isFinite(settings.layout.timeoutMs)) {
+        const timeout = Math.max(500, Math.min(20000, Math.round(settings.layout.timeoutMs)));
+        await layoutCfg.update('timeoutMs', timeout, vscode.ConfigurationTarget.Global);
       }
     }
   }

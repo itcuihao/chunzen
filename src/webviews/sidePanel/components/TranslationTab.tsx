@@ -13,11 +13,25 @@ interface AnnotatedPara {
   id: string;
   text: string;
   section?: 'header' | 'left' | 'right' | 'footer' | 'full';
+  columnIndex?: number;
   sentences?: Array<{ id: string; text: string }>;
   fontSize?: number;
   bold?: boolean;
   blockType?: string;
   role: ParagraphRole;
+}
+
+function splitTableCells(text: string): string[] {
+  const normalized = text.replace(/\u00a0/g, ' ').trim();
+  if (!normalized) return [];
+
+  const tabCells = normalized.split('\t').map(cell => cell.trim()).filter(Boolean);
+  if (tabCells.length > 1) return tabCells;
+
+  const multiSpaceCells = normalized.split(/\s{2,}/).map(cell => cell.trim()).filter(Boolean);
+  if (multiSpaceCells.length > 1) return multiSpaceCells;
+
+  return [normalized];
 }
 
 function classifyParagraphs(
@@ -108,14 +122,23 @@ const EN_INDENT: Record<ParagraphRole, string> = {
 // ── Layout block helpers ──
 
 interface LayoutBlock {
-  type: 'single' | 'double';
+  type: 'single' | 'columns';
   paragraphs: AnnotatedPara[];
 }
 
-function groupParagraphsIntoBlocks(paragraphs: AnnotatedPara[]): LayoutBlock[] {
+function getParagraphColumnIndex(para: AnnotatedPara, columnsCount: number): number {
+  if (para.columnIndex !== undefined && para.columnIndex >= 0) {
+    return Math.min(para.columnIndex, Math.max(columnsCount - 1, 0));
+  }
+  if (para.section === 'left') return 0;
+  if (para.section === 'right') return Math.min(1, Math.max(columnsCount - 1, 0));
+  return -1;
+}
+
+function groupParagraphsIntoBlocks(paragraphs: AnnotatedPara[], columnsCount: number): LayoutBlock[] {
   const blocks: LayoutBlock[] = [];
   for (const para of paragraphs) {
-    const type = (para.section === 'left' || para.section === 'right') ? 'double' : 'single';
+    const type = getParagraphColumnIndex(para, columnsCount) >= 0 ? 'columns' : 'single';
     if (blocks.length === 0 || blocks[blocks.length - 1].type !== type) {
       blocks.push({ type, paragraphs: [para] });
     } else {
@@ -278,47 +301,126 @@ export const TranslationTab: FunctionComponent = () => {
     return `${styles[role]} ${indent} ${boldClass} ${PARA_SPACING[role]}`;
   };
 
+  const renderTableRow = (id: string, text: string, className: string) => {
+    const cells = splitTableCells(text);
+    if (cells.length <= 1) {
+      return (
+        <p key={id} className={className}>
+          {text}
+        </p>
+      );
+    }
+
+    return (
+      <div
+        key={id}
+        className={`${className} grid gap-x-4 gap-y-1 font-mono`}
+        style={{ gridTemplateColumns: `repeat(${cells.length}, minmax(0, 1fr))` }}
+      >
+        {cells.map((cell, idx) => (
+          <span key={`${id}-${idx}`} className="block whitespace-pre-wrap break-words">
+            {cell}
+          </span>
+        ))}
+      </div>
+    );
+  };
+
+  const renderOriginalParagraphNode = (para: AnnotatedPara) => {
+    const className = paraClass(para, 'en');
+    if (para.blockType === 'table') {
+      return renderTableRow(para.id, para.text, className);
+    }
+    return (
+      <p key={para.id} className={className}>
+        {renderEnglishParagraph(para)}
+      </p>
+    );
+  };
+
+  const renderTranslatedParagraphNode = (para: AnnotatedPara) => {
+    const className = paraClass(para, 'zh');
+    const translated = currentPageText!.translations?.[para.id] || '';
+    if (para.blockType === 'table') {
+      return renderTableRow(para.id, translated || para.text, className);
+    }
+    return (
+      <p key={para.id} className={className}>
+        {renderChineseParagraph(para, translated)}
+      </p>
+    );
+  };
+
+  const renderBilingualParagraphNode = (para: AnnotatedPara) => {
+    const translation = currentPageText!.translations?.[para.id];
+    return (
+      <div key={para.id} className="mb-4 pb-3 border-b border-border/20 last:border-0">
+        {para.blockType === 'table'
+          ? renderTableRow(`${para.id}-en`, para.text, `${paraClass(para, 'bi-en')} mb-1.5`)
+          : (
+            <p className={`${paraClass(para, 'bi-en')} mb-1.5`}>
+              {renderEnglishParagraph(para)}
+            </p>
+          )}
+        {translation && (
+          para.blockType === 'table'
+            ? renderTableRow(`${para.id}-zh`, translation, `${paraClass(para, 'bi-zh')} mt-1 border-l-2 border-primary/20 pl-3`)
+            : (
+              <p className={`${paraClass(para, 'bi-zh')} mt-1 border-l-2 border-primary/20 pl-3`}>
+                {renderChineseParagraph(para, translation)}
+              </p>
+            )
+        )}
+      </div>
+    );
+  };
+
+  const renderColumnBlock = (
+    block: LayoutBlock,
+    columnsCount: number,
+    renderPara: (para: AnnotatedPara) => JSX.Element
+  ) => {
+    const perColumn: AnnotatedPara[][] = Array.from({ length: columnsCount }, () => []);
+    for (const para of block.paragraphs) {
+      const col = getParagraphColumnIndex(para, columnsCount);
+      if (col >= 0 && col < columnsCount) {
+        perColumn[col].push(para);
+      }
+    }
+
+    return (
+      <div className="grid gap-5 w-full" style={{ gridTemplateColumns: `repeat(${columnsCount}, minmax(0, 1fr))` }}>
+        {perColumn.map((colParas, colIdx) => (
+          <div
+            key={`col-${colIdx}`}
+            className={colIdx > 0 ? 'flex flex-col border-l border-dashed border-border/40 pl-5' : 'flex flex-col'}
+          >
+            {colParas.map(para => renderPara(para))}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   // ── Render helpers for each mode ──
 
   const renderOriginalBlockLayout = () => {
-    const hasSections = annotatedParagraphs.some(p => p.section !== undefined);
-    if (currentPageText!.columnsCount > 1 && hasSections) {
-      const blocks = groupParagraphsIntoBlocks(annotatedParagraphs);
+    const hasColumnHints = annotatedParagraphs.some(
+      p => (p.columnIndex !== undefined && p.columnIndex >= 0) || p.section === 'left' || p.section === 'right'
+    );
+    if (currentPageText!.columnsCount > 1 && hasColumnHints) {
+      const blocks = groupParagraphsIntoBlocks(annotatedParagraphs, currentPageText!.columnsCount);
       return (
         <div className="select-text selection:bg-accent/30 break-words text-foreground animate-in fade-in duration-300 flex flex-col gap-3">
           {blocks.map((block, idx) => {
             if (block.type === 'single') {
               return (
                 <div key={idx} className="w-full">
-                  {block.paragraphs.map(para => (
-                    <p key={para.id} className={paraClass(para, 'en')}>
-                      {renderEnglishParagraph(para)}
-                    </p>
-                  ))}
-                </div>
-              );
-            } else {
-              const leftParas = block.paragraphs.filter(p => p.section === 'left');
-              const rightParas = block.paragraphs.filter(p => p.section === 'right');
-              return (
-                <div key={idx} className="grid grid-cols-2 gap-5 w-full">
-                  <div className="flex flex-col">
-                    {leftParas.map(para => (
-                      <p key={para.id} className={paraClass(para, 'en')}>
-                        {renderEnglishParagraph(para)}
-                      </p>
-                    ))}
-                  </div>
-                  <div className="flex flex-col border-l border-dashed border-border/40 pl-5">
-                    {rightParas.map(para => (
-                      <p key={para.id} className={paraClass(para, 'en')}>
-                        {renderEnglishParagraph(para)}
-                      </p>
-                    ))}
-                  </div>
+                  {block.paragraphs.map(para => renderOriginalParagraphNode(para))}
                 </div>
               );
             }
+            return <div key={idx}>{renderColumnBlock(block, currentPageText!.columnsCount, renderOriginalParagraphNode)}</div>;
           })}
         </div>
       );
@@ -332,55 +434,29 @@ export const TranslationTab: FunctionComponent = () => {
           columnGap: '20px',
           columnRule: currentPageText!.columnsCount > 1 ? '1px dashed var(--border)' : undefined,
         }}
-      >
-        {annotatedParagraphs.map((para) => (
-          <p key={para.id} className={paraClass(para, 'en')}>
-            {renderEnglishParagraph(para)}
-          </p>
-        ))}
+        >
+        {annotatedParagraphs.map((para) => renderOriginalParagraphNode(para))}
       </div>
     );
   };
 
   const renderTranslationBlockLayout = () => {
-    const hasSections = annotatedParagraphs.some(p => p.section !== undefined);
-    if (currentPageText!.columnsCount > 1 && hasSections) {
-      const blocks = groupParagraphsIntoBlocks(annotatedParagraphs);
+    const hasColumnHints = annotatedParagraphs.some(
+      p => (p.columnIndex !== undefined && p.columnIndex >= 0) || p.section === 'left' || p.section === 'right'
+    );
+    if (currentPageText!.columnsCount > 1 && hasColumnHints) {
+      const blocks = groupParagraphsIntoBlocks(annotatedParagraphs, currentPageText!.columnsCount);
       return (
         <div className="select-text selection:bg-accent/30 break-words animate-in fade-in duration-300 flex flex-col gap-4">
           {blocks.map((block, idx) => {
             if (block.type === 'single') {
               return (
                 <div key={idx} className="w-full">
-                  {block.paragraphs.map(para => (
-                    <p key={para.id} className={paraClass(para, 'zh')}>
-                      {renderChineseParagraph(para, currentPageText!.translations?.[para.id] || '')}
-                    </p>
-                  ))}
-                </div>
-              );
-            } else {
-              const leftParas = block.paragraphs.filter(p => p.section === 'left');
-              const rightParas = block.paragraphs.filter(p => p.section === 'right');
-              return (
-                <div key={idx} className="grid grid-cols-2 gap-5 w-full">
-                  <div className="flex flex-col">
-                    {leftParas.map(para => (
-                      <p key={para.id} className={paraClass(para, 'zh')}>
-                        {renderChineseParagraph(para, currentPageText!.translations?.[para.id] || '')}
-                      </p>
-                    ))}
-                  </div>
-                  <div className="flex flex-col border-l border-dashed border-border/40 pl-5">
-                    {rightParas.map(para => (
-                      <p key={para.id} className={paraClass(para, 'zh')}>
-                        {renderChineseParagraph(para, currentPageText!.translations?.[para.id] || '')}
-                      </p>
-                    ))}
-                  </div>
+                  {block.paragraphs.map(para => renderTranslatedParagraphNode(para))}
                 </div>
               );
             }
+            return <div key={idx}>{renderColumnBlock(block, currentPageText!.columnsCount, renderTranslatedParagraphNode)}</div>;
           })}
         </div>
       );
@@ -394,85 +470,29 @@ export const TranslationTab: FunctionComponent = () => {
           columnGap: '20px',
           columnRule: currentPageText!.columnsCount > 1 ? '1px dashed var(--border)' : undefined,
         }}
-      >
-        {annotatedParagraphs.map((para) => (
-          <p key={para.id} className={paraClass(para, 'zh')}>
-            {renderChineseParagraph(para, currentPageText!.translations?.[para.id] || '')}
-          </p>
-        ))}
+        >
+        {annotatedParagraphs.map((para) => renderTranslatedParagraphNode(para))}
       </div>
     );
   };
 
   const renderBilingualBlockLayout = () => {
-    const hasSections = annotatedParagraphs.some(p => p.section !== undefined);
-    if (currentPageText!.columnsCount > 1 && hasSections) {
-      const blocks = groupParagraphsIntoBlocks(annotatedParagraphs);
+    const hasColumnHints = annotatedParagraphs.some(
+      p => (p.columnIndex !== undefined && p.columnIndex >= 0) || p.section === 'left' || p.section === 'right'
+    );
+    if (currentPageText!.columnsCount > 1 && hasColumnHints) {
+      const blocks = groupParagraphsIntoBlocks(annotatedParagraphs, currentPageText!.columnsCount);
       return (
         <div className="select-text selection:bg-accent/30 break-words animate-in fade-in duration-300 flex flex-col gap-4">
           {blocks.map((block, idx) => {
             if (block.type === 'single') {
               return (
                 <div key={idx} className="w-full">
-                  {block.paragraphs.map(para => {
-                    const translation = currentPageText!.translations?.[para.id];
-                    return (
-                      <div key={para.id} className="mb-4 pb-3 border-b border-border/20 last:border-0">
-                        <p className={`${paraClass(para, 'bi-en')} mb-1.5`}>
-                          {renderEnglishParagraph(para)}
-                        </p>
-                        {translation && (
-                          <p className={`${paraClass(para, 'bi-zh')} mt-1 border-l-2 border-primary/20 pl-3`}>
-                            {renderChineseParagraph(para, translation)}
-                          </p>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            } else {
-              const leftParas = block.paragraphs.filter(p => p.section === 'left');
-              const rightParas = block.paragraphs.filter(p => p.section === 'right');
-              return (
-                <div key={idx} className="grid grid-cols-2 gap-5 w-full">
-                  <div className="flex flex-col">
-                    {leftParas.map(para => {
-                      const translation = currentPageText!.translations?.[para.id];
-                      return (
-                        <div key={para.id} className="mb-4 pb-3 border-b border-border/20 last:border-0">
-                          <p className={`${paraClass(para, 'bi-en')} mb-1.5`}>
-                            {renderEnglishParagraph(para)}
-                          </p>
-                          {translation && (
-                            <p className={`${paraClass(para, 'bi-zh')} mt-1 border-l-2 border-primary/20 pl-3`}>
-                              {renderChineseParagraph(para, translation)}
-                            </p>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <div className="flex flex-col border-l border-dashed border-border/40 pl-5">
-                    {rightParas.map(para => {
-                      const translation = currentPageText!.translations?.[para.id];
-                      return (
-                        <div key={para.id} className="mb-4 pb-3 border-b border-border/20 last:border-0">
-                          <p className={`${paraClass(para, 'bi-en')} mb-1.5`}>
-                            {renderEnglishParagraph(para)}
-                          </p>
-                          {translation && (
-                            <p className={`${paraClass(para, 'bi-zh')} mt-1 border-l-2 border-primary/20 pl-3`}>
-                              {renderChineseParagraph(para, translation)}
-                            </p>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
+                  {block.paragraphs.map(para => renderBilingualParagraphNode(para))}
                 </div>
               );
             }
+            return <div key={idx}>{renderColumnBlock(block, currentPageText!.columnsCount, renderBilingualParagraphNode)}</div>;
           })}
         </div>
       );
@@ -480,21 +500,7 @@ export const TranslationTab: FunctionComponent = () => {
 
     return (
       <div className="select-text selection:bg-accent/30 break-words animate-in fade-in duration-300">
-        {annotatedParagraphs.map((para) => {
-          const translation = currentPageText!.translations?.[para.id];
-          return (
-            <div key={para.id} className="mb-5 pb-4 border-b border-border/20 last:border-0">
-              <p className={`${paraClass(para, 'bi-en')} mb-2`}>
-                {renderEnglishParagraph(para)}
-              </p>
-              {translation && (
-                <p className={`${paraClass(para, 'bi-zh')} mt-1 border-l-2 border-primary/20 pl-3`}>
-                  {renderChineseParagraph(para, translation)}
-                </p>
-              )}
-            </div>
-          );
-        })}
+        {annotatedParagraphs.map((para) => renderBilingualParagraphNode(para))}
       </div>
     );
   };

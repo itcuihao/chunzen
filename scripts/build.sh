@@ -48,6 +48,7 @@ fi
 echo "[5/5] Done."
 echo ""
 MD5=$(md5 -q "$PACKAGE_FILE" 2>/dev/null || md5sum "$PACKAGE_FILE" | cut -d' ' -f1)
+echo -n "$MD5" > md5
 ls -lh "$PACKAGE_FILE"
 echo ""
 echo "=== Build Info ==="

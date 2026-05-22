@@ -1,7 +1,7 @@
-import { FunctionComponent, useState } from 'react';
+import { FunctionComponent, useEffect, useState } from 'react';
 import { useStore, EngineStatus, EngineConfigFields } from '../store';
 import { postMessage } from '../vscode';
-import { Database, Sparkles, Trash2, Settings, ChevronDown, ChevronUp, Network, Play, CheckCircle2, XCircle, Info, Lock, Eye, EyeOff } from 'lucide-react';
+import { Database, Sparkles, Trash2, Settings, ChevronDown, ChevronUp, Network, Play, CheckCircle2, XCircle, Info, Lock, Eye, EyeOff, Bot } from 'lucide-react';
 import { BUILD_INFO } from '../../../build-info';
 
 export const SettingsTab: FunctionComponent = () => {
@@ -9,6 +9,7 @@ export const SettingsTab: FunctionComponent = () => {
     <div className="flex flex-col gap-4 animate-in fade-in duration-200">
       <EngineSettings />
       <JournalSourceSettings />
+      <LayoutSettings />
       <GeneralSettings />
       <BuildInfo />
     </div>
@@ -338,6 +339,119 @@ const JournalSourceSettings: FunctionComponent = () => {
             <option value="crossref">CrossRef API 数据源 (基础文献数据)</option>
           </select>
           <ChevronDown className="absolute right-3 top-2.5 w-4 h-4 text-secondary-foreground/60 pointer-events-none" />
+        </div>
+      </div>
+    </section>
+  );
+};
+
+// ── LayoutSettings ──
+
+const LayoutSettings: FunctionComponent = () => {
+  const defaultEndpoint = 'http://127.0.0.1:8765/layout';
+  const layoutConfig = useStore((state) => state.layoutConfig);
+  const [useModel, setUseModel] = useState(layoutConfig.useModel);
+  const [modelEndpoint, setModelEndpoint] = useState(layoutConfig.modelEndpoint);
+  const [timeoutMs, setTimeoutMs] = useState(String(layoutConfig.timeoutMs));
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    setUseModel(layoutConfig.useModel);
+    setModelEndpoint(layoutConfig.modelEndpoint);
+    setTimeoutMs(String(layoutConfig.timeoutMs));
+  }, [layoutConfig.useModel, layoutConfig.modelEndpoint, layoutConfig.timeoutMs]);
+
+  const handleSave = () => {
+    const timeout = Number(timeoutMs);
+    const normalizedTimeout = Number.isFinite(timeout)
+      ? Math.max(500, Math.min(20000, Math.round(timeout)))
+      : 3500;
+    const normalizedEndpoint = useModel
+      ? (modelEndpoint.trim() || defaultEndpoint)
+      : modelEndpoint.trim();
+
+    postMessage({
+      type: 'save-general-settings',
+      settings: {
+        layout: {
+          useModel,
+          modelEndpoint: normalizedEndpoint,
+          timeoutMs: normalizedTimeout
+        }
+      }
+    });
+    if (useModel && !modelEndpoint.trim()) {
+      setModelEndpoint(defaultEndpoint);
+    }
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2500);
+  };
+
+  return (
+    <section className="glass-panel rounded-lg overflow-hidden border border-border shadow-sm">
+      <div className="flex items-center gap-2 px-3.5 py-2 border-b border-border bg-card">
+        <Bot className="w-4 h-4 text-accent" />
+        <span className="text-[11px] font-semibold tracking-wider text-secondary-foreground uppercase">版面解析</span>
+      </div>
+      <div className="p-3.5 flex flex-col gap-3">
+        <div className="flex items-start gap-1.5 p-2.5 rounded bg-secondary/35 border border-border/30 text-secondary-foreground text-xs leading-relaxed">
+          <Info className="w-3.5 h-3.5 mt-0.5 text-accent flex-shrink-0" />
+          <p>
+            默认使用内置规则引擎。保存后：开启模型会自动启动本地版面服务，关闭模型会自动停止；请求失败时自动回退规则引擎。
+          </p>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-foreground font-medium">启用版面分析模型</span>
+          <label className="relative inline-flex items-center cursor-pointer select-none">
+            <input
+              type="checkbox"
+              className="sr-only peer"
+              checked={useModel}
+              onChange={(e) => setUseModel(e.target.checked)}
+            />
+            <div className="w-9 h-5 bg-border rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+          </label>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <label className="text-[10px] font-semibold text-secondary-foreground/80 tracking-wider uppercase">
+            模型端点 (HTTP)
+          </label>
+          <input
+            type="text"
+            className="w-full px-3 py-1.5 text-xs rounded border border-border bg-background placeholder-secondary-foreground/40 text-foreground outline-none focus:border-accent font-mono"
+            placeholder="http://127.0.0.1:8765/layout"
+            value={modelEndpoint}
+            onChange={(e) => setModelEndpoint(e.target.value)}
+          />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <label className="text-[10px] font-semibold text-secondary-foreground/80 tracking-wider uppercase">
+            超时时间 (ms)
+          </label>
+          <input
+            type="number"
+            min={500}
+            max={20000}
+            step={100}
+            className="w-full px-3 py-1.5 text-xs rounded border border-border bg-background placeholder-secondary-foreground/40 text-foreground outline-none focus:border-accent font-mono"
+            value={timeoutMs}
+            onChange={(e) => setTimeoutMs(e.target.value)}
+          />
+        </div>
+
+        <div className="flex justify-end">
+          <button
+            onClick={handleSave}
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded text-white transition-all ${
+              saved ? 'bg-success hover:bg-success' : 'bg-primary hover:bg-primary-hover shadow-sm'
+            }`}
+          >
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            {saved ? '已保存' : '保存版面设置'}
+          </button>
         </div>
       </div>
     </section>

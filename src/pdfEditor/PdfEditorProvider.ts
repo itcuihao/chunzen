@@ -5,6 +5,7 @@ import { TranslationService } from '../services/translationService';
 import { JournalService } from '../services/journalService';
 import { SidePanelProvider } from '../sidePanel/SidePanelProvider';
 import { HistoryService } from '../services/historyService';
+import { ConfigService } from '../services/configService';
 import { getNonce } from '../utils/nonce';
 
 /**
@@ -18,6 +19,7 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
   private journalService: JournalService;
   private sidePanel: SidePanelProvider;
   private historyService: HistoryService;
+  private configService: ConfigService;
   private context: vscode.ExtensionContext;
 
   // 每个文档对应的 WebView
@@ -29,13 +31,15 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
     translationService: TranslationService,
     journalService: JournalService,
     sidePanel: SidePanelProvider,
-    historyService: HistoryService
+    historyService: HistoryService,
+    configService: ConfigService
   ) {
     this.context = context;
     this.translationService = translationService;
     this.journalService = journalService;
     this.sidePanel = sidePanel;
     this.historyService = historyService;
+    this.configService = configService;
   }
 
   async openCustomDocument(
@@ -80,6 +84,10 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
           case 'ready':
             // WebView 就绪，确保面板打开
             this.sidePanel.show();
+            webviewPanel.webview.postMessage({
+              type: 'layout-config',
+              config: this.configService.getLayoutConfig()
+            });
             break;
 
           case 'pdf-hover':
@@ -247,8 +255,19 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
       return;
     }
     panel.webview.postMessage({
-      type: 'trigger-page-text-extract'
+      type: 'trigger-page-text-extract',
+      layoutConfig: this.configService.getLayoutConfig()
     });
+  }
+
+  public syncLayoutConfigToAllViewers(): void {
+    const layoutConfig = this.configService.getLayoutConfig();
+    for (const panel of this.webviews.values()) {
+      panel.webview.postMessage({
+        type: 'layout-config',
+        config: layoutConfig
+      });
+    }
   }
 
   private getHtml(webview: vscode.Webview, pdfUri: vscode.Uri): string {
@@ -267,7 +286,7 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
   <meta charset="UTF-8">
   <meta http-equiv="Content-Security-Policy"
     content="default-src 'none';
-             connect-src ${webview.cspSource};
+             connect-src ${webview.cspSource} https: http:;
              style-src ${webview.cspSource} 'unsafe-inline' https://fonts.googleapis.com;
              font-src https://fonts.gstatic.com;
              script-src 'nonce-${nonce}' https://cdnjs.cloudflare.com;

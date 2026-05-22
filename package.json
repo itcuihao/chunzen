@@ -161,6 +161,21 @@
           "type": "boolean",
           "default": true,
           "description": "启用期刊信息查询（LetPub）"
+        },
+        "chunzen.layout.useModel": {
+          "type": "boolean",
+          "default": false,
+          "description": "是否启用外部版面分析模型（失败自动回退到规则引擎）"
+        },
+        "chunzen.layout.modelEndpoint": {
+          "type": "string",
+          "default": "",
+          "description": "版面分析模型端点（POST），例如 http://127.0.0.1:8765/layout"
+        },
+        "chunzen.layout.timeoutMs": {
+          "type": "number",
+          "default": 3500,
+          "description": "版面分析模型请求超时（毫秒）"
         }
       }
     }
