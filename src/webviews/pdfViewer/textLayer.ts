@@ -2026,7 +2026,9 @@ function isMathArtifact(str: string): boolean {
 function inferFirstBodyY(lines: ColLayoutItem[][], viewportHeight: number): number {
   if (lines.length === 0) return viewportHeight * 0.45;
   const candidates: number[] = [];
-  const minY = viewportHeight * 0.14;
+  // Continuation pages can start body text close to the top margin.
+  // Keep this loose enough to avoid skipping early dual-column lines.
+  const minY = viewportHeight * 0.10;
   const maxY = viewportHeight * 0.72;
 
   for (const line of lines) {
@@ -2064,7 +2066,9 @@ function inferFirstBodyY(lines: ColLayoutItem[][], viewportHeight: number): numb
   }
 
   if (candidates.length === 0) return viewportHeight * 0.45;
-  return Math.max(viewportHeight * 0.18, Math.min(...candidates));
+  // Keep the earliest qualified body line. A hard floor like 0.18 * page height
+  // can incorrectly push continuation pages downward and skip top body lines.
+  return Math.min(...candidates);
 }
 
 /**
