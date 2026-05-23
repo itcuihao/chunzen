@@ -6,7 +6,7 @@
 ![VSCode](https://img.shields.io/badge/VSCode-≥1.85.0-blue)
 
 <p align="center">
-  <img src="media/summary.png" alt="春蝉预览" />
+  <img src="https://gitea.awsl.icu/itcuihao/chunzen/raw/branch/main/media/summary.png" alt="春蝉预览" />
 </p>
 
 ## 功能特性
@@ -126,9 +126,9 @@
 如果春蝉对您的科研工作有帮助，欢迎请作者喝杯咖啡 ☕
 
 <p align="center">
-  <img src="media/alipay-qrcode.png" width="200" alt="支付宝" />
+  <img src="https://gitea.awsl.icu/itcuihao/chunzen/raw/branch/main/media/alipay-qrcode.png" width="200" alt="支付宝" />
   &nbsp;&nbsp;&nbsp;&nbsp;
-  <img src="media/wechat-qrcode.png" width="200" alt="微信" />
+  <img src="https://gitea.awsl.icu/itcuihao/chunzen/raw/branch/main/media/wechat-qrcode.png" width="200" alt="微信" />
 </p>
 <p align="center">
   <em>支付宝</em>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>微信</em>
