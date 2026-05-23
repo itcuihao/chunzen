@@ -37,6 +37,9 @@ export function activate(context: vscode.ExtensionContext) {
   sidePanel.onTranslatePageRequested = async (pageNumber, paragraphs) => {
     await pdfProvider.translateActivePage(pageNumber, paragraphs);
   };
+  sidePanel.onGetPdfPagesTextRequested = (scope, customRange) => {
+    pdfProvider.getPdfPagesText(scope, customRange);
+  };
   sidePanel.onRefreshPageTextRequested = async () => {
     await pdfProvider.refreshActivePageText();
   };
@@ -94,6 +97,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('chunzen.clearCache', () => {
       translationService.clearCache();
+      sidePanel.syncCacheSize();
     })
   );
 

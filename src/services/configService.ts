@@ -5,7 +5,7 @@ export class ConfigService {
   getTranslationConfig() {
     const cfg = vscode.workspace.getConfiguration('chunzen.translation');
     return {
-      priority: cfg.get<string[]>('priority', ['baidu', 'deepl', 'openai', 'custom', 'claudeCli']),
+      priority: cfg.get<string[]>('priority', ['baidu', 'deepl', 'openai', 'custom']),
       baidu: {
         appId: cfg.get<string>('baidu.appId', '').trim(),
         secretKey: cfg.get<string>('baidu.secretKey', '').trim()
@@ -25,10 +25,6 @@ export class ConfigService {
         headers: cfg.get<Record<string, string>>('custom.headers', {}),
         bodyTemplate: cfg.get<string>('custom.bodyTemplate', '{"text": "{{text}}", "target_lang": "ZH"}'),
         responsePath: cfg.get<string>('custom.responsePath', 'result').trim()
-      },
-      claudeCli: {
-        enabled: cfg.get<boolean>('claudeCli.enabled', false),
-        prompt: cfg.get<string>('claudeCli.prompt', '').trim()
       }
     };
   }
@@ -69,8 +65,7 @@ export class ConfigService {
       baidu: { appId: tc.baidu.appId, secretKey: tc.baidu.secretKey },
       deepl: { apiKey: tc.deepl.apiKey, freeApi: String(tc.deepl.freeApi) },
       openai: { apiKey: tc.openai.apiKey, baseUrl: tc.openai.baseUrl, model: tc.openai.model, systemPrompt: tc.openai.systemPrompt },
-      custom: { url: tc.custom.url, headers: JSON.stringify(tc.custom.headers), bodyTemplate: tc.custom.bodyTemplate, responsePath: tc.custom.responsePath },
-      claudeCli: { enabled: String(tc.claudeCli.enabled), prompt: tc.claudeCli.prompt }
+      custom: { url: tc.custom.url, headers: JSON.stringify(tc.custom.headers), bodyTemplate: tc.custom.bodyTemplate, responsePath: tc.custom.responsePath }
     };
   }
 
@@ -79,9 +74,8 @@ export class ConfigService {
     return [
       { name: 'baidu', displayName: '百度翻译', configured: !!(cfg.baidu.appId && cfg.baidu.secretKey) },
       { name: 'deepl', displayName: 'DeepL', configured: !!cfg.deepl.apiKey },
-      { name: 'openai', displayName: 'AI 翻译', configured: !!cfg.openai.apiKey },
-      { name: 'custom', displayName: '自定义接口', configured: !!cfg.custom.url },
-      { name: 'claudeCli', displayName: 'Claude CLI', configured: cfg.claudeCli.enabled }
+      { name: 'openai', displayName: 'OpenAI 兼容接口', configured: !!cfg.openai.apiKey },
+      { name: 'custom', displayName: '自定义接口', configured: !!cfg.custom.url }
     ];
   }
 

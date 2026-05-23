@@ -27,6 +27,7 @@ export const App: FunctionComponent = () => {
   const setEngineConfigs = useStore((state) => state.setEngineConfigs);
   const setJournalSource = useStore((state) => state.setJournalSource);
   const setCacheMaxSize = useStore((state) => state.setCacheMaxSize);
+  const setCacheSize = useStore((state) => state.setCacheSize);
   const setLayoutConfig = useStore((state) => state.setLayoutConfig);
 
   const handleInitState = useCallback((msg: InitStateMessage) => {
@@ -37,6 +38,7 @@ export const App: FunctionComponent = () => {
     if (msg.engineConfigs) setEngineConfigs(msg.engineConfigs);
     if (msg.journalSource) setJournalSource(msg.journalSource);
     if (msg.cacheMaxSize !== undefined && msg.cacheMaxSize !== null) setCacheMaxSize(msg.cacheMaxSize);
+    if (msg.cacheSize !== undefined && msg.cacheSize !== null) setCacheSize(msg.cacheSize);
     if (msg.layoutConfig) setLayoutConfig(msg.layoutConfig);
   }, [
     setGlossaryTerms,
@@ -46,6 +48,7 @@ export const App: FunctionComponent = () => {
     setEngineConfigs,
     setJournalSource,
     setCacheMaxSize,
+    setCacheSize,
     setLayoutConfig
   ]);
 
@@ -70,6 +73,9 @@ export const App: FunctionComponent = () => {
         handleInitState(msg);
         break;
       case 'translate-result':
+        if (msg.cacheSize !== undefined && msg.cacheSize !== null) {
+          setCacheSize(msg.cacheSize);
+        }
         setCurrentTranslation({
           original: msg.original,
           translated: msg.translated,
@@ -141,6 +147,10 @@ export const App: FunctionComponent = () => {
         useStore.setState({ activeParagraphId: msg.id || null });
         break;
       }
+      case 'cache-size-sync': {
+        setCacheSize(msg.size);
+        break;
+      }
       case 'sync-page-translation': {
         const transRecord: Record<string, string> = {};
         for (const item of msg.translations) {
@@ -148,6 +158,10 @@ export const App: FunctionComponent = () => {
         }
         setCurrentPageTranslation(transRecord);
         setIsTranslating(false);
+        break;
+      }
+      case 'export-progress': {
+        useStore.setState({ exportProgress: msg });
         break;
       }
     }
@@ -162,7 +176,8 @@ export const App: FunctionComponent = () => {
     setGlossaryTerms,
     setTranslationHistory,
     setCurrentPageText,
-    setCurrentPageTranslation
+    setCurrentPageTranslation,
+    setCacheSize
   ]);
 
   useEffect(() => {

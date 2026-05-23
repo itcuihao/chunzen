@@ -91,8 +91,7 @@
             "baidu",
             "deepl",
             "openai",
-            "custom",
-            "claudeCli"
+            "custom"
           ],
           "description": "翻译引擎优先级顺序（从高到低）"
         },
@@ -134,7 +133,7 @@
         "chunzen.translation.openai.systemPrompt": {
           "type": "string",
           "default": "你是一个学术论文翻译专家。请将以下英文学术句子翻译成中文，保持专业术语准确，语言简洁流畅。只输出翻译结果，不要解释。",
-          "description": "AI 翻译的系统提示词（可自定义）"
+          "description": "OpenAI 兼容接口的系统提示词（可自定义）"
         },
         "chunzen.translation.custom.url": {
           "type": "string",
@@ -156,16 +155,7 @@
           "default": "result",
           "description": "从响应 JSON 中提取翻译结果的路径（如 data.translation）"
         },
-        "chunzen.translation.claudeCli.enabled": {
-          "type": "boolean",
-          "default": false,
-          "description": "启用 claude -p 命令行翻译"
-        },
-        "chunzen.translation.claudeCli.prompt": {
-          "type": "string",
-          "default": "将以下学术英文翻译为中文，只输出译文：",
-          "description": "Claude CLI 翻译提示词"
-        },
+
         "chunzen.cache.maxSize": {
           "type": "number",
           "default": 500,

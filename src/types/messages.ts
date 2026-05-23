@@ -85,6 +85,17 @@ export interface FigureScreenshotErrorMessage {
   reason: string;
 }
 
+export interface PageImageCapturedMessage {
+  type: 'page-image-captured';
+  pageNumber: number;
+  dataUrl: string;
+}
+
+export interface PdfPagesTextResultMessage {
+  type: 'pdf-pages-text-result';
+  paragraphs: Array<{ id: string; text: string; page: number }>;
+}
+
 export type PdfViewerToExtMessage =
   | ReadyMessage
   | SentenceHoverMessage
@@ -95,7 +106,9 @@ export type PdfViewerToExtMessage =
   | PageTextLoadedMessage
   | FigureScreenshotCapturedMessage
   | FigureScreenshotErrorMessage
-  | PdfHoverMessage;
+  | PageImageCapturedMessage
+  | PdfHoverMessage
+  | PdfPagesTextResultMessage;
 
 // ── Extension → Side Panel ──
 
@@ -105,6 +118,7 @@ export interface TranslateResultMessage {
   translated: string;
   engine: string;
   cached: boolean;
+  cacheSize?: number;
 }
 
 export interface TranslateErrorMessage {
@@ -125,6 +139,7 @@ export interface InitStateMessage {
   priority: string[];
   journalSource: JournalSource;
   cacheMaxSize: number;
+  cacheSize?: number;
   layoutConfig: LayoutConfig;
   engineConfigs: Record<string, Record<string, string>>;
 }
@@ -182,6 +197,14 @@ export interface SyncPageTranslationMessage {
   translations: Array<{ id: string; translatedText: string }>;
 }
 
+export interface ExportProgressMessage {
+  type: 'export-progress';
+  current: number;
+  total: number;
+  stage: 'extracting' | 'translating' | 'compiling';
+  pageNumber?: number;
+}
+
 export type ExtToPanelMessage =
   | TranslateResultMessage
   | TranslateErrorMessage
@@ -194,6 +217,8 @@ export type ExtToPanelMessage =
   | SyncPageTextMessage
   | SyncPageTranslationMessage
   | PdfHoverMessage
+  | ExportProgressMessage
+  | { type: 'cache-size-sync'; size: number }
   | { type: 'loading'; message: string }
   | { type: 'error'; message: string }
   | { type: 'clear' };
@@ -266,6 +291,15 @@ export interface PanelHoverMessage {
   id?: string;
 }
 
+export interface ExportDocMessage {
+  type: 'export-doc';
+  scope: 'read' | 'all' | 'custom';
+  customRange?: string;
+  untranslatedPolicy: 'english' | 'translate';
+  format: 'markdown' | 'chinese' | 'bilingual';
+  documentName?: string;
+}
+
 export type PanelToExtMessage =
   | SaveEngineConfigMessage
   | TestEngineMessage
@@ -279,6 +313,7 @@ export type PanelToExtMessage =
   | ExportTranslationsMessage
   | TranslatePageMessage
   | PanelHoverMessage
+  | ExportDocMessage
   | { type: 'clear-cache' }
   | { type: 'clear-history' }
   | { type: 'request-state' }

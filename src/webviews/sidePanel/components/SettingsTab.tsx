@@ -36,9 +36,9 @@ const engineFields: Record<string, EngineField[]> = {
     { key: 'freeApi', label: '使用免费版 API', type: 'toggle' }
   ],
   openai: [
-    { key: 'apiKey', label: 'API Key', type: 'password', placeholder: 'OpenAI / Gemini API Key' },
-    { key: 'baseUrl', label: 'Base URL', type: 'text', placeholder: 'https://api.openai.com/v1' },
-    { key: 'model', label: '模型名称', type: 'text', placeholder: 'gpt-4o-mini' },
+    { key: 'apiKey', label: 'API Key', type: 'password', placeholder: 'API Key (支持 DeepSeek / Gemini / OpenAI 等)' },
+    { key: 'baseUrl', label: 'Base URL', type: 'text', placeholder: '默认 https://api.openai.com/v1' },
+    { key: 'model', label: '模型名称', type: 'text', placeholder: '如 gpt-4o-mini 或 deepseek-chat' },
     { key: 'systemPrompt', label: '系统提示词', type: 'textarea', placeholder: '你是一个学术翻译专家...' }
   ],
   custom: [
@@ -46,10 +46,6 @@ const engineFields: Record<string, EngineField[]> = {
     { key: 'headers', label: '请求头 (JSON)', type: 'textarea', placeholder: '{"Authorization": "Bearer xxx"}' },
     { key: 'bodyTemplate', label: '请求体模板', type: 'textarea', placeholder: '{"text": "{{text}}", "target_lang": "ZH"}' },
     { key: 'responsePath', label: '响应路径', type: 'text', placeholder: 'data.translation' }
-  ],
-  claudeCli: [
-    { key: 'enabled', label: '启用 Claude CLI', type: 'toggle' },
-    { key: 'prompt', label: '翻译提示词', type: 'textarea', placeholder: '将以下学术英文翻译为中文，只输出译文：' }
   ]
 };
 
@@ -264,6 +260,48 @@ const EngineConfigForm: FunctionComponent<EngineConfigFormProps> = ({
 
   return (
     <div className="p-4 border-t border-border bg-card/5 flex flex-col gap-3.5 animate-in slide-in-from-top-1 duration-150">
+      {engineName === 'openai' && (
+        <div className="text-[10px] text-secondary-foreground/75 bg-secondary/20 p-2.5 rounded border border-border/40 leading-relaxed flex flex-col gap-1 font-sans">
+          <div className="font-bold text-accent">💡 适配说明与推荐：</div>
+          <p>此通道完全兼容支持 OpenAI 格式协议的各大平台服务商。若没有官方 API Key，推荐申请以下国内直接访问的极速/低成本源并填入下方：</p>
+          <ul className="list-disc pl-4 flex flex-col gap-1 mt-1 font-mono">
+            <li>
+              <span className="font-sans font-semibold text-foreground">DeepSeek (推荐)</span>: Base URL 填 <code className="font-semibold text-foreground select-all bg-secondary/50 px-1 rounded">https://api.deepseek.com/v1</code>，模型填 <code className="font-semibold text-foreground select-all bg-secondary/50 px-1 rounded">deepseek-chat</code>
+            </li>
+            <li>
+              <span className="font-sans font-semibold text-foreground">硅基流动 (送大额免费试用)</span>: Base URL 填 <code className="font-semibold text-foreground select-all bg-secondary/50 px-1 rounded">https://api.siliconflow.cn/v1</code>，模型填 <code className="font-semibold text-foreground select-all bg-secondary/50 px-1 rounded">deepseek-ai/DeepSeek-V3</code>
+            </li>
+            <li>
+              <span className="font-sans font-semibold text-foreground">智谱 GLM (送超大免费试用)</span>: Base URL 填 <code className="font-semibold text-foreground select-all bg-secondary/50 px-1 rounded">https://open.bigmodel.cn/api/paas/v4</code>，模型填 <code className="font-semibold text-foreground select-all bg-secondary/50 px-1 rounded">glm-4-flash</code>
+            </li>
+            <li>
+              <span className="font-sans font-semibold text-foreground">本地大模型 (Ollama)</span>: Base URL 填 <code className="font-semibold text-foreground select-all bg-secondary/50 px-1 rounded">http://localhost:11434/v1</code>，模型填你本地拉取的名称
+            </li>
+          </ul>
+        </div>
+      )}
+      {engineName === 'custom' && (
+        <div className="text-[10px] text-secondary-foreground/75 bg-secondary/20 p-2.5 rounded border border-border/40 leading-relaxed flex flex-col gap-1 font-sans">
+          <div className="font-bold text-accent">💡 自定义接口配置示例：</div>
+          <p>用于对接任何第三方或自建的 POST 翻译接口。以下是一个典型的配置示例：</p>
+          <div className="grid grid-cols-[65px_1fr] gap-x-2 gap-y-1 mt-1.5 font-mono text-[9px] bg-secondary/10 p-2 rounded border border-border/20">
+            <span className="font-sans font-bold text-foreground">接口 URL:</span>
+            <code className="text-foreground select-all bg-secondary/50 px-1 rounded truncate">https://api.mytranslator.com/v1/translate</code>
+            
+            <span className="font-sans font-bold text-foreground">请求头:</span>
+            <code className="text-foreground select-all bg-secondary/50 px-1 rounded truncate">{"{\"Authorization\": \"Bearer my_token\"}"}</code>
+            
+            <span className="font-sans font-bold text-foreground">请求体:</span>
+            <code className="text-foreground select-all bg-secondary/50 px-1 rounded truncate">{"{\"text\": \"{{text}}\", \"to\": \"zh\"}"}</code>
+            
+            <span className="font-sans font-bold text-foreground">响应路径:</span>
+            <code className="text-foreground select-all bg-secondary/50 px-1 rounded truncate">data.translatedText</code>
+          </div>
+          <p className="mt-1 text-[9px] opacity-80">
+            说明：<code className="font-semibold text-accent bg-secondary/30 px-1 rounded">{"{{text}}"}</code> 是系统占位符，发送请求时会被自动替换成待翻译句子的内容。
+          </p>
+        </div>
+      )}
       {fields.map((field) => (
         <div key={field.key} className="flex flex-col gap-1.5">
           <label className="text-[10px] font-semibold text-secondary-foreground/80 tracking-wider uppercase">
@@ -558,9 +596,18 @@ const LayoutSettings: FunctionComponent = () => {
 
 const GeneralSettings: FunctionComponent = () => {
   const cacheMaxSize = useStore((state) => state.cacheMaxSize) ?? 500;
+  const cacheSize = useStore((state) => state.cacheSize) ?? 0;
 
-  const handleClearCache = () => postMessage({ type: 'clear-cache' });
-  const handleClearHistory = () => postMessage({ type: 'clear-history' });
+  const handleClearCache = () => {
+    if (confirm(`确认要清空当前的 ${cacheSize} 条本地翻译缓存吗？`)) {
+      postMessage({ type: 'clear-cache' });
+    }
+  };
+  const handleClearHistory = () => {
+    if (confirm('确认要清空所有翻译历史记录吗？')) {
+      postMessage({ type: 'clear-history' });
+    }
+  };
 
   return (
     <section className="glass-panel rounded-lg overflow-hidden border border-border shadow-sm">
@@ -568,18 +615,28 @@ const GeneralSettings: FunctionComponent = () => {
         <Settings className="w-4 h-4 text-secondary-foreground/80" />
         <span className="text-[11px] font-semibold tracking-wider text-secondary-foreground uppercase">系统维护与缓存</span>
       </div>
-      <div className="p-3.5 flex flex-col gap-4">
+      <div className="p-3.5 flex flex-col gap-3.5">
         <div className="flex justify-between items-center text-xs">
           <div className="flex items-center gap-2 text-secondary-foreground">
             <Database className="w-4 h-4 opacity-70" />
-            <span>本地翻译缓存上限:</span>
+            <span>当前已缓存翻译:</span>
+          </div>
+          <span className="font-mono font-bold bg-secondary/65 px-2 py-0.5 rounded border border-border">
+            {cacheSize} 条
+          </span>
+        </div>
+
+        <div className="flex justify-between items-center text-xs">
+          <div className="flex items-center gap-2 text-secondary-foreground">
+            <Database className="w-4 h-4 opacity-70" />
+            <span>本地缓存上限:</span>
           </div>
           <span className="font-mono font-bold bg-secondary/65 px-2 py-0.5 rounded border border-border">
             {cacheMaxSize} 条
           </span>
         </div>
         
-        <div className="flex gap-2.5 mt-1">
+        <div className="flex gap-2.5 mt-1.5">
           <button 
             onClick={handleClearCache}
             className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold rounded border border-border bg-secondary text-secondary-foreground hover:bg-secondary-hover hover:text-foreground transition-all duration-200"
