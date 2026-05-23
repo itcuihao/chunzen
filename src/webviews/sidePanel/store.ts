@@ -83,6 +83,8 @@ interface PanelState {
   setJournalSource: (source: { type: string }) => void;
   cacheMaxSize: number;
   setCacheMaxSize: (size: number) => void;
+  cacheSize: number;
+  setCacheSize: (size: number) => void;
   layoutConfig: LayoutConfig;
   setLayoutConfig: (config: LayoutConfig) => void;
   testResults: Record<string, { success: boolean; message: string } | null>;
@@ -90,6 +92,13 @@ interface PanelState {
   setTestResultForEngine: (engineName: string, success: boolean, message: string) => void;
   layoutMode: 'translation' | 'bilingual' | 'original';
   setLayoutMode: (mode: 'translation' | 'bilingual' | 'original') => void;
+  exportProgress: {
+    current: number;
+    total: number;
+    stage: 'extracting' | 'translating' | 'compiling';
+    pageNumber?: number;
+  } | null;
+  setExportProgress: (val: PanelState['exportProgress']) => void;
 }
 
 export const useStore = create<PanelState>((set) => ({
@@ -140,6 +149,8 @@ export const useStore = create<PanelState>((set) => ({
   setJournalSource: (journalSource) => set({ journalSource }),
   cacheMaxSize: 500,
   setCacheMaxSize: (cacheMaxSize) => set({ cacheMaxSize }),
+  cacheSize: 0,
+  setCacheSize: (cacheSize) => set({ cacheSize }),
   layoutConfig: {
     useModel: false,
     modelEndpoint: '',
@@ -158,5 +169,7 @@ export const useStore = create<PanelState>((set) => ({
       }
     })),
   layoutMode: 'original',
-  setLayoutMode: (layoutMode) => set({ layoutMode })
+  setLayoutMode: (layoutMode) => set({ layoutMode }),
+  exportProgress: null,
+  setExportProgress: (exportProgress) => set({ exportProgress })
 }));

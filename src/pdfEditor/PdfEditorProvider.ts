@@ -129,6 +129,10 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
           case 'figure-screenshot-error':
             vscode.window.showWarningMessage(`图像区域截图失败（第 ${msg.pageNumber} 页）：${msg.reason}`);
             break;
+
+          case 'pdf-pages-text-result':
+            this.sidePanel.handlePdfPagesTextResult(msg.paragraphs);
+            break;
         }
       },
       undefined,
@@ -164,19 +168,19 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
     const raw = Buffer.from(m[1], 'base64');
     const baseName = path.basename(pdfUri.fsPath, path.extname(pdfUri.fsPath));
     const dir = path.dirname(pdfUri.fsPath);
-    let target = path.join(dir, `${baseName}.p${pageNumber}.figure.png`);
+    let target = path.join(dir, `${baseName}.p${pageNumber}.png`);
 
     for (let i = 1; i <= 99; i++) {
       try {
         await vscode.workspace.fs.stat(vscode.Uri.file(target));
-        target = path.join(dir, `${baseName}.p${pageNumber}.figure-${i}.png`);
+        target = path.join(dir, `${baseName}.p${pageNumber}-${i}.png`);
       } catch {
         break;
       }
     }
 
     await vscode.workspace.fs.writeFile(vscode.Uri.file(target), raw);
-    vscode.window.showInformationMessage(`图像区域截图已保存：${path.basename(target)}`);
+    vscode.window.showInformationMessage(`整页高清截图已保存：${path.basename(target)}`);
   }
 
   private resolveActivePanel(): vscode.WebviewPanel | undefined {
@@ -343,6 +347,19 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
     panel.webview.postMessage({ type: 'capture-figure-screenshot' });
   }
 
+  public getPdfPagesText(scope: 'read' | 'all' | 'custom', customRange?: string): void {
+    const panel = this.resolveActivePanel();
+    if (!panel) {
+      vscode.window.showWarningMessage('未检测到活动的 PDF 编辑器，请确保 PDF 编辑器处于打开状态。');
+      return;
+    }
+    panel.webview.postMessage({
+      type: 'get-pdf-pages-text',
+      scope,
+      customRange
+    });
+  }
+
   public syncLayoutConfigToAllViewers(): void {
     const layoutConfig = this.configService.getLayoutConfig();
     for (const panel of this.webviews.values()) {
@@ -397,7 +414,9 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
       <span id="zoom-level">100%</span>
       <button id="btn-zoom-in" title="放大">+</button>
       <button id="btn-fit" title="适合宽度">⊡</button>
-      <button id="btn-capture" title="截图当前图注区域">📷</button>
+      <button id="btn-capture" title="保存当前页为高清图片">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-camera"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
+      </button>
     </div>
   </div>
 

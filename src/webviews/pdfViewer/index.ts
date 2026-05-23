@@ -54,6 +54,7 @@ let currentParagraphs: Paragraph[] = [];
 let currentViewport: PdfViewport | null = null;
 let currentRichContent: RichTextContent | null = null;
 const pageTranslationsCache = new Map<number, Record<string, string>>();
+const readPages = new Set<number>();
 const repeatCandidateSignaturesByPage = new Map<number, Set<string>>();
 const repeatSignaturePages = new Map<string, Set<number>>();
 let paragraphHoverOverlay: HTMLDivElement | null = null;
@@ -102,6 +103,7 @@ async function loadPdfDocument() {
 
 async function renderCurrentPage() {
   if (!pdfDoc) return;
+  readPages.add(currentPage);
 
   if (renderTask) {
     renderTask.cancel();
@@ -651,7 +653,7 @@ document.getElementById('btn-zoom-in')?.addEventListener('click', () => setZoom(
 document.getElementById('btn-zoom-out')?.addEventListener('click', () => setZoom(scale - 0.15));
 document.getElementById('btn-fit')?.addEventListener('click', fitWidth);
 document.getElementById('btn-capture')?.addEventListener('click', () => {
-  captureCurrentFigureScreenshot().catch((err: unknown) => {
+  saveEntirePageAsImage().catch((err: unknown) => {
     const msg = err instanceof Error ? err.message : String(err);
     vscode.postMessage({ type: 'figure-screenshot-error', pageNumber: currentPage, reason: msg });
   });
@@ -883,103 +885,34 @@ async function extractImageBoxes(page: PdfPage, viewport: PdfViewport): Promise<
   return boxes;
 }
 
-function cropCanvasToDataUrl(rect: Rect): string | null {
-  const sx = Math.max(0, Math.floor(rect.x));
-  const sy = Math.max(0, Math.floor(rect.y));
-  const sw = Math.max(1, Math.ceil(rect.width));
-  const sh = Math.max(1, Math.ceil(rect.height));
-  if (sx >= canvas.width || sy >= canvas.height) return null;
-  const cw = Math.min(sw, canvas.width - sx);
-  const ch = Math.min(sh, canvas.height - sy);
-  if (cw <= 2 || ch <= 2) return null;
-
-  const tmp = document.createElement('canvas');
-  tmp.width = cw;
-  tmp.height = ch;
-  const ctx = tmp.getContext('2d');
-  if (!ctx) return null;
-  ctx.drawImage(canvas, sx, sy, cw, ch, 0, 0, cw, ch);
-  return tmp.toDataURL('image/png');
-}
-
-async function captureCurrentFigureScreenshot(): Promise<void> {
-  if (!pdfDoc || !currentViewport || !currentRichContent) {
-    vscode.postMessage({
-      type: 'figure-screenshot-error',
-      pageNumber: currentPage,
-      reason: '当前页面尚未完成渲染',
-    });
-    return;
-  }
-
-  const viewport = currentViewport;
-  const captionCandidates = currentParagraphs
-    .map(para => ({ para, score: scoreCaptionParagraph(para, viewport) }))
-    .filter(x => x.score > -500)
-    .sort((a, b) => b.score - a.score);
-  const caption = captionCandidates.length > 0 ? captionCandidates[0].para : null;
-
-  if (!caption) {
-    vscode.postMessage({
-      type: 'figure-screenshot-error',
-      pageNumber: currentPage,
-      reason: '未识别到图注锚点',
-    });
-    return;
-  }
-
-  const textItems = buildRenderedTextItems(currentRichContent.items, viewport);
-  const lines = groupRenderedLines(textItems);
-  const markerLines = lines.filter(line => /^\([a-z]\)$/i.test(line.text.trim()) && line.y < caption.y);
-  const markerY = markerLines.length > 0 ? Math.min(...markerLines.map(l => l.y)) : Math.max(0, caption.y - viewport.height * 0.14);
-
+async function saveEntirePageAsImage(): Promise<void> {
+  if (!pdfDoc) return;
   const page = await pdfDoc.getPage(currentPage);
-  const imageBoxes = (await extractImageBoxes(page, viewport))
-    .filter(box => box.y < caption.y - 4);
-
-  const capX1 = caption.x;
-  const capX2 = caption.x + caption.width;
-  const imgX1 = imageBoxes.length > 0 ? Math.min(...imageBoxes.map(b => b.x)) : capX1;
-  const imgX2 = imageBoxes.length > 0 ? Math.max(...imageBoxes.map(b => b.x + b.width)) : capX2;
-  const imgY1 = imageBoxes.length > 0 ? Math.min(...imageBoxes.map(b => b.y)) : markerY - 18;
-  const imgY2 = imageBoxes.length > 0 ? Math.max(...imageBoxes.map(b => b.y + b.height)) : markerY + 90;
-
-  const x1 = Math.max(8, Math.min(capX1 - 20, imgX1 - 12));
-  const x2 = Math.min(viewport.width - 8, Math.max(capX2 + 20, imgX2 + 12));
-  const y1 = Math.max(0, Math.min(markerY - 40, imgY1 - 28));
-  const y2 = Math.min(caption.y - 8, Math.max(imgY2 + 30, markerY + 110));
-  const width = x2 - x1;
-  const height = y2 - y1;
-
-  if (width < 120 || height < 50) {
-    vscode.postMessage({
-      type: 'figure-screenshot-error',
-      pageNumber: currentPage,
-      reason: '检测到的图像区域过小',
-    });
-    return;
-  }
-
-  const dataUrl = cropCanvasToDataUrl({ x: x1, y: y1, width, height });
-  if (!dataUrl) {
-    vscode.postMessage({
-      type: 'figure-screenshot-error',
-      pageNumber: currentPage,
-      reason: '图像裁剪失败',
-    });
-    return;
-  }
-
+  const exportScale = 3.0;
+  const viewport = page.getViewport({ scale: exportScale });
+  
+  const tempCanvas = document.createElement('canvas');
+  tempCanvas.width = viewport.width;
+  tempCanvas.height = viewport.height;
+  
+  const ctx = tempCanvas.getContext('2d');
+  if (!ctx) throw new Error('无法创建 Canvas 2D 上下文');
+  
+  const renderTask = page.render({ canvasContext: ctx, viewport });
+  await renderTask.promise;
+  
+  const dataUrl = tempCanvas.toDataURL('image/png');
+  
   vscode.postMessage({
     type: 'figure-screenshot-captured',
     pageNumber: currentPage,
     dataUrl,
     bbox: {
-      x: Math.round(x1),
-      y: Math.round(y1),
-      width: Math.round(width),
-      height: Math.round(height),
-    },
+      x: 0,
+      y: 0,
+      width: Math.round(viewport.width),
+      height: Math.round(viewport.height)
+    }
   });
 }
 
@@ -1151,7 +1084,7 @@ window.addEventListener('message', event => {
       break;
     }
     case 'capture-figure-screenshot': {
-      captureCurrentFigureScreenshot().catch((err: unknown) => {
+      saveEntirePageAsImage().catch((err: unknown) => {
         const msg = err instanceof Error ? err.message : String(err);
         vscode.postMessage({
           type: 'figure-screenshot-error',
@@ -1161,7 +1094,91 @@ window.addEventListener('message', event => {
       });
       break;
     }
+    case 'get-pdf-pages-text': {
+      (async () => {
+        if (!pdfDoc) {
+          vscode.postMessage({
+            type: 'pdf-pages-text-result',
+            paragraphs: []
+          });
+          return;
+        }
+        let targetPages: number[] = [];
+        if (message.scope === 'read') {
+          targetPages = Array.from(readPages).sort((a, b) => a - b);
+        } else if (message.scope === 'all') {
+          targetPages = Array.from({ length: totalPages }, (_, i) => i + 1);
+        } else if (message.scope === 'custom') {
+          targetPages = parsePageRange(message.customRange || '', totalPages);
+        }
+
+        const paragraphs: Array<{ id: string; text: string; page: number }> = [];
+        try {
+          for (const pageNum of targetPages) {
+            const page = await pdfDoc.getPage(pageNum);
+            const viewport = page.getViewport({ scale: 1.0 });
+            const items = await getPageText(page, viewport);
+            
+            const dummyDiv = document.createElement('div');
+            const { paragraphs: pageParagraphs } = buildTextLayer(dummyDiv, items, viewport, {
+              pageNumber: pageNum
+            });
+            
+            applyRepeatedNoiseSkips(pageNum, pageParagraphs, viewport.width, viewport.height);
+            
+            for (const p of pageParagraphs) {
+              if (p.skipped) continue;
+              paragraphs.push({
+                id: p.id,
+                text: p.text,
+                page: pageNum
+              });
+            }
+          }
+          vscode.postMessage({
+            type: 'pdf-pages-text-result',
+            paragraphs
+          });
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error('[PDF Viewer] Background extraction error:', msg);
+          vscode.postMessage({
+            type: 'pdf-pages-text-result',
+            paragraphs: []
+          });
+        }
+      })();
+      break;
+    }
   }
 });
+
+function parsePageRange(rangeStr: string, maxPages: number): number[] {
+  const pages = new Set<number>();
+  const parts = rangeStr.split(',');
+  for (const part of parts) {
+    const trimmed = part.trim();
+    if (trimmed.includes('-')) {
+      const [startStr, endStr] = trimmed.split('-');
+      const start = parseInt(startStr.trim(), 10);
+      const end = parseInt(endStr.trim(), 10);
+      if (!isNaN(start) && !isNaN(end)) {
+        const low = Math.min(start, end);
+        const high = Math.max(start, end);
+        for (let i = low; i <= high; i++) {
+          if (i >= 1 && i <= maxPages) {
+            pages.add(i);
+          }
+        }
+      }
+    } else {
+      const page = parseInt(trimmed, 10);
+      if (!isNaN(page) && page >= 1 && page <= maxPages) {
+        pages.add(page);
+      }
+    }
+  }
+  return Array.from(pages).sort((a, b) => a - b);
+}
 
 loadPdfDocument();

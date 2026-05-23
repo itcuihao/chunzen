@@ -6,7 +6,7 @@ import { TranslationEngine, GlossaryEntry } from '../../types';
  */
 export class OpenAIEngine implements TranslationEngine {
   name = 'openai';
-  displayName = 'AI 翻译';
+  displayName = 'OpenAI 兼容接口';
 
   isConfigured(): boolean {
     const cfg = vscode.workspace.getConfiguration('chunzen.translation.openai');
@@ -25,7 +25,7 @@ export class OpenAIEngine implements TranslationEngine {
     );
 
     if (!apiKey) {
-      throw new Error('OpenAI/AI 引擎未配置 API Key');
+      throw new Error('OpenAI 兼容接口未配置 API Key');
     }
 
     let glossaryPrompt = '';
@@ -56,7 +56,7 @@ export class OpenAIEngine implements TranslationEngine {
 
     if (!resp.ok) {
       const errText = await resp.text();
-      throw new Error(`AI 翻译请求失败 ${resp.status}: ${errText.slice(0, 200)}`);
+      throw new Error(`OpenAI 兼容接口请求失败 ${resp.status}: ${errText.slice(0, 200)}`);
     }
 
     const data = (await resp.json()) as {
@@ -65,12 +65,12 @@ export class OpenAIEngine implements TranslationEngine {
     };
 
     if (data.error) {
-      throw new Error(`AI 翻译错误: ${data.error.message}`);
+      throw new Error(`OpenAI 兼容接口错误: ${data.error.message}`);
     }
 
     const content = data.choices?.[0]?.message?.content;
     if (!content) {
-      throw new Error('AI 翻译返回空结果');
+      throw new Error('OpenAI 兼容接口返回空结果');
     }
 
     return content.trim();

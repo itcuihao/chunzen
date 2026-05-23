@@ -3,7 +3,7 @@ import { TranslationEngine, TranslationResult, GlossaryEntry } from '../types';
 import { BaiduEngine } from './engines/baiduEngine';
 import { DeepLEngine } from './engines/deeplEngine';
 import { OpenAIEngine, CustomHttpEngine } from './engines/openaiEngine';
-import { ClaudeCliEngine } from './engines/claudeCliEngine';
+
 import { CacheService } from './cacheService';
 import { GlossaryService } from './glossaryService';
 
@@ -22,7 +22,7 @@ export class TranslationService {
     this.engines.set('deepl', new DeepLEngine());
     this.engines.set('openai', new OpenAIEngine());
     this.engines.set('custom', new CustomHttpEngine());
-    this.engines.set('claudeCli', new ClaudeCliEngine());
+
   }
 
   async translate(text: string): Promise<TranslationResult> {
@@ -45,7 +45,7 @@ export class TranslationService {
     // 按优先级尝试各引擎
     const priority = vscode.workspace
       .getConfiguration('chunzen.translation')
-      .get<string[]>('priority', ['baidu', 'deepl', 'openai', 'custom', 'claudeCli']);
+      .get<string[]>('priority', ['baidu', 'deepl', 'openai', 'custom']);
 
     const errors: string[] = [];
 
@@ -103,6 +103,16 @@ export class TranslationService {
       return this.postProcessGlossary(result, matchingTerms);
     }
     return result;
+  }
+
+  getCachedTranslation(text: string): string | undefined {
+    const trimmed = text.trim();
+    if (!trimmed) return undefined;
+    const cached = this.cache.get(trimmed);
+    if (cached) {
+      return cached.split('\x00')[1];
+    }
+    return undefined;
   }
 
   clearCache(): void {

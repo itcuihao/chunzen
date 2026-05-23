@@ -19,9 +19,16 @@ export class SidePanelProvider {
   private layoutTerminal: vscode.Terminal | undefined;
 
   public onTranslatePageRequested?: (pageNumber: number, paragraphs: Array<{ id: string; text: string }>) => Promise<void>;
+  public onGetPdfPagesTextRequested?: (scope: 'read' | 'all' | 'custom', customRange?: string) => void;
   public onRefreshPageTextRequested?: () => Promise<void>;
   public onPanelHoverRequested?: (id?: string) => Promise<void>;
   public onLayoutConfigChanged?: (layoutConfig: LayoutConfig) => Promise<void> | void;
+
+  private currentExportConfig: {
+    untranslatedPolicy: 'english' | 'translate';
+    format: 'markdown' | 'chinese' | 'bilingual';
+    documentName?: string;
+  } | null = null;
 
   private lastPageText: {
     pageNumber: number;
@@ -93,6 +100,7 @@ export class SidePanelProvider {
             break;
           case 'clear-cache':
             this.translationService.clearCache();
+            this.syncCacheSize();
             break;
           case 'clear-history':
             this.historyService.clear();
@@ -131,6 +139,20 @@ export class SidePanelProvider {
           case 'export-translations':
             await this.handleExport(msg.format);
             break;
+          case 'export-doc':
+            this.currentExportConfig = {
+              untranslatedPolicy: msg.untranslatedPolicy,
+              format: msg.format,
+              documentName: msg.documentName
+            };
+            this.postMessage({
+              type: 'export-progress',
+              current: 0,
+              total: 100,
+              stage: 'extracting'
+            });
+            this.onGetPdfPagesTextRequested?.(msg.scope, msg.customRange);
+            break;
           case 'translate-page':
             await this.onTranslatePageRequested?.(msg.pageNumber, msg.paragraphs);
             break;
@@ -168,7 +190,19 @@ export class SidePanelProvider {
   }
 
   updateTranslation(original: string, translated: string, engine: string, cached: boolean): void {
-    this.postMessage({ type: 'translate-result', original, translated, engine, cached });
+    this.postMessage({
+      type: 'translate-result',
+      original,
+      translated,
+      engine,
+      cached,
+      cacheSize: this.translationService.getCacheSize()
+    });
+  }
+
+  syncCacheSize(): void {
+    const size = this.translationService.getCacheSize();
+    this.postMessage({ type: 'cache-size-sync', size });
   }
 
   updateJournal(info: JournalInfo): void {
@@ -225,6 +259,7 @@ export class SidePanelProvider {
       engineConfigs: this.configService.getEngineConfigs(),
       journalSource: { type: this.configService.getJournalConfig().source },
       cacheMaxSize: this.configService.getCacheConfig().maxSize,
+      cacheSize: this.translationService.getCacheSize(),
       layoutConfig: this.configService.getLayoutConfig()
     });
     if (this.lastJournalInfo) {
@@ -366,6 +401,114 @@ export class SidePanelProvider {
     this.layoutTerminal.dispose();
     this.layoutTerminal = undefined;
     vscode.window.showInformationMessage('已停止本地版面服务。');
+  }
+
+  public async handlePdfPagesTextResult(paragraphs: Array<{ id: string; text: string; page: number }>): Promise<void> {
+    if (!this.currentExportConfig) {
+      return;
+    }
+    const { untranslatedPolicy, format, documentName } = this.currentExportConfig;
+    this.currentExportConfig = null;
+
+    const total = paragraphs.length;
+    this.postMessage({
+      type: 'export-progress',
+      current: 0,
+      total,
+      stage: 'translating'
+    });
+
+    const compiledParagraphs: Array<{ original: string; translated: string; page: number }> = [];
+
+    for (let i = 0; i < paragraphs.length; i++) {
+      const para = paragraphs[i];
+      let translatedText = '';
+
+      if (para.text.trim()) {
+        const cached = this.translationService.getCachedTranslation(para.text);
+        if (cached) {
+          translatedText = cached;
+        } else if (untranslatedPolicy === 'translate') {
+          try {
+            const res = await this.translationService.translate(para.text);
+            translatedText = res.text;
+            if (!res.cached) {
+              await new Promise(resolve => setTimeout(resolve, 200));
+            }
+          } catch (err) {
+            console.error(`Export translation error for: ${para.text}`, err);
+          }
+        }
+      }
+
+      compiledParagraphs.push({
+        original: para.text,
+        translated: translatedText,
+        page: para.page
+      });
+
+      this.postMessage({
+        type: 'export-progress',
+        current: i + 1,
+        total,
+        stage: 'translating',
+        pageNumber: para.page
+      });
+    }
+
+    this.postMessage({
+      type: 'export-progress',
+      current: total,
+      total,
+      stage: 'compiling'
+    });
+
+    let content = '';
+    let lastPage = -1;
+    for (const para of compiledParagraphs) {
+      if (para.page !== lastPage) {
+        lastPage = para.page;
+        content += `\n\n<!-- Page ${lastPage} -->\n\n`;
+      }
+
+      const orig = para.original.trim();
+      const trans = para.translated.trim();
+
+      if (!orig) continue;
+
+      if (format === 'bilingual') {
+        if (trans) {
+          content += `${orig}\n\n${trans}\n\n`;
+        } else {
+          content += `${orig}\n\n`;
+        }
+      } else if (format === 'chinese') {
+        if (trans) {
+          const hashMatch = orig.match(/^(#+)\s+/);
+          if (hashMatch) {
+            const hashes = hashMatch[1];
+            const cleanTrans = trans.replace(/^#+\s+/, '');
+            content += `${hashes} ${cleanTrans}\n\n`;
+          } else {
+            content += `${trans}\n\n`;
+          }
+        } else {
+          content += `${orig}\n\n`;
+        }
+      } else { // 'markdown' (Bilingual with quotes)
+        if (trans) {
+          content += `**原文**:\n> ${orig.replace(/\n/g, '\n> ')}\n\n**译文**:\n${trans}\n\n---\n\n`;
+        } else {
+          content += `**原文**:\n> ${orig.replace(/\n/g, '\n> ')}\n\n`;
+        }
+      }
+    }
+
+    const doc = await vscode.workspace.openTextDocument({
+      content: content.trim(),
+      language: 'markdown'
+    });
+    await vscode.window.showTextDocument(doc);
   }
 
   private getHtml(webview: vscode.Webview): string {

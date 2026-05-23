@@ -5,18 +5,20 @@ import * as vscode from 'vscode';
  */
 export class CacheService {
   private cache: Map<string, { value: string; timestamp: number }> = new Map();
-  private maxSize: number;
   private persistPath: vscode.Uri;
 
   constructor(context: vscode.ExtensionContext) {
-    this.maxSize = vscode.workspace
-      .getConfiguration('chunzen')
-      .get<number>('cache.maxSize', 500);
     this.persistPath = vscode.Uri.joinPath(
       context.globalStorageUri,
       'translation-cache.json'
     );
     this.loadFromDisk();
+  }
+
+  get maxCacheSize(): number {
+    return vscode.workspace
+      .getConfiguration('chunzen')
+      .get<number>('cache.maxSize', 500);
   }
 
   get(key: string): string | undefined {
@@ -31,7 +33,7 @@ export class CacheService {
   set(key: string, value: string): void {
     if (this.cache.has(key)) {
       this.cache.delete(key);
-    } else if (this.cache.size >= this.maxSize) {
+    } else if (this.cache.size >= this.maxCacheSize) {
       // 删除最旧的条目
       const firstKey = this.cache.keys().next().value;
       if (firstKey) this.cache.delete(firstKey);
