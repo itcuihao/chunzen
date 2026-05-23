@@ -7,3 +7,6 @@ pdf/.vscode/
 test/
 md5
 __pycache__/
+scratch/
+test-page7.mjs
+pdf/
