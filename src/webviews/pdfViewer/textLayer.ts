@@ -32,7 +32,7 @@ export interface Paragraph {
   blockType?: BlockType;
   skipped?: boolean;
   skipReason?: ParagraphSkipReason;
-  lineMarker?: 'horizontal-rule' | 'table-image';
+  lineMarker?: 'horizontal-rule' | 'table-image' | 'figure-image';
   ruleX1?: number;
   ruleX2?: number;
   imageDataUrl?: string;

@@ -592,6 +592,12 @@ document.getElementById('btn-next')?.addEventListener('click', () => goToPage(cu
 document.getElementById('btn-zoom-in')?.addEventListener('click', () => setZoom(scale + 0.15));
 document.getElementById('btn-zoom-out')?.addEventListener('click', () => setZoom(scale - 0.15));
 document.getElementById('btn-fit')?.addEventListener('click', fitWidth);
+document.getElementById('btn-capture')?.addEventListener('click', () => {
+  captureCurrentFigureScreenshot().catch((err: unknown) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    vscode.postMessage({ type: 'figure-screenshot-error', pageNumber: currentPage, reason: msg });
+  });
+});
 pageInputEl.addEventListener('change', e => goToPage(parseInt((e.target as HTMLInputElement).value, 10)));
 
 document.addEventListener('keydown', e => {
