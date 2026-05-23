@@ -84,9 +84,9 @@ body.vscode-dark {
 
 body.vscode-light {
   --bg: #FAF7F0; /* Spring Cicada warm cream */
-  --bg-section: #f3ede2;
+  --bg-section: #f5efe4;
   --bg-hover: #ebe3d5;
-  --border: #e8dfd0;
+  --border: #d8cebc;
   --accent: #b45309;
   --accent-glow: rgba(180, 83, 9, 0.08);
   --text-primary: #2c2724; /* deep espresso */
@@ -96,6 +96,11 @@ body.vscode-light {
   --warning: #b45309;
   --error: #991b1b;
   --cached: #166534;
+
+  /* Custom card variables */
+  --card-bg: #f5efe4;
+  --card-border: #d8cebc;
+  --card-hover: #ebe3d5;
 
   --badge-if-bg: rgba(180, 83, 9, 0.08);
   --badge-if-border: rgba(180, 83, 9, 0.25);
@@ -1022,9 +1027,9 @@ html body.theme-dark {
 
 html body.theme-light {
   --bg: #FAF7F0; /* Spring Cicada warm cream */
-  --bg-section: #f3ede2;
+  --bg-section: #f5efe4;
   --bg-hover: #ebe3d5;
-  --border: #e8dfd0;
+  --border: #d8cebc;
   --accent: #b45309;
   --accent-glow: rgba(180, 83, 9, 0.08);
   --text-primary: #2c2724; /* deep espresso */
@@ -1034,6 +1039,11 @@ html body.theme-light {
   --warning: #b45309;
   --error: #991b1b;
   --cached: #166534;
+
+  /* Custom card variables */
+  --card-bg: #f5efe4;
+  --card-border: #d8cebc;
+  --card-hover: #ebe3d5;
 
   --badge-if-bg: rgba(180, 83, 9, 0.08);
   --badge-if-border: rgba(180, 83, 9, 0.25);
@@ -1056,15 +1066,85 @@ html body.theme-light {
   --vscode-editor-background: #FAF7F0;
   --vscode-sideBar-foreground: #5c544f;
   --vscode-editor-foreground: #2c2724;
-  --vscode-sideBar-border: #e8dfd0;
-  --vscode-widget-border: #e8dfd0;
+  --vscode-sideBar-border: #d8cebc;
+  --vscode-widget-border: #d8cebc;
   --vscode-button-background: #b45309;
   --vscode-button-hoverBackground: #92400e;
   --vscode-button-foreground: #ffffff;
-  --vscode-button-secondaryBackground: #f3ede2;
+  --vscode-button-secondaryBackground: #f2ead9;
   --vscode-button-secondaryForeground: #5c544f;
   --vscode-button-secondaryHoverBackground: #ebe3d5;
   --vscode-list-hoverBackground: rgba(180, 83, 9, 0.06);
   --vscode-scrollbarSlider-background: rgba(180, 83, 9, 0.1);
   --vscode-scrollbarSlider-hoverBackground: rgba(180, 83, 9, 0.2);
+}
+
+/* ── Theme Specific Card and Nested Box Adjustments (Light Theme) ── */
+body.vscode-light .glass-panel:not(.bg-accent\/5):not(.bg-error\/5),
+html body.theme-light .glass-panel:not(.bg-accent\/5):not(.bg-error\/5) {
+  background-color: #f5efe4 !important; /* solid warm soft cream-sand card */
+  border-color: #d8cebc !important; /* solid border */
+}
+
+/* Inner nested boxes inside cards - force hollowed-out look with lighter background */
+body.vscode-light .glass-panel .bg-secondary\/20,
+html body.theme-light .glass-panel .bg-secondary\/20,
+body.vscode-light .glass-panel .bg-secondary\/30,
+html body.theme-light .glass-panel .bg-secondary\/30,
+body.vscode-light .glass-panel .bg-secondary\/35,
+html body.theme-light .glass-panel .bg-secondary\/35 {
+  background-color: #FAF7F0 !important;
+  border-color: #d8cebc !important;
+}
+
+/* Input boxes nested inside cards should have a solid border and look neat */
+body.vscode-light .glass-panel input,
+html body.theme-light .glass-panel input,
+body.vscode-light .glass-panel select,
+html body.theme-light .glass-panel select,
+body.vscode-light .glass-panel textarea,
+html body.theme-light .glass-panel textarea {
+  border-color: #d8cebc !important;
+  background-color: #FAF7F0 !important;
+}
+
+body.vscode-light .glass-panel input:focus,
+html body.theme-light .glass-panel input:focus,
+body.vscode-light .glass-panel select:focus,
+html body.theme-light .glass-panel select:focus,
+body.vscode-light .glass-panel textarea:focus,
+html body.theme-light .glass-panel textarea:focus {
+  border-color: var(--accent) !important;
+}
+
+/* Engine config list items: collapsed state vs expanded state */
+body.vscode-light .glass-panel div.bg-card\/10.border-border,
+html body.theme-light .glass-panel div.bg-card\/10.border-border {
+  background-color: #FAF7F0 !important;
+  border-color: #d8cebc !important;
+}
+
+body.vscode-light .glass-panel div.bg-card\/10:not(.border-border),
+html body.theme-light .glass-panel div.bg-card\/10:not(.border-border) {
+  background-color: #FAF7F0 !important;
+}
+
+/* Glossary Tab - individual term items */
+body.vscode-light .bg-card\/10.hover-micro-scale,
+html body.theme-light .bg-card\/10.hover-micro-scale {
+  background-color: #f5efe4 !important; /* solid card bg */
+  border-color: #d8cebc !important; /* solid border */
+}
+
+body.vscode-light .bg-card\/10.hover-micro-scale:hover,
+html body.theme-light .bg-card\/10.hover-micro-scale:hover {
+  border-color: var(--accent) !important;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.02), 0 4px 12px rgba(180, 83, 9, 0.05) !important;
+}
+
+/* Glossary empty state dashed box */
+body.vscode-light .border-dashed.border-border,
+html body.theme-light .border-dashed.border-border {
+  border-color: #d8cebc !important;
+  background-color: #f5efe4 !important;
 }

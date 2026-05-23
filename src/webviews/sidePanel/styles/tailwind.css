@@ -41,20 +41,21 @@ body.vscode-dark {
   --card-hover: rgba(50, 41, 29, 0.65);
 }
 
-body.vscode-light {
+body.vscode-light,
+html body.theme-light {
   /* Warm Light Theme - "春蝉暖木" */
   --vscode-sideBar-background: #FAF7F0; /* warm paper cream ivory */
   --vscode-editor-background: #FAF7F0;
   --vscode-sideBar-foreground: #5c544f; /* espresso muted */
   --vscode-editor-foreground: #2c2724; /* espresso primary */
-  --vscode-sideBar-border: #e8dfd0; /* warm sand-border */
-  --vscode-widget-border: #e8dfd0;
+  --vscode-sideBar-border: #d8cebc; /* warm sand-border */
+  --vscode-widget-border: #d8cebc;
   
   --vscode-button-background: #b45309; /* amber-700 */
   --vscode-button-hoverBackground: #92400e; /* amber-800 */
   --vscode-button-foreground: #ffffff;
   
-  --vscode-button-secondaryBackground: #f3ede2; /* warm light gray-beige card */
+  --vscode-button-secondaryBackground: #f2ead9; /* warm light gray-beige card */
   --vscode-button-secondaryForeground: #5c544f;
   --vscode-button-secondaryHoverBackground: #ebe3d5;
   
@@ -69,9 +70,9 @@ body.vscode-light {
   --warning: #b45309; /* amber */
   --error: #991b1b; /* deep crimson */
   --cached: #166534;
-  --card-bg: rgba(243, 237, 226, 0.55);
-  --card-border: rgba(0, 0, 0, 0.04);
-  --card-hover: rgba(243, 237, 226, 0.85);
+  --card-bg: #f5efe4;
+  --card-border: #d8cebc;
+  --card-hover: #ebe3d5;
 }
 
 /* Custom Scrollbars to look neat inside VS Code side panel */
