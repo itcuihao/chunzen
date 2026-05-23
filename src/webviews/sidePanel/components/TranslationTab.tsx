@@ -21,7 +21,7 @@ interface AnnotatedPara {
   blockType?: string;
   skipped?: boolean;
   skipReason?: string;
-  lineMarker?: 'horizontal-rule' | 'table-image';
+  lineMarker?: 'horizontal-rule' | 'table-image' | 'figure-image';
   ruleX1?: number;
   ruleX2?: number;
   imageDataUrl?: string;

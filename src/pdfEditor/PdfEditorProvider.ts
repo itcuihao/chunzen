@@ -397,6 +397,7 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
       <span id="zoom-level">100%</span>
       <button id="btn-zoom-in" title="放大">+</button>
       <button id="btn-fit" title="适合宽度">⊡</button>
+      <button id="btn-capture" title="截图当前图注区域">📷</button>
     </div>
   </div>
 

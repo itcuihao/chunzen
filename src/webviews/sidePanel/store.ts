@@ -48,13 +48,13 @@ interface PanelState {
   setTranslationError: (err: string) => void;
   currentPageText: {
     pageNumber: number;
-    paragraphs: Array<{ id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' | 'full'; columnIndex?: number; fontSize?: number; height?: number; bold?: boolean; blockType?: string; skipped?: boolean; skipReason?: string; lineMarker?: 'horizontal-rule' | 'table-image'; ruleX1?: number; ruleX2?: number; imageDataUrl?: string; imageAlt?: string }>;
+    paragraphs: Array<{ id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' | 'full'; columnIndex?: number; fontSize?: number; height?: number; bold?: boolean; blockType?: string; skipped?: boolean; skipReason?: string; lineMarker?: 'horizontal-rule' | 'table-image' | 'figure-image'; ruleX1?: number; ruleX2?: number; imageDataUrl?: string; imageAlt?: string }>;
     columnsCount: number;
     translations?: Record<string, string>;
   } | null;
   setCurrentPageText: (val: {
     pageNumber: number;
-    paragraphs: Array<{ id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' | 'full'; columnIndex?: number; fontSize?: number; height?: number; bold?: boolean; blockType?: string; skipped?: boolean; skipReason?: string; lineMarker?: 'horizontal-rule' | 'table-image'; ruleX1?: number; ruleX2?: number; imageDataUrl?: string; imageAlt?: string }>;
+    paragraphs: Array<{ id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' | 'full'; columnIndex?: number; fontSize?: number; height?: number; bold?: boolean; blockType?: string; skipped?: boolean; skipReason?: string; lineMarker?: 'horizontal-rule' | 'table-image' | 'figure-image'; ruleX1?: number; ruleX2?: number; imageDataUrl?: string; imageAlt?: string }>;
     columnsCount: number;
     translations?: Record<string, string>;
   } | null) => void;
