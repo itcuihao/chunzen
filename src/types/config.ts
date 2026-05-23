@@ -27,4 +27,5 @@ export interface LayoutConfig {
   modelEndpoint: string;
   timeoutMs: number;
   hoverHighlightStyle: 'overlay' | 'bar';
+  theme: 'auto' | 'dark' | 'light';
 }

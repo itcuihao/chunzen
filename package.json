@@ -208,6 +208,16 @@
           ],
           "default": "overlay",
           "description": "段落悬停高亮样式：overlay 为半透明块，bar 为左侧竖线"
+        },
+        "chunzen.layout.theme": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "dark",
+            "light"
+          ],
+          "default": "auto",
+          "description": "阅读器主题：auto 为跟随 VS Code 主题，dark 为暖色深褐（琥珀深褐），light 为暖色浅黄（春蝉暖木）"
         }
       }
     }

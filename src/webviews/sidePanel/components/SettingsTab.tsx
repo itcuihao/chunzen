@@ -410,11 +410,12 @@ const JournalSourceSettings: FunctionComponent = () => {
 
 const LayoutSettings: FunctionComponent = () => {
   const defaultEndpoint = 'http://127.0.0.1:8765/layout';
-  const layoutConfig = useStore((state) => state.layoutConfig) || { useModel: false, modelEndpoint: '', timeoutMs: 3500, hoverHighlightStyle: 'overlay' as const };
+  const layoutConfig = useStore((state) => state.layoutConfig) || { useModel: false, modelEndpoint: '', timeoutMs: 3500, hoverHighlightStyle: 'overlay' as const, theme: 'auto' as const };
   const [useModel, setUseModel] = useState(layoutConfig?.useModel ?? false);
   const [modelEndpoint, setModelEndpoint] = useState(layoutConfig?.modelEndpoint ?? '');
   const [timeoutMs, setTimeoutMs] = useState(String(layoutConfig?.timeoutMs ?? 3500));
   const [hoverHighlightStyle, setHoverHighlightStyle] = useState<'overlay' | 'bar'>(layoutConfig?.hoverHighlightStyle ?? 'overlay');
+  const [theme, setTheme] = useState<'auto' | 'dark' | 'light'>(layoutConfig?.theme ?? 'auto');
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
@@ -422,7 +423,8 @@ const LayoutSettings: FunctionComponent = () => {
     setModelEndpoint(layoutConfig?.modelEndpoint ?? '');
     setTimeoutMs(String(layoutConfig?.timeoutMs ?? 3500));
     setHoverHighlightStyle(layoutConfig?.hoverHighlightStyle ?? 'overlay');
-  }, [layoutConfig?.useModel, layoutConfig?.modelEndpoint, layoutConfig?.timeoutMs, layoutConfig?.hoverHighlightStyle]);
+    setTheme(layoutConfig?.theme ?? 'auto');
+  }, [layoutConfig?.useModel, layoutConfig?.modelEndpoint, layoutConfig?.timeoutMs, layoutConfig?.hoverHighlightStyle, layoutConfig?.theme]);
 
   const handleSave = () => {
     const timeout = Number(timeoutMs);
@@ -440,7 +442,8 @@ const LayoutSettings: FunctionComponent = () => {
           useModel,
           modelEndpoint: normalizedEndpoint,
           timeoutMs: normalizedTimeout,
-          hoverHighlightStyle
+          hoverHighlightStyle,
+          theme
         }
       }
     });
@@ -517,6 +520,21 @@ const LayoutSettings: FunctionComponent = () => {
           >
             <option value="overlay">半透明块 (overlay)</option>
             <option value="bar">左侧竖线 (bar)</option>
+          </select>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <label className="text-[10px] font-semibold text-secondary-foreground/80 tracking-wider uppercase">
+            阅读器背景主题
+          </label>
+          <select
+            className="w-full px-3 py-1.5 text-xs rounded border border-border bg-background text-foreground outline-none focus:border-accent font-mono"
+            value={theme}
+            onChange={(e) => setTheme(e.target.value as 'auto' | 'dark' | 'light')}
+          >
+            <option value="auto">跟随 VS Code 主题 (auto)</option>
+            <option value="dark">琥珀深褐 (Cozy Warm Dark)</option>
+            <option value="light">春蝉暖木 (Spring Cicada Light)</option>
           </select>
         </div>
 
