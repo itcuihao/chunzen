@@ -410,17 +410,19 @@ const JournalSourceSettings: FunctionComponent = () => {
 
 const LayoutSettings: FunctionComponent = () => {
   const defaultEndpoint = 'http://127.0.0.1:8765/layout';
-  const layoutConfig = useStore((state) => state.layoutConfig) || { useModel: false, modelEndpoint: '', timeoutMs: 3500 };
+  const layoutConfig = useStore((state) => state.layoutConfig) || { useModel: false, modelEndpoint: '', timeoutMs: 3500, hoverHighlightStyle: 'overlay' as const };
   const [useModel, setUseModel] = useState(layoutConfig?.useModel ?? false);
   const [modelEndpoint, setModelEndpoint] = useState(layoutConfig?.modelEndpoint ?? '');
   const [timeoutMs, setTimeoutMs] = useState(String(layoutConfig?.timeoutMs ?? 3500));
+  const [hoverHighlightStyle, setHoverHighlightStyle] = useState<'overlay' | 'bar'>(layoutConfig?.hoverHighlightStyle ?? 'overlay');
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     setUseModel(layoutConfig?.useModel ?? false);
     setModelEndpoint(layoutConfig?.modelEndpoint ?? '');
     setTimeoutMs(String(layoutConfig?.timeoutMs ?? 3500));
-  }, [layoutConfig?.useModel, layoutConfig?.modelEndpoint, layoutConfig?.timeoutMs]);
+    setHoverHighlightStyle(layoutConfig?.hoverHighlightStyle ?? 'overlay');
+  }, [layoutConfig?.useModel, layoutConfig?.modelEndpoint, layoutConfig?.timeoutMs, layoutConfig?.hoverHighlightStyle]);
 
   const handleSave = () => {
     const timeout = Number(timeoutMs);
@@ -437,7 +439,8 @@ const LayoutSettings: FunctionComponent = () => {
         layout: {
           useModel,
           modelEndpoint: normalizedEndpoint,
-          timeoutMs: normalizedTimeout
+          timeoutMs: normalizedTimeout,
+          hoverHighlightStyle
         }
       }
     });
@@ -501,6 +504,20 @@ const LayoutSettings: FunctionComponent = () => {
             value={timeoutMs}
             onChange={(e) => setTimeoutMs(e.target.value)}
           />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <label className="text-[10px] font-semibold text-secondary-foreground/80 tracking-wider uppercase">
+            悬停高亮样式
+          </label>
+          <select
+            className="w-full px-3 py-1.5 text-xs rounded border border-border bg-background text-foreground outline-none focus:border-accent font-mono"
+            value={hoverHighlightStyle}
+            onChange={(e) => setHoverHighlightStyle(e.target.value as 'overlay' | 'bar')}
+          >
+            <option value="overlay">半透明块 (overlay)</option>
+            <option value="bar">左侧竖线 (bar)</option>
+          </select>
         </div>
 
         <div className="flex justify-end">

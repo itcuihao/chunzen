@@ -205,6 +205,7 @@ export const TranslationTab: FunctionComponent = () => {
 
   const layoutMode = useStore((state) => state.layoutMode);
   const setLayoutMode = useStore((state) => state.setLayoutMode);
+  const hoverHighlightStyle = useStore((state) => state.layoutConfig?.hoverHighlightStyle ?? 'overlay');
 
   // Auto-translate on page turn if remembered mode is translation or bilingual
   useEffect(() => {
@@ -660,7 +661,9 @@ export const TranslationTab: FunctionComponent = () => {
       </div>
 
       {/* The Academic PDF Paper Sheet */}
-      <article className="relative bg-editor-bg border border-border/80 shadow-md rounded-md p-6 min-h-[300px] flex flex-col justify-between transition-all duration-300">
+      <article className={`relative bg-editor-bg border border-border/80 shadow-md rounded-md p-6 min-h-[300px] flex flex-col justify-between transition-all duration-300 ${
+        hoverHighlightStyle === 'bar' ? 'hover-highlight-bar' : 'hover-highlight-overlay'
+      }`}>
 
         {/* Page Header */}
         <div className="flex justify-between items-center border-b border-border/40 pb-2 mb-4">

@@ -199,6 +199,15 @@
           "type": "number",
           "default": 3500,
           "description": "版面分析模型请求超时（毫秒）"
+        },
+        "chunzen.layout.hoverHighlightStyle": {
+          "type": "string",
+          "enum": [
+            "overlay",
+            "bar"
+          ],
+          "default": "overlay",
+          "description": "段落悬停高亮样式：overlay 为半透明块，bar 为左侧竖线"
         }
       }
     }

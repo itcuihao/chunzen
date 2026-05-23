@@ -16,12 +16,14 @@ type LayoutConfig = {
   useModel: boolean;
   modelEndpoint: string;
   timeoutMs: number;
+  hoverHighlightStyle: 'overlay' | 'bar';
 };
 
 const defaultLayoutConfig: LayoutConfig = {
   useModel: false,
   modelEndpoint: '',
-  timeoutMs: 3500
+  timeoutMs: 3500,
+  hoverHighlightStyle: 'overlay'
 };
 
 let pdfDoc: PdfDocument | null = null;
@@ -506,15 +508,20 @@ function normalizeLayoutConfig(input: unknown): LayoutConfig {
   if (!input || typeof input !== 'object') return { ...defaultLayoutConfig };
   const raw = input as Record<string, unknown>;
   const timeoutRaw = Number(raw.timeoutMs);
+  const hoverHighlightStyle = raw.hoverHighlightStyle === 'bar' ? 'bar' : 'overlay';
   return {
     useModel: Boolean(raw.useModel),
     modelEndpoint: typeof raw.modelEndpoint === 'string' ? raw.modelEndpoint.trim() : '',
-    timeoutMs: Number.isFinite(timeoutRaw) ? Math.max(500, Math.min(20000, Math.round(timeoutRaw))) : 3500
+    timeoutMs: Number.isFinite(timeoutRaw) ? Math.max(500, Math.min(20000, Math.round(timeoutRaw))) : 3500,
+    hoverHighlightStyle
   };
 }
 
 function isLayoutConfigEqual(a: LayoutConfig, b: LayoutConfig): boolean {
-  return a.useModel === b.useModel && a.modelEndpoint === b.modelEndpoint && a.timeoutMs === b.timeoutMs;
+  return a.useModel === b.useModel
+    && a.modelEndpoint === b.modelEndpoint
+    && a.timeoutMs === b.timeoutMs
+    && a.hoverHighlightStyle === b.hoverHighlightStyle;
 }
 
 // Removed unused hover text events to avoid single sentence translation
@@ -560,6 +567,7 @@ let activeHoverParagraphId: string | null = null;
 function ensureParagraphHoverOverlay() {
   paragraphHoverOverlay = document.createElement('div');
   paragraphHoverOverlay.className = 'paragraph-hover-overlay';
+  paragraphHoverOverlay.dataset.style = layoutConfig.hoverHighlightStyle;
   textLayer.appendChild(paragraphHoverOverlay);
 }
 
@@ -577,10 +585,15 @@ function highlightPdfParagraph(paragraphId: string) {
   });
   const para = currentParagraphs.find(p => p.id === paragraphId);
   if (para && paragraphHoverOverlay) {
-    paragraphHoverOverlay.style.left = `${para.x}px`;
+    const isBar = layoutConfig.hoverHighlightStyle === 'bar';
+    const overlayLeft = isBar ? Math.max(0, para.x - 2) : para.x;
+    const overlayWidth = isBar ? 3 : Math.max(2, para.width);
+    const overlayHeight = Math.max(2, para.height);
+    paragraphHoverOverlay.style.left = `${overlayLeft}px`;
     paragraphHoverOverlay.style.top = `${para.y}px`;
-    paragraphHoverOverlay.style.width = `${Math.max(2, para.width)}px`;
-    paragraphHoverOverlay.style.height = `${Math.max(2, para.height)}px`;
+    paragraphHoverOverlay.style.width = `${overlayWidth}px`;
+    paragraphHoverOverlay.style.height = `${overlayHeight}px`;
+    paragraphHoverOverlay.dataset.style = layoutConfig.hoverHighlightStyle;
     paragraphHoverOverlay.style.display = 'block';
   }
   activeHoverParagraphId = paragraphId;

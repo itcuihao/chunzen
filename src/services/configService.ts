@@ -49,10 +49,12 @@ export class ConfigService {
   getLayoutConfig(): LayoutConfig {
     const cfg = vscode.workspace.getConfiguration('chunzen.layout');
     const timeout = cfg.get<number>('timeoutMs', 3500);
+    const hoverHighlightStyle = cfg.get<'overlay' | 'bar'>('hoverHighlightStyle', 'overlay');
     return {
       useModel: cfg.get<boolean>('useModel', false),
       modelEndpoint: cfg.get<string>('modelEndpoint', '').trim(),
-      timeoutMs: Number.isFinite(timeout) ? Math.max(500, Math.min(20000, timeout)) : 3500
+      timeoutMs: Number.isFinite(timeout) ? Math.max(500, Math.min(20000, timeout)) : 3500,
+      hoverHighlightStyle: hoverHighlightStyle === 'bar' ? 'bar' : 'overlay'
     };
   }
 
@@ -150,6 +152,9 @@ export class ConfigService {
       if (typeof settings.layout.timeoutMs === 'number' && Number.isFinite(settings.layout.timeoutMs)) {
         const timeout = Math.max(500, Math.min(20000, Math.round(settings.layout.timeoutMs)));
         await layoutCfg.update('timeoutMs', timeout, vscode.ConfigurationTarget.Global);
+      }
+      if (settings.layout.hoverHighlightStyle === 'overlay' || settings.layout.hoverHighlightStyle === 'bar') {
+        await layoutCfg.update('hoverHighlightStyle', settings.layout.hoverHighlightStyle, vscode.ConfigurationTarget.Global);
       }
     }
   }
