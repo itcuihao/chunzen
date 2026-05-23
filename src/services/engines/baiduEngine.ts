@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import * as crypto from 'crypto';
-import { TranslationEngine } from '../../types';
+import { TranslationEngine, GlossaryEntry } from '../../types';
 
 /**
  * 百度翻译引擎
@@ -17,7 +17,7 @@ export class BaiduEngine implements TranslationEngine {
     return !!(appId && secretKey);
   }
 
-  async translate(text: string, _sourceLang = 'en', _targetLang = 'zh'): Promise<string> {
+  async translate(text: string, _sourceLang = 'en', _targetLang = 'zh', glossary?: GlossaryEntry[]): Promise<string> {
     const cfg = vscode.workspace.getConfiguration('chunzen.translation.baidu');
     const appId = cfg.get<string>('appId', '').trim();
     const secretKey = cfg.get<string>('secretKey', '').trim();

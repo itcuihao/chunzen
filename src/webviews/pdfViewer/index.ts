@@ -1,10 +1,14 @@
 // PDF viewer webview entry point
 
-import { initPdfJs, loadPdf, PdfDocument, renderPageToCanvas, getPageText } from './pdfRenderer';
+import { initPdfJs, loadPdf, PdfDocument, PdfPage, PdfViewport, TextItem, RichTextContent, renderPageToCanvas, getPageText } from './pdfRenderer';
 import { buildTextLayer, Paragraph, LayoutHints } from './textLayer';
 
 
 declare function acquireVsCodeApi(): { postMessage(msg: unknown): void };
+declare const pdfjsLib: {
+  OPS?: Record<string, number>;
+  Util: { transform(transform: number[], viewportTransform: number[]): number[] };
+};
 
 const vscode = acquireVsCodeApi();
 
@@ -31,7 +35,11 @@ let layoutConfig: LayoutConfig = { ...defaultLayoutConfig };
 
 // Translation states
 let currentParagraphs: Paragraph[] = [];
+let currentViewport: PdfViewport | null = null;
+let currentRichContent: RichTextContent | null = null;
 const pageTranslationsCache = new Map<number, Record<string, string>>();
+const repeatCandidateSignaturesByPage = new Map<number, Set<string>>();
+const repeatSignaturePages = new Map<string, Set<number>>();
 
 // DOM refs
 const container = document.getElementById('pdf-container')!;
@@ -52,6 +60,8 @@ wrapper.appendChild(textLayer);
 
 async function loadPdfDocument() {
   try {
+    repeatCandidateSignaturesByPage.clear();
+    repeatSignaturePages.clear();
     initPdfJs((window as unknown as Record<string, string>).PDFJS_WORKER);
     pdfDoc = await loadPdf((window as unknown as Record<string, string>).PDF_SRC);
     totalPages = pdfDoc.numPages;
@@ -90,10 +100,14 @@ async function renderCurrentPage() {
   textLayer.style.height = viewport.height + 'px';
 
   const items = await getPageText(page, viewport);
+  currentViewport = viewport;
+  currentRichContent = items;
   const modelHints = await getLayoutHints(items, viewport);
   const { paragraphs: newParagraphs, columnsCount } = buildTextLayer(textLayer, items, viewport, {
     layoutHints: modelHints || undefined
   });
+  applyRepeatedNoiseSkips(currentPage, newParagraphs, viewport.width, viewport.height);
+  injectTableImageFallback(newParagraphs, viewport);
 
   currentParagraphs = newParagraphs;
 
@@ -118,13 +132,126 @@ async function renderCurrentPage() {
       bold: p.bold,
       blockType: p.blockType,
       skipped: p.skipped,
+      skipReason: p.skipReason,
       lineMarker: p.lineMarker,
       ruleX1: p.ruleX1 !== undefined ? Math.round(p.ruleX1 / scale * 10) / 10 : undefined,
       ruleX2: p.ruleX2 !== undefined ? Math.round(p.ruleX2 / scale * 10) / 10 : undefined,
+      imageDataUrl: p.imageDataUrl,
+      imageAlt: p.imageAlt,
     })),
     columnsCount,
     translations
   });
+}
+
+function normalizeRepeatSignature(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/https?:\/\/\S+/g, ' <url> ')
+    .replace(/\bwww\.\S+/g, ' <url> ')
+    .replace(/\b\d{4,}\b/g, ' <num> ')
+    .replace(/\s+/g, ' ')
+    .replace(/[|•·]+/g, ' ')
+    .trim();
+}
+
+function isRepeatNoiseCandidate(para: Paragraph, viewportWidth: number, viewportHeight: number): boolean {
+  if (para.lineMarker === 'horizontal-rule') return false;
+  if (!para.text || !para.text.trim()) return false;
+
+  const text = para.text.trim();
+  if (text.length < 14 || text.length > 260) return false;
+
+  const tokens = text.split(/\s+/).filter(Boolean);
+  if (tokens.length < 3) return false;
+
+  const yTop = para.y;
+  const yBottom = para.y + para.height;
+  const nearTop = yTop < viewportHeight * 0.14;
+  const nearBottom = yBottom > viewportHeight * 0.86;
+  const rightEdge = para.section === 'right' || (para.x > viewportWidth * 0.62 && para.width < viewportWidth * 0.45);
+  const leftEdge = para.x < viewportWidth * 0.06 && para.width < viewportWidth * 0.45;
+  const edgeLike = nearTop || nearBottom || rightEdge || leftEdge;
+
+  if (!edgeLike) return false;
+
+  const lower = text.toLowerCase();
+  const hasDoiCue =
+    /\bdoi:\s*/i.test(text) ||
+    /\bdoi\.org\b/i.test(lower) ||
+    /\b10\.\d{4,9}\//.test(text);
+  const hasMetaCue =
+    hasDoiCue ||
+    lower.includes('downloaded') ||
+    lower.includes('copyright') ||
+    lower.includes('all rights reserved') ||
+    lower.includes('http://') ||
+    lower.includes('https://') ||
+    lower.includes('www.');
+
+  if (hasMetaCue) return true;
+
+  // Without explicit metadata cues, only treat short template-like edge lines as candidates.
+  // This avoids skipping real body prose at the top of continuation pages.
+  const looksTemplateLine = tokens.length <= 10 && text.length <= 90;
+  return looksTemplateLine;
+}
+
+function addRepeatSignature(pageNumber: number, signature: string): void {
+  let pages = repeatSignaturePages.get(signature);
+  if (!pages) {
+    pages = new Set<number>();
+    repeatSignaturePages.set(signature, pages);
+  }
+  pages.add(pageNumber);
+}
+
+function removePageRepeatSignatures(pageNumber: number): void {
+  const prev = repeatCandidateSignaturesByPage.get(pageNumber);
+  if (!prev) return;
+  for (const sig of prev) {
+    const pages = repeatSignaturePages.get(sig);
+    if (!pages) continue;
+    pages.delete(pageNumber);
+    if (pages.size === 0) repeatSignaturePages.delete(sig);
+  }
+}
+
+function applyRepeatedNoiseSkips(
+  pageNumber: number,
+  paragraphs: Paragraph[],
+  viewportWidth: number,
+  viewportHeight: number
+): void {
+  removePageRepeatSignatures(pageNumber);
+
+  const signatures = new Set<string>();
+  for (const para of paragraphs) {
+    if (!isRepeatNoiseCandidate(para, viewportWidth, viewportHeight)) continue;
+    const sig = normalizeRepeatSignature(para.text);
+    if (!sig || sig.length < 12) continue;
+    signatures.add(sig);
+  }
+
+  repeatCandidateSignaturesByPage.set(pageNumber, signatures);
+  for (const sig of signatures) addRepeatSignature(pageNumber, sig);
+
+  for (const para of paragraphs) {
+    if (para.skipped || para.lineMarker === 'horizontal-rule') continue;
+    const topBodyLike =
+      para.y < viewportHeight * 0.14 &&
+      para.text.length > 120 &&
+      para.text.split(/\s+/).filter(Boolean).length >= 18 &&
+      !/^https?:\/\//i.test(para.text.trim());
+    if (topBodyLike) continue;
+    if (!isRepeatNoiseCandidate(para, viewportWidth, viewportHeight)) continue;
+    const sig = normalizeRepeatSignature(para.text);
+    const pages = repeatSignaturePages.get(sig);
+    if (pages && pages.size >= 2) {
+      para.skipped = true;
+      para.skipReason = 'repeated-noise';
+    }
+  }
 }
 
 function isValidLayoutHints(data: unknown): data is LayoutHints {
@@ -394,7 +521,9 @@ async function extractMetaFromFirstPage() {
     const richContent = await getPageText(page);
     const text = richContent.items.map(it => it.str).join(' ');
 
-    const doiMatch = text.match(/\b(10\.\d{4,9}\/[^\s"<>{}|\\^`\[\]]+)/);
+    // Normalize spacing that often occurs in PDF text layer extraction (e.g. "10. 1038 / s..." or "10 . 1038")
+    const cleanedText = text.replace(/10\s*\.\s*/gi, '10.').replace(/\s*\/\s*/g, '/').replace(/\s*-\s*/g, '-');
+    const doiMatch = cleanedText.match(/\b(10\.\d{4,9}\/[^\s"<>{}|\\^`\[\]]+)/i);
     const issnMatch = text.match(/\b(\d{4}-\d{3}[\dX])\b/);
     const journalPatterns = [
       /(?:Nature|Science|Cell|PNAS|PLOS|IEEE|ACM|Journal of|Proceedings of)\s+[\w\s]{2,40}/i
@@ -496,6 +625,416 @@ function fitWidth() {
   });
 }
 
+interface RenderedTextItem {
+  str: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+interface RenderedTextLine {
+  text: string;
+  x1: number;
+  x2: number;
+  y: number;
+  height: number;
+  width: number;
+}
+
+interface Rect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+interface ParaCluster {
+  indices: number[];
+}
+
+function composeLineText(items: RenderedTextItem[]): string {
+  if (items.length === 0) return '';
+  if (items.length === 1) return items[0].str.trim();
+  let text = items[0].str.trim();
+  for (let i = 1; i < items.length; i++) {
+    const prev = items[i - 1];
+    const cur = items[i];
+    const gap = cur.x - (prev.x + prev.width);
+    const gapThreshold = Math.max(cur.height * 0.2, 1.5);
+    const attachNoSpace =
+      gap <= gapThreshold ||
+      /^[,.;:!?%)\]}]/.test(cur.str) ||
+      /[(\[{]$/.test(prev.str);
+    text += attachNoSpace ? cur.str : ` ${cur.str}`;
+  }
+  return text.trim();
+}
+
+function toNumberArray(input: unknown): number[] {
+  if (!input) return [];
+  if (Array.isArray(input)) return input.map(Number).filter(Number.isFinite);
+  if (ArrayBuffer.isView(input)) return Array.from(input as unknown as ArrayLike<number>).map(Number).filter(Number.isFinite);
+  return [];
+}
+
+function buildRenderedTextItems(items: TextItem[], viewport: PdfViewport): RenderedTextItem[] {
+  const output: RenderedTextItem[] = [];
+  for (const it of items) {
+    if (!it.str || !it.str.trim()) continue;
+    const tx = pdfjsLib.Util.transform(viewport.transform, it.transform);
+    const x = tx[4];
+    const y = tx[5];
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    output.push({
+      str: it.str.trim(),
+      x,
+      y,
+      width: Math.max(0, it.width * viewport.scale),
+      height: Math.max(1, it.height * viewport.scale),
+    });
+  }
+  return output;
+}
+
+function groupRenderedLines(items: RenderedTextItem[]): RenderedTextLine[] {
+  if (items.length === 0) return [];
+  const sorted = [...items].sort((a, b) => {
+    if (Math.abs(a.y - b.y) > 2) return a.y - b.y;
+    return a.x - b.x;
+  });
+
+  const lines: RenderedTextItem[][] = [];
+  let cur: RenderedTextItem[] = [];
+  for (const it of sorted) {
+    if (cur.length === 0) {
+      cur.push(it);
+      continue;
+    }
+    const yRef = cur[0].y;
+    const hRef = cur.reduce((sum, x) => sum + x.height, 0) / cur.length;
+    const sameLine = Math.abs(it.y - yRef) <= Math.max(2.5, hRef * 0.45);
+    if (sameLine) {
+      cur.push(it);
+    } else {
+      cur.sort((a, b) => a.x - b.x);
+      lines.push(cur);
+      cur = [it];
+    }
+  }
+  if (cur.length > 0) {
+    cur.sort((a, b) => a.x - b.x);
+    lines.push(cur);
+  }
+
+  return lines.map((line) => {
+    const text = composeLineText(line);
+    const x1 = Math.min(...line.map(it => it.x));
+    const x2 = Math.max(...line.map(it => it.x + it.width));
+    const height = line.reduce((sum, it) => sum + it.height, 0) / line.length;
+    return { text, x1, x2, y: line[0].y, height, width: x2 - x1 };
+  });
+}
+
+function scoreCaptionParagraph(para: Paragraph, viewport: PdfViewport): number {
+  if (para.skipped || !para.text.trim()) return -999;
+  if (para.width < viewport.width * 0.66) return -999;
+  if (para.y < viewport.height * 0.10 || para.y > viewport.height * 0.72) return -999;
+  if (para.text.length < 80) return -999;
+
+  const lower = para.text.toLowerCase();
+  let score = 0;
+  if (/^(figure|fig\.)\s*\d/i.test(para.text)) score += 4;
+  if (lower.includes('mechanism') || lower.includes('biogenesis')) score += 3;
+  if (lower.includes('regular splicing') || lower.includes('back splicing')) score += 2;
+  if (/\([a-z]\)/i.test(para.text)) score += 1;
+  if (para.y < viewport.height * 0.45) score += 1;
+  score += Math.min(2, para.text.length / 180);
+  return score;
+}
+
+function multiplyTransform(a: number[], b: number[]): number[] {
+  return pdfjsLib.Util.transform(a, b);
+}
+
+function applyTransformPoint(x: number, y: number, m: number[]): [number, number] {
+  return [
+    m[0] * x + m[2] * y + m[4],
+    m[1] * x + m[3] * y + m[5],
+  ];
+}
+
+async function extractImageBoxes(page: PdfPage, viewport: PdfViewport): Promise<Rect[]> {
+  const opList = await page.getOperatorList();
+  const OPS = pdfjsLib.OPS || {};
+  const saveCode = OPS.save;
+  const restoreCode = OPS.restore;
+  const transformCode = OPS.transform;
+  const paintCode = OPS.paintImageXObject;
+  if (paintCode === undefined) return [];
+
+  let ctm = [1, 0, 0, 1, 0, 0];
+  const stateStack: number[][] = [];
+  const boxes: Rect[] = [];
+
+  for (let i = 0; i < opList.fnArray.length; i++) {
+    const fn = opList.fnArray[i];
+    const args = opList.argsArray[i];
+
+    if (saveCode !== undefined && fn === saveCode) {
+      stateStack.push([...ctm]);
+      continue;
+    }
+    if (restoreCode !== undefined && fn === restoreCode) {
+      ctm = stateStack.pop() || [1, 0, 0, 1, 0, 0];
+      continue;
+    }
+    if (transformCode !== undefined && fn === transformCode) {
+      const nums = toNumberArray(args);
+      if (nums.length >= 6) {
+        ctm = multiplyTransform(ctm, [nums[0], nums[1], nums[2], nums[3], nums[4], nums[5]]);
+      }
+      continue;
+    }
+    if (fn === paintCode) {
+      const corners = [
+        applyTransformPoint(0, 0, ctm),
+        applyTransformPoint(1, 0, ctm),
+        applyTransformPoint(1, 1, ctm),
+        applyTransformPoint(0, 1, ctm),
+      ].map(([px, py]) => applyTransformPoint(px, py, viewport.transform));
+      const xs = corners.map(([px]) => px);
+      const ys = corners.map(([, py]) => py);
+      const x1 = Math.min(...xs);
+      const x2 = Math.max(...xs);
+      const y1 = Math.min(...ys);
+      const y2 = Math.max(...ys);
+      const width = x2 - x1;
+      const height = y2 - y1;
+      if (width < 8 && height < 8) continue;
+      boxes.push({ x: x1, y: y1, width, height });
+    }
+  }
+
+  return boxes;
+}
+
+function cropCanvasToDataUrl(rect: Rect): string | null {
+  const sx = Math.max(0, Math.floor(rect.x));
+  const sy = Math.max(0, Math.floor(rect.y));
+  const sw = Math.max(1, Math.ceil(rect.width));
+  const sh = Math.max(1, Math.ceil(rect.height));
+  if (sx >= canvas.width || sy >= canvas.height) return null;
+  const cw = Math.min(sw, canvas.width - sx);
+  const ch = Math.min(sh, canvas.height - sy);
+  if (cw <= 2 || ch <= 2) return null;
+
+  const tmp = document.createElement('canvas');
+  tmp.width = cw;
+  tmp.height = ch;
+  const ctx = tmp.getContext('2d');
+  if (!ctx) return null;
+  ctx.drawImage(canvas, sx, sy, cw, ch, 0, 0, cw, ch);
+  return tmp.toDataURL('image/png');
+}
+
+async function captureCurrentFigureScreenshot(): Promise<void> {
+  if (!pdfDoc || !currentViewport || !currentRichContent) {
+    vscode.postMessage({
+      type: 'figure-screenshot-error',
+      pageNumber: currentPage,
+      reason: '当前页面尚未完成渲染',
+    });
+    return;
+  }
+
+  const viewport = currentViewport;
+  const captionCandidates = currentParagraphs
+    .map(para => ({ para, score: scoreCaptionParagraph(para, viewport) }))
+    .filter(x => x.score > -500)
+    .sort((a, b) => b.score - a.score);
+  const caption = captionCandidates.length > 0 ? captionCandidates[0].para : null;
+
+  if (!caption) {
+    vscode.postMessage({
+      type: 'figure-screenshot-error',
+      pageNumber: currentPage,
+      reason: '未识别到图注锚点',
+    });
+    return;
+  }
+
+  const textItems = buildRenderedTextItems(currentRichContent.items, viewport);
+  const lines = groupRenderedLines(textItems);
+  const markerLines = lines.filter(line => /^\([a-z]\)$/i.test(line.text.trim()) && line.y < caption.y);
+  const markerY = markerLines.length > 0 ? Math.min(...markerLines.map(l => l.y)) : Math.max(0, caption.y - viewport.height * 0.14);
+
+  const page = await pdfDoc.getPage(currentPage);
+  const imageBoxes = (await extractImageBoxes(page, viewport))
+    .filter(box => box.y < caption.y - 4);
+
+  const capX1 = caption.x;
+  const capX2 = caption.x + caption.width;
+  const imgX1 = imageBoxes.length > 0 ? Math.min(...imageBoxes.map(b => b.x)) : capX1;
+  const imgX2 = imageBoxes.length > 0 ? Math.max(...imageBoxes.map(b => b.x + b.width)) : capX2;
+  const imgY1 = imageBoxes.length > 0 ? Math.min(...imageBoxes.map(b => b.y)) : markerY - 18;
+  const imgY2 = imageBoxes.length > 0 ? Math.max(...imageBoxes.map(b => b.y + b.height)) : markerY + 90;
+
+  const x1 = Math.max(8, Math.min(capX1 - 20, imgX1 - 12));
+  const x2 = Math.min(viewport.width - 8, Math.max(capX2 + 20, imgX2 + 12));
+  const y1 = Math.max(0, Math.min(markerY - 40, imgY1 - 28));
+  const y2 = Math.min(caption.y - 8, Math.max(imgY2 + 30, markerY + 110));
+  const width = x2 - x1;
+  const height = y2 - y1;
+
+  if (width < 120 || height < 50) {
+    vscode.postMessage({
+      type: 'figure-screenshot-error',
+      pageNumber: currentPage,
+      reason: '检测到的图像区域过小',
+    });
+    return;
+  }
+
+  const dataUrl = cropCanvasToDataUrl({ x: x1, y: y1, width, height });
+  if (!dataUrl) {
+    vscode.postMessage({
+      type: 'figure-screenshot-error',
+      pageNumber: currentPage,
+      reason: '图像裁剪失败',
+    });
+    return;
+  }
+
+  vscode.postMessage({
+    type: 'figure-screenshot-captured',
+    pageNumber: currentPage,
+    dataUrl,
+    bbox: {
+      x: Math.round(x1),
+      y: Math.round(y1),
+      width: Math.round(width),
+      height: Math.round(height),
+    },
+  });
+}
+
+function findTableLikeClusters(paragraphs: Paragraph[], viewport: PdfViewport): ParaCluster[] {
+  const picked: number[] = [];
+  for (let i = 0; i < paragraphs.length; i++) {
+    const p = paragraphs[i];
+    if (p.skipped || !p.text.trim()) continue;
+    if (p.y > viewport.height * 0.72) continue;
+    const lower = p.text.toLowerCase();
+    const headerCue =
+      /^table\s*\d*/i.test(p.text) ||
+      lower.includes('name and genome location') ||
+      lower.includes('alias in circbase') ||
+      lower.includes('gene symbol') ||
+      lower.includes('reference');
+    const rowCue =
+      /\[[0-9,\-–]+\]/.test(p.text) ||
+      lower.includes('chr') ||
+      lower.includes('circ');
+    const wideEnough = p.width >= viewport.width * 0.42;
+    if ((headerCue || rowCue) && wideEnough) picked.push(i);
+  }
+  if (picked.length === 0) return [];
+
+  const clusters: ParaCluster[] = [];
+  let current: number[] = [picked[0]];
+  for (let k = 1; k < picked.length; k++) {
+    const prev = paragraphs[picked[k - 1]];
+    const cur = paragraphs[picked[k]];
+    const yGap = cur.y - prev.y;
+    if (yGap <= Math.max(40, prev.height * 4.0)) {
+      current.push(picked[k]);
+    } else {
+      clusters.push({ indices: current });
+      current = [picked[k]];
+    }
+  }
+  clusters.push({ indices: current });
+  return clusters.filter(c => c.indices.length >= 4);
+}
+
+function cropCanvasDataUrl(rect: Rect): string | null {
+  const sx = Math.max(0, Math.floor(rect.x));
+  const sy = Math.max(0, Math.floor(rect.y));
+  const sw = Math.max(1, Math.ceil(rect.width));
+  const sh = Math.max(1, Math.ceil(rect.height));
+  if (sx >= canvas.width || sy >= canvas.height) return null;
+  const cw = Math.min(sw, canvas.width - sx);
+  const ch = Math.min(sh, canvas.height - sy);
+  if (cw < 20 || ch < 20) return null;
+  const tmp = document.createElement('canvas');
+  tmp.width = cw;
+  tmp.height = ch;
+  const ctx = tmp.getContext('2d');
+  if (!ctx) return null;
+  ctx.drawImage(canvas, sx, sy, cw, ch, 0, 0, cw, ch);
+  return tmp.toDataURL('image/png');
+}
+
+function injectTableImageFallback(paragraphs: Paragraph[], viewport: PdfViewport): void {
+  const clusters = findTableLikeClusters(paragraphs, viewport);
+  if (clusters.length === 0) return;
+  let best = clusters[0];
+  let bestScore = -1;
+  for (const cluster of clusters) {
+    const paras = cluster.indices.map(i => paragraphs[i]);
+    const minY = Math.min(...paras.map(p => p.y));
+    const maxY = Math.max(...paras.map(p => p.y + p.height));
+    const cues = paras.reduce((sum, p) => {
+      const lower = p.text.toLowerCase();
+      let s = 0;
+      if (/^table\s*\d*/i.test(p.text)) s += 4;
+      if (lower.includes('alias in circbase') || lower.includes('gene symbol')) s += 3;
+      if (/\[[0-9,\-–]+\]/.test(p.text)) s += 1;
+      return sum + s;
+    }, 0);
+    const score = cues + paras.length * 0.4 - minY * 0.002 - (maxY - minY) * 0.001;
+    if (score > bestScore) {
+      bestScore = score;
+      best = cluster;
+    }
+  }
+
+  const targetParas = best.indices.map(i => paragraphs[i]);
+  const x1 = Math.max(0, Math.min(...targetParas.map(p => p.x)) - 12);
+  const y1 = Math.max(0, Math.min(...targetParas.map(p => p.y)) - 14);
+  const x2 = Math.min(viewport.width, Math.max(...targetParas.map(p => p.x + p.width)) + 12);
+  const y2 = Math.min(viewport.height, Math.max(...targetParas.map(p => p.y + p.height)) + 14);
+  const rect: Rect = { x: x1, y: y1, width: x2 - x1, height: y2 - y1 };
+  if (rect.width < viewport.width * 0.45 || rect.height < viewport.height * 0.08) return;
+
+  const dataUrl = cropCanvasDataUrl(rect);
+  if (!dataUrl) return;
+
+  for (const idx of best.indices) {
+    paragraphs[idx].skipped = true;
+    paragraphs[idx].skipReason = 'table-image-replaced';
+  }
+
+  const firstIdx = Math.min(...best.indices);
+  const imagePara: Paragraph = {
+    id: `table-image-${currentPage}-${Math.round(rect.y)}`,
+    text: '',
+    x: rect.x,
+    y: rect.y,
+    width: rect.width,
+    height: rect.height,
+    fontSize: Math.max(10, targetParas[0]?.fontSize || 12),
+    section: 'full',
+    blockType: 'table',
+    skipped: false,
+    lineMarker: 'table-image',
+    imageDataUrl: dataUrl,
+    imageAlt: `Table snapshot page ${currentPage}`,
+  };
+  paragraphs.splice(firstIdx, 0, imagePara);
+}
+
 // Receive messages from extension host
 window.addEventListener('message', event => {
   const message = event.data;
@@ -543,6 +1082,17 @@ window.addEventListener('message', event => {
       } else {
         clearPdfHighlight();
       }
+      break;
+    }
+    case 'capture-figure-screenshot': {
+      captureCurrentFigureScreenshot().catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        vscode.postMessage({
+          type: 'figure-screenshot-error',
+          pageNumber: currentPage,
+          reason: msg,
+        });
+      });
       break;
     }
   }

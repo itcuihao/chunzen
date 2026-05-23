@@ -1,6 +1,6 @@
 import { FunctionComponent } from 'react';
 import { useStore } from '../store';
-import { Award, AlertTriangle, TrendingUp, BookOpen, ExternalLink, Hash, ShieldCheck, Compass } from 'lucide-react';
+import { Award, AlertTriangle, TrendingUp, BookOpen, ExternalLink, Hash, ShieldCheck, Compass, Percent, Clock, Building, Send, Calendar, User, UserCheck } from 'lucide-react';
 
 export const JournalTab: FunctionComponent = () => {
   const info = useStore((state) => state.journalInfo);
@@ -98,7 +98,175 @@ export const JournalTab: FunctionComponent = () => {
             )}
           </div>
         )}
+        {info.journalSource && (
+          <div className="mt-4 pt-2.5 border-t border-border/30 text-[9px] text-secondary-foreground/45 flex items-center justify-between font-sans">
+            <span>期刊与分区数据源</span>
+            <a 
+              href={info.url || (info.journalSource === 'ablesci' ? 'https://www.ablesci.com/journal' : 'https://www.letpub.com.cn')} 
+              target="_blank" 
+              rel="noreferrer" 
+              className="font-bold text-accent hover:underline inline-flex items-center gap-0.5"
+            >
+              {info.journalSource === 'ablesci' ? '科研通 (AbleSci)' : 'LetPub'}
+              <ExternalLink className="w-2.5 h-2.5" />
+            </a>
+          </div>
+        )}
       </section>
+
+      {/* Paper Metadata Section */}
+      {(info.publishYear || info.firstAuthor || info.lastAuthor) && (
+        <section className="glass-panel rounded-lg overflow-hidden border border-border bg-card/10 animate-in fade-in duration-300">
+          <div className="flex items-center gap-2 px-3.5 py-2 border-b border-border bg-card">
+            <BookOpen className="w-3.5 h-3.5 text-secondary-foreground" />
+            <span className="text-[10px] font-semibold tracking-wider text-secondary-foreground uppercase">论文基本信息</span>
+          </div>
+          <div className="p-3.5 flex flex-col gap-3 text-xs text-foreground">
+            {info.publishYear && (
+              <div className="flex items-start gap-2.5">
+                <Calendar className="w-4 h-4 text-accent/80 mt-0.5 flex-shrink-0" />
+                <div>
+                  <div className="text-[9px] text-secondary-foreground/60 uppercase tracking-wider font-semibold">发表年份</div>
+                  <div className="font-semibold mt-0.5">{info.publishYear} 年</div>
+                </div>
+              </div>
+            )}
+            
+            {info.firstAuthor && (
+              <div className="flex items-start gap-2.5">
+                <User className="w-4 h-4 text-accent/80 mt-0.5 flex-shrink-0" />
+                <div className="flex-1">
+                  <div className="text-[9px] text-secondary-foreground/60 uppercase tracking-wider font-semibold">第一作者</div>
+                  <div className="font-semibold mt-0.5 select-text">{info.firstAuthor}</div>
+                  {info.firstAuthorAffiliation && (
+                    <div className="text-[10px] text-secondary-foreground/75 mt-0.5 bg-secondary/30 border border-border/30 rounded px-1.5 py-0.5 inline-block leading-snug select-text">
+                      {info.firstAuthorAffiliation}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            
+            {info.lastAuthor && (
+              <div className="flex items-start gap-2.5">
+                <UserCheck className="w-4 h-4 text-accent/80 mt-0.5 flex-shrink-0" />
+                <div className="flex-1">
+                  <div className="text-[9px] text-secondary-foreground/60 uppercase tracking-wider font-semibold">通讯作者 (末位)</div>
+                  <div className="font-semibold mt-0.5 select-text">{info.lastAuthor}</div>
+                  {info.lastAuthorAffiliation && (
+                    <div className="text-[10px] text-secondary-foreground/75 mt-0.5 bg-secondary/30 border border-border/30 rounded px-1.5 py-0.5 inline-block leading-snug select-text">
+                      {info.lastAuthorAffiliation}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            {info.paperSource && (
+              <div className="mt-1 pt-2 border-t border-border/20 text-[9px] text-secondary-foreground/45 flex items-center justify-between uppercase font-sans">
+                <span>数据来源</span>
+                <a 
+                  href={info.paperSource === 'openalex' ? 'https://openalex.org/' : 'https://www.crossref.org/'} 
+                  target="_blank" 
+                  rel="noreferrer" 
+                  className="font-bold tracking-wider text-accent hover:underline inline-flex items-center gap-0.5"
+                >
+                  {info.paperSource}
+                  <ExternalLink className="w-2.5 h-2.5" />
+                </a>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* Deep Metrics Section */}
+      {(info.selfCitationRate || info.publicationPeriod || info.reviewSpeed || info.acceptanceRate || info.publisher || info.submissionUrl) && (
+        <section className="glass-panel rounded-lg overflow-hidden border border-border bg-card/10 animate-in fade-in duration-300">
+          <div className="flex items-center gap-2 px-3.5 py-2 border-b border-border bg-card">
+            <TrendingUp className="w-3.5 h-3.5 text-secondary-foreground" />
+            <span className="text-[10px] font-semibold tracking-wider text-secondary-foreground uppercase">期刊详情指标</span>
+          </div>
+          <div className="p-3.5 flex flex-col gap-3 text-xs">
+            {/* Grid for small metrics */}
+            <div className="grid grid-cols-2 gap-2.5">
+              {info.selfCitationRate && (
+                <div className="flex items-center gap-2 p-2 rounded-md bg-secondary/20 border border-border/40">
+                  <Percent className="w-3.5 h-3.5 text-accent/80 flex-shrink-0" />
+                  <div>
+                    <div className="text-[9px] text-secondary-foreground/60 uppercase tracking-wider font-semibold">自引率</div>
+                    <div className="font-semibold text-foreground mt-0.5">{info.selfCitationRate}</div>
+                  </div>
+                </div>
+              )}
+              {info.acceptanceRate && (
+                <div className="flex items-center gap-2 p-2 rounded-md bg-secondary/20 border border-border/40">
+                  <Award className="w-3.5 h-3.5 text-accent/80 flex-shrink-0" />
+                  <div>
+                    <div className="text-[9px] text-secondary-foreground/60 uppercase tracking-wider font-semibold">录用比例</div>
+                    <div className="font-semibold text-foreground mt-0.5">{info.acceptanceRate}</div>
+                  </div>
+                </div>
+              )}
+              {info.reviewSpeed && (
+                <div className="flex items-center gap-2 p-2 rounded-md bg-secondary/20 border border-border/40 col-span-2">
+                  <Clock className="w-3.5 h-3.5 text-accent/80 flex-shrink-0" />
+                  <div>
+                    <div className="text-[9px] text-secondary-foreground/60 uppercase tracking-wider font-semibold">审稿周期</div>
+                    <div className="font-semibold text-foreground mt-0.5">{info.reviewSpeed}</div>
+                  </div>
+                </div>
+              )}
+              {info.publicationPeriod && (
+                <div className="flex items-center gap-2 p-2 rounded-md bg-secondary/20 border border-border/40">
+                  <Clock className="w-3.5 h-3.5 text-accent/80 flex-shrink-0" />
+                  <div>
+                    <div className="text-[9px] text-secondary-foreground/60 uppercase tracking-wider font-semibold">出版周期</div>
+                    <div className="font-semibold text-foreground mt-0.5">{info.publicationPeriod}</div>
+                  </div>
+                </div>
+              )}
+              {info.publisher && (
+                <div className="flex items-center gap-2 p-2 rounded-md bg-secondary/20 border border-border/40 col-span-2">
+                  <Building className="w-3.5 h-3.5 text-accent/80 flex-shrink-0" />
+                  <div>
+                    <div className="text-[9px] text-secondary-foreground/60 uppercase tracking-wider font-semibold">出版商</div>
+                    <div className="font-semibold text-foreground mt-0.5">{info.publisher}</div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Submission Link Button */}
+            {info.submissionUrl && (
+              <div className="mt-1 pt-2 border-t border-border/20">
+                <a
+                  href={info.submissionUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-md bg-accent/10 hover:bg-accent/20 border border-accent/20 hover:border-accent/40 text-accent font-medium transition-all text-xs text-center"
+                >
+                  <Send className="w-3 h-3" />
+                  访问投稿系统
+                </a>
+              </div>
+            )}
+            {info.journalSource && (
+              <div className="mt-1 pt-2 border-t border-border/20 text-[9px] text-secondary-foreground/45 flex items-center justify-between font-sans">
+                <span>数据来源</span>
+                <a 
+                  href={info.url || (info.journalSource === 'ablesci' ? 'https://www.ablesci.com/journal' : 'https://www.letpub.com.cn')} 
+                  target="_blank" 
+                  rel="noreferrer" 
+                  className="font-bold text-accent hover:underline inline-flex items-center gap-0.5"
+                >
+                  {info.journalSource === 'ablesci' ? '科研通 (AbleSci)' : 'LetPub'}
+                  <ExternalLink className="w-2.5 h-2.5" />
+                </a>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
 
       {/* Metadata Section */}
       {(info.issn || info.doi) && (

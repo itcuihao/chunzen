@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { TranslationEngine } from '../../types';
+import { TranslationEngine, GlossaryEntry } from '../../types';
 
 /**
  * OpenAI / Gemini / 自定义兼容接口翻译引擎
@@ -14,7 +14,7 @@ export class OpenAIEngine implements TranslationEngine {
     return !!apiKey;
   }
 
-  async translate(text: string): Promise<string> {
+  async translate(text: string, sourceLang?: string, targetLang?: string, glossary?: GlossaryEntry[]): Promise<string> {
     const cfg = vscode.workspace.getConfiguration('chunzen.translation.openai');
     const apiKey = cfg.get<string>('apiKey', '').trim();
     const baseUrl = cfg.get<string>('baseUrl', 'https://api.openai.com/v1').trim();
@@ -28,6 +28,12 @@ export class OpenAIEngine implements TranslationEngine {
       throw new Error('OpenAI/AI 引擎未配置 API Key');
     }
 
+    let glossaryPrompt = '';
+    if (glossary && glossary.length > 0) {
+      glossaryPrompt = '\n\n在翻译时，请严格遵守以下学术专有名词/术语对照表：\n' +
+        glossary.map(g => `- ${g.source} -> ${g.target}`).join('\n');
+    }
+
     const url = baseUrl.replace(/\/$/, '') + '/chat/completions';
 
     const resp = await fetch(url, {
@@ -39,7 +45,7 @@ export class OpenAIEngine implements TranslationEngine {
       body: JSON.stringify({
         model,
         messages: [
-          { role: 'system', content: systemPrompt },
+          { role: 'system', content: systemPrompt + glossaryPrompt },
           { role: 'user', content: text }
         ],
         temperature: 0.3,
@@ -84,7 +90,7 @@ export class CustomHttpEngine implements TranslationEngine {
     return !!url;
   }
 
-  async translate(text: string): Promise<string> {
+  async translate(text: string, sourceLang?: string, targetLang?: string, glossary?: GlossaryEntry[]): Promise<string> {
     const cfg = vscode.workspace.getConfiguration('chunzen.translation.custom');
     const url = cfg.get<string>('url', '').trim();
     const headers = cfg.get<Record<string, string>>('headers', {});

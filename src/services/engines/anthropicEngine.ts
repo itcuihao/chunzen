@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { TranslationEngine } from '../../types';
+import { TranslationEngine, GlossaryEntry } from '../../types';
 
 /**
  * Anthropic Messages API 翻译引擎
@@ -14,7 +14,7 @@ export class AnthropicEngine implements TranslationEngine {
     return !!(cfg.get<string>('apiKey') && cfg.get<string>('baseUrl'));
   }
 
-  async translate(text: string): Promise<string> {
+  async translate(text: string, sourceLang?: string, targetLang?: string, glossary?: GlossaryEntry[]): Promise<string> {
     const cfg = vscode.workspace.getConfiguration('chunzen.translation.anthropic');
     const apiKey = cfg.get<string>('apiKey', '');
     const baseUrl = cfg.get<string>('baseUrl', '').replace(/\/$/, '');
@@ -26,6 +26,12 @@ export class AnthropicEngine implements TranslationEngine {
 
     if (!apiKey || !baseUrl) {
       throw new Error('Anthropic API 未配置');
+    }
+
+    let glossaryPrompt = '';
+    if (glossary && glossary.length > 0) {
+      glossaryPrompt = '\n\n在翻译时，请严格遵守以下学术专有名词/术语对照表：\n' +
+        glossary.map(g => `- ${g.source} -> ${g.target}`).join('\n');
     }
 
     const url = `${baseUrl}/v1/messages`;
@@ -40,7 +46,7 @@ export class AnthropicEngine implements TranslationEngine {
       body: JSON.stringify({
         model,
         max_tokens: 512,
-        system: systemPrompt,
+        system: systemPrompt + glossaryPrompt,
         messages: [
           { role: 'user', content: text }
         ]

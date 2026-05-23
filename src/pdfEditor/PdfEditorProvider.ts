@@ -7,6 +7,7 @@ import { SidePanelProvider } from '../sidePanel/SidePanelProvider';
 import { HistoryService } from '../services/historyService';
 import { ConfigService } from '../services/configService';
 import { getNonce } from '../utils/nonce';
+import { DoiResolver } from '../services/doiResolver';
 
 /**
  * PDF 自定义编辑器 Provider
@@ -24,6 +25,7 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
 
   // 每个文档对应的 WebView
   private webviews = new Map<string, vscode.WebviewPanel>();
+  private panelUris = new Map<vscode.WebviewPanel, vscode.Uri>();
   private activeWebviewPanel: vscode.WebviewPanel | undefined;
 
   constructor(
@@ -58,6 +60,7 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
     const uri = document.uri;
     const key = uri.toString();
     this.webviews.set(key, webviewPanel);
+    this.panelUris.set(webviewPanel, uri);
     this.activeWebviewPanel = webviewPanel;
 
     webviewPanel.onDidChangeViewState(e => {
@@ -118,6 +121,14 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
           case 'page-text-loaded':
             this.sidePanel.syncPageText(msg.pageNumber, msg.paragraphs, msg.columnsCount, msg.translations);
             break;
+
+          case 'figure-screenshot-captured':
+            await this.handleFigureScreenshotCaptured(webviewPanel, msg.pageNumber, msg.dataUrl);
+            break;
+
+          case 'figure-screenshot-error':
+            vscode.window.showWarningMessage(`图像区域截图失败（第 ${msg.pageNumber} 页）：${msg.reason}`);
+            break;
         }
       },
       undefined,
@@ -126,10 +137,54 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
 
     webviewPanel.onDidDispose(() => {
       this.webviews.delete(key);
+      this.panelUris.delete(webviewPanel);
       if (this.activeWebviewPanel === webviewPanel) {
         this.activeWebviewPanel = undefined;
       }
     });
+  }
+
+  private async handleFigureScreenshotCaptured(
+    panel: vscode.WebviewPanel,
+    pageNumber: number,
+    dataUrl: string
+  ): Promise<void> {
+    const pdfUri = this.panelUris.get(panel);
+    if (!pdfUri) {
+      vscode.window.showWarningMessage('截图保存失败：未找到当前 PDF 文档路径。');
+      return;
+    }
+
+    const m = dataUrl.match(/^data:image\/png;base64,(.+)$/);
+    if (!m?.[1]) {
+      vscode.window.showWarningMessage('截图保存失败：无效的图片数据。');
+      return;
+    }
+
+    const raw = Buffer.from(m[1], 'base64');
+    const baseName = path.basename(pdfUri.fsPath, path.extname(pdfUri.fsPath));
+    const dir = path.dirname(pdfUri.fsPath);
+    let target = path.join(dir, `${baseName}.p${pageNumber}.figure.png`);
+
+    for (let i = 1; i <= 99; i++) {
+      try {
+        await vscode.workspace.fs.stat(vscode.Uri.file(target));
+        target = path.join(dir, `${baseName}.p${pageNumber}.figure-${i}.png`);
+      } catch {
+        break;
+      }
+    }
+
+    await vscode.workspace.fs.writeFile(vscode.Uri.file(target), raw);
+    vscode.window.showInformationMessage(`图像区域截图已保存：${path.basename(target)}`);
+  }
+
+  private resolveActivePanel(): vscode.WebviewPanel | undefined {
+    let panel = this.activeWebviewPanel;
+    if (!panel && this.webviews.size > 0) {
+      panel = Array.from(this.webviews.values())[0];
+    }
+    return panel;
   }
 
   private async handleSentenceHover(text: string): Promise<void> {
@@ -153,16 +208,43 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
     issn?: string,
     journal?: string
   ): Promise<void> {
-    const cfg = vscode.workspace.getConfiguration('chunzen.journal');
-    if (!cfg.get<boolean>('enabled', true)) return;
+    const journalCfg = vscode.workspace.getConfiguration('chunzen.journal');
+    if (!journalCfg.get<boolean>('enabled', true)) return;
 
-    const query = journal || issn || doi;
-    if (!query) return;
+    const preferredSource = journalCfg.get<'ablesci' | 'letpub'>('source', 'ablesci');
+
+    let resolvedQuery = issn || journal || doi;
+    let paperMeta: any = {};
+
+    // 1. 优先使用 DOI 并在后台解析出准确的 ISSN / 期刊名以及论文元数据
+    if (doi) {
+      try {
+        const metadata = await DoiResolver.resolveDoi(doi);
+        paperMeta = metadata;
+        if (metadata.issn || metadata.journalName) {
+          resolvedQuery = metadata.issn || metadata.journalName;
+          console.log(`[ChunZen] DOI 解析成功, 得到的 ISSN/期刊名: "${resolvedQuery}"`);
+        }
+      } catch (err) {
+        console.warn('[ChunZen] DOI 自动解析接口异常:', err);
+      }
+    }
+
+    if (!resolvedQuery) return;
 
     try {
-      const info = await this.journalService.query(query);
+      const info = await this.journalService.query(resolvedQuery, preferredSource);
       if (info) {
         if (doi) info.doi = doi;
+        
+        // 合并论文级元数据
+        if (paperMeta.publishYear) info.publishYear = paperMeta.publishYear;
+        if (paperMeta.firstAuthor) info.firstAuthor = paperMeta.firstAuthor;
+        if (paperMeta.firstAuthorAffiliation) info.firstAuthorAffiliation = paperMeta.firstAuthorAffiliation;
+        if (paperMeta.lastAuthor) info.lastAuthor = paperMeta.lastAuthor;
+        if (paperMeta.lastAuthorAffiliation) info.lastAuthorAffiliation = paperMeta.lastAuthorAffiliation;
+        if (paperMeta.paperSource) info.paperSource = paperMeta.paperSource;
+
         this.sidePanel.updateJournal(info);
       }
     } catch (err) {
@@ -213,10 +295,7 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
   }
 
   public async translateActivePage(pageNumber: number, paragraphs: Array<{ id: string; text: string }>): Promise<void> {
-    let panel = this.activeWebviewPanel;
-    if (!panel && this.webviews.size > 0) {
-      panel = Array.from(this.webviews.values())[0];
-    }
+    const panel = this.resolveActivePanel();
     if (!panel) {
       vscode.window.showWarningMessage('未检测到活动的 PDF 编辑器，请确保 PDF 编辑器处于打开状态。');
       return;
@@ -230,10 +309,7 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
   }
 
   public hoverActivePageElement(id?: string): void {
-    let panel = this.activeWebviewPanel;
-    if (!panel && this.webviews.size > 0) {
-      panel = Array.from(this.webviews.values())[0];
-    }
+    const panel = this.resolveActivePanel();
     if (panel) {
       console.log('[Extension] PdfEditorProvider hoverActivePageElement, posting sync-panel-hover to active PDF viewer webview with id:', id);
       panel.webview.postMessage({
@@ -246,10 +322,7 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
   }
 
   public async refreshActivePageText(): Promise<void> {
-    let panel = this.activeWebviewPanel;
-    if (!panel && this.webviews.size > 0) {
-      panel = Array.from(this.webviews.values())[0];
-    }
+    const panel = this.resolveActivePanel();
     if (!panel) {
       vscode.window.showWarningMessage('未检测到活动的 PDF 编辑器，请确保 PDF 编辑器处于打开状态。');
       return;
@@ -258,6 +331,16 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
       type: 'trigger-page-text-extract',
       layoutConfig: this.configService.getLayoutConfig()
     });
+  }
+
+  public async captureActiveFigureScreenshot(): Promise<void> {
+    const panel = this.resolveActivePanel();
+    if (!panel) {
+      vscode.window.showWarningMessage('未检测到活动的 PDF 编辑器，请确保 PDF 编辑器处于打开状态。');
+      return;
+    }
+
+    panel.webview.postMessage({ type: 'capture-figure-screenshot' });
   }
 
   public syncLayoutConfigToAllViewers(): void {

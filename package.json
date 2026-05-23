@@ -50,6 +50,11 @@
       {
         "command": "chunzen.openPdf",
         "title": "春蝉：用春蝉 PDF 阅读器打开"
+      },
+      {
+        "command": "chunzen.captureFigureScreenshot",
+        "title": "春蝉：截图当前页图像区域",
+        "icon": "$(device-camera)"
       }
     ],
     "menus": {
@@ -58,6 +63,11 @@
           "command": "chunzen.openSidePanel",
           "when": "activeCustomEditorId == 'chunzen.pdfViewer'",
           "group": "navigation"
+        },
+        {
+          "command": "chunzen.captureFigureScreenshot",
+          "when": "activeCustomEditorId == 'chunzen.pdfViewer'",
+          "group": "navigation@2"
         }
       ],
       "explorer/context": [
@@ -160,7 +170,16 @@
         "chunzen.journal.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "启用期刊信息查询（LetPub）"
+          "description": "启用期刊信息查询"
+        },
+        "chunzen.journal.source": {
+          "type": "string",
+          "enum": [
+            "ablesci",
+            "letpub"
+          ],
+          "default": "ablesci",
+          "description": "期刊信息查询数据源，支持科研通 (ablesci) 和 LetPub"
         },
         "chunzen.layout.useModel": {
           "type": "boolean",

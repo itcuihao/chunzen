@@ -56,12 +56,33 @@ export interface PageTextLoadedMessage {
     bold?: boolean;
     blockType?: string;
     skipped?: boolean;
-    lineMarker?: 'horizontal-rule';
+    skipReason?: string;
+    lineMarker?: 'horizontal-rule' | 'table-image';
     ruleX1?: number;
     ruleX2?: number;
+    imageDataUrl?: string;
+    imageAlt?: string;
   }>;
   columnsCount: number;
   translations?: Array<{ id: string; translatedText: string }>;
+}
+
+export interface FigureScreenshotCapturedMessage {
+  type: 'figure-screenshot-captured';
+  pageNumber: number;
+  dataUrl: string;
+  bbox: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+}
+
+export interface FigureScreenshotErrorMessage {
+  type: 'figure-screenshot-error';
+  pageNumber: number;
+  reason: string;
 }
 
 export type PdfViewerToExtMessage =
@@ -72,6 +93,8 @@ export type PdfViewerToExtMessage =
   | DoiFoundMessage
   | TranslatePageParagraphsMessage
   | PageTextLoadedMessage
+  | FigureScreenshotCapturedMessage
+  | FigureScreenshotErrorMessage
   | PdfHoverMessage;
 
 // ── Extension → Side Panel ──
@@ -142,9 +165,12 @@ export interface SyncPageTextMessage {
     bold?: boolean;
     blockType?: string;
     skipped?: boolean;
-    lineMarker?: 'horizontal-rule';
+    skipReason?: string;
+    lineMarker?: 'horizontal-rule' | 'table-image';
     ruleX1?: number;
     ruleX2?: number;
+    imageDataUrl?: string;
+    imageAlt?: string;
   }>;
   columnsCount: number;
   translations?: Array<{ id: string; translatedText: string }>;
@@ -199,6 +225,7 @@ export interface AddTermMessage {
   type: 'add-term';
   source: string;
   target: string;
+  category?: string;
 }
 
 export interface UpdateTermMessage {
@@ -206,6 +233,7 @@ export interface UpdateTermMessage {
   id: string;
   source: string;
   target: string;
+  category?: string;
 }
 
 export interface DeleteTermMessage {
@@ -215,7 +243,11 @@ export interface DeleteTermMessage {
 
 export interface ImportGlossaryMessage {
   type: 'import-glossary';
-  filePath: string;
+  defaultCategory?: string;
+}
+
+export interface RestoreDefaultGlossaryMessage {
+  type: 'restore-default-glossary';
 }
 
 export interface ExportTranslationsMessage {
@@ -243,6 +275,7 @@ export type PanelToExtMessage =
   | UpdateTermMessage
   | DeleteTermMessage
   | ImportGlossaryMessage
+  | RestoreDefaultGlossaryMessage
   | ExportTranslationsMessage
   | TranslatePageMessage
   | PanelHoverMessage

@@ -31,10 +31,25 @@ export interface Paragraph {
   bold?: boolean;
   blockType?: BlockType;
   skipped?: boolean;
-  lineMarker?: 'horizontal-rule';
+  skipReason?: ParagraphSkipReason;
+  lineMarker?: 'horizontal-rule' | 'table-image';
   ruleX1?: number;
   ruleX2?: number;
+  imageDataUrl?: string;
+  imageAlt?: string;
 }
+
+export type ParagraphSkipReason =
+  | 'empty'
+  | 'sidebar-column'
+  | 'header-or-authors'
+  | 'edge-metadata'
+  | 'top-metadata'
+  | 'watermark-fragment'
+  | 'right-http-noise'
+  | 'affiliation-footnote'
+  | 'repeated-noise'
+  | 'table-image-replaced';
 
 export interface LayoutHints {
   columnsCount?: number;
@@ -92,6 +107,13 @@ interface LogicalParagraph {
 interface SentenceItem {
   text: string;
   items: ColLayoutItem[];
+}
+
+interface RightEdgeNoiseZone {
+  xMin: number;
+  xMax: number;
+  yMin: number;
+  yMax: number;
 }
 
 // ── Main entry ──
@@ -164,6 +186,7 @@ export function buildTextLayer(
 
   // Debug: collect unique font names
   const fontNames = new Set<string>();
+  const rightEdgeNoiseZones = detectRightEdgeNoiseZones(items, viewport);
 
   for (const item of items) {
     if (!item.str || !item.str.trim()) continue;
@@ -185,6 +208,7 @@ export function buildTextLayer(
     if (isAffiliationClutter(item.str, scaledH)) continue;
 
     const w = item.width * viewport.scale;
+    if (isRightEdgeWatermarkToken(item.str, tx[4], tx[5], w, scaledH, viewport.width, rightEdgeNoiseZones)) continue;
     allItems.push({
       str: item.str.trim(),
       x: tx[4],
@@ -291,7 +315,8 @@ export function buildTextLayer(
   }
 
   // 5. Layout classification
-  const isDoubleColumn = splitCount >= 3 || (filteredRawLines.length > 0 && splitCount / filteredRawLines.length > 0.08);
+  const splitRatio = filteredRawLines.length > 0 ? splitCount / filteredRawLines.length : 0;
+  const isDoubleColumn = splitCount >= 3 || splitRatio > 0.08;
 
   // Group split lines into continuous DoubleColumnZones
   const doubleColumnZones: Array<{ minY: number; maxY: number }> = [];
@@ -336,7 +361,11 @@ export function buildTextLayer(
       .filter(line => line[0].y >= firstBodyY - 5)
       .some(line => /^(sections?|contents?)$/i.test(composeLineText(line)));
 
-    if (narrowRight.length >= 3 && narrowLeft.length > narrowRight.length) {
+    // In strong dual-column pages, sparse right-column lines can look like a sidebar.
+    // Only allow sidebar inference there when we have explicit sidebar heading cues.
+    const sidebarAllowedInDualColumn = !isDoubleColumn || hasSidebarHeading || splitRatio < 0.35;
+
+    if (sidebarAllowedInDualColumn && narrowRight.length >= 3 && narrowLeft.length > narrowRight.length) {
       // Find the gap between left and right clusters.
       const leftMaxX = Math.max(...narrowLeft.map(it => it.x + it.width));
       const rightMinX = Math.min(...narrowRight.map(it => it.x));
@@ -622,6 +651,7 @@ export function buildTextLayer(
         if (isAffiliationClutter(item.str, scaledH)) continue;
         
         const w = item.width * viewport.scale;
+        if (isRightEdgeWatermarkToken(item.str, tx[4], tx[5], w, scaledH, viewport.width, rightEdgeNoiseZones)) continue;
         transformedItems.push({
           str: item.str.trim(),
           x: tx[4],
@@ -633,6 +663,13 @@ export function buildTextLayer(
       }
 
       if (transformedItems.length === 0) continue;
+
+      // Keep per-block text items in visual reading order before line grouping.
+      // Tagged PDFs can provide items in content-stream order, which may interleave columns.
+      transformedItems.sort((a, b) => {
+        if (Math.abs(a.y - b.y) > 4) return a.y - b.y;
+        return a.x - b.x;
+      });
 
       // Group into lines by Y coordinate
       const rawLines: ColLayoutItem[][] = [];
@@ -810,7 +847,17 @@ export function buildTextLayer(
       if (p === titlePara) {
         p.blockType = 'title';
       } else if (avgY < titleY) {
-        p.blockType = 'header';
+        const text = p.text.trim();
+        const words = text.split(/\s+/).filter(Boolean);
+        const lowerText = text.toLowerCase();
+        const looksLongBodyProse =
+          text.length > 110 &&
+          words.length >= 18 &&
+          !/^https?:\/\//i.test(text) &&
+          !lowerText.includes('downloaded from') &&
+          !lowerText.includes('copyright') &&
+          !lowerText.includes('sciencedirect');
+        p.blockType = looksLongBodyProse ? 'body' : 'header';
       } else {
         const text = p.text.trim();
         const lowerText = text.toLowerCase();
@@ -906,7 +953,8 @@ export function buildTextLayer(
     const width = Math.max(...xMaxs) - x;
     const height = Math.max(...yMaxs) - y;
     const fontSize = para.items.reduce((sum, it) => sum + it.height, 0) / para.items.length;
-    const shouldSkip = shouldSkipParagraphForTranslation(para, viewport.height, firstBodyY, hasSidebar);
+    const skipReason = shouldSkipParagraphForTranslation(para, viewport.width, viewport.height, firstBodyY, hasSidebar);
+    const shouldSkip = skipReason !== null;
 
     // Detect bold: check if majority of items (by text length) use a bold font
     const boldScore = para.items.reduce((score, it) => {
@@ -957,6 +1005,7 @@ export function buildTextLayer(
       bold: isBold || undefined,
       blockType: para.blockType,
       skipped: shouldSkip,
+      skipReason: skipReason ?? undefined,
     });
   }
   emitRuleMarkersBefore(Number.POSITIVE_INFINITY);
@@ -1328,17 +1377,19 @@ function segmentBlockIntoParas(
     }
 
     case 'table': {
-      // Each segment row = one paragraph, tab-separated cells
-      for (const seg of segs) {
-        let text = '';
-        for (let j = 0; j < seg.items.length; j++) {
-          if (j > 0) {
-            const prevRight = seg.items[j - 1].x + seg.items[j - 1].width;
-            const gap = seg.items[j].x - prevRight;
-            text += gap > seg.items[j].height * 0.5 ? '\t' : ' ';
-          }
-          text += seg.items[j].str;
-        }
+      // Table rows: align cells to inferred column anchors and merge wrapped continuation rows.
+      const colIndexForWidth = segs[0]?.columnIndex ?? -1;
+      const colWidth = columnMargins.get(colIndexForWidth)?.width ?? pageWidth;
+      const rowGeoms: TableRowGeom[] = segs.map(seg => ({
+        seg,
+        cells: splitTableCellsWithGeometry(seg),
+      }));
+      const anchors = inferTableColumnAnchors(rowGeoms, colWidth);
+      const mergedRows = mergeContinuationTableRows(rowGeoms, anchors, colWidth);
+
+      for (const row of mergedRows) {
+        const text = row.text;
+        const seg = row.seg;
         flushPara(text, seg.items, seg.section, seg.columnIndex >= 0 ? seg.columnIndex : undefined);
       }
       break;
@@ -1415,6 +1466,150 @@ function segmentBlockIntoParas(
   }
 
   return { paras, nextParaId: paraId };
+}
+
+interface TableCellGeom {
+  text: string;
+  x: number;
+}
+
+interface TableRowGeom {
+  seg: LineSegment;
+  cells: TableCellGeom[];
+}
+
+function splitTableCellsWithGeometry(seg: LineSegment): TableCellGeom[] {
+  if (seg.items.length === 0) return [];
+  const sorted = [...seg.items].sort((a, b) => a.x - b.x);
+  const groups: ColLayoutItem[][] = [];
+  let buf: ColLayoutItem[] = [];
+
+  for (let i = 0; i < sorted.length; i++) {
+    const cur = sorted[i];
+    if (buf.length === 0) {
+      buf.push(cur);
+      continue;
+    }
+    const prev = buf[buf.length - 1];
+    const gap = cur.x - (prev.x + prev.width);
+    const splitGap = Math.max(cur.height * 0.55, 7);
+    if (gap > splitGap) {
+      groups.push(buf);
+      buf = [cur];
+    } else {
+      buf.push(cur);
+    }
+  }
+  if (buf.length > 0) groups.push(buf);
+
+  return groups
+    .map(group => ({
+      text: composeLineText(group).trim(),
+      x: Math.min(...group.map(it => it.x)),
+    }))
+    .filter(cell => cell.text.length > 0);
+}
+
+function clusterColumnAnchors(xs: number[], clusterDistance: number): number[] {
+  if (xs.length === 0) return [];
+  const sorted = [...xs].sort((a, b) => a - b);
+  const clusters: Array<{ center: number; count: number }> = [];
+  for (const x of sorted) {
+    const last = clusters[clusters.length - 1];
+    if (!last || Math.abs(x - last.center) > clusterDistance) {
+      clusters.push({ center: x, count: 1 });
+      continue;
+    }
+    const nextCount = last.count + 1;
+    last.center = (last.center * last.count + x) / nextCount;
+    last.count = nextCount;
+  }
+  return clusters.map(c => c.center);
+}
+
+function inferTableColumnAnchors(rows: TableRowGeom[], colWidth: number): number[] {
+  const richRows = rows.filter(r => r.cells.length >= 3);
+  const sourceRows = richRows.length > 0 ? richRows : rows;
+  const xs = sourceRows.flatMap(r => r.cells.map(c => c.x));
+  const anchors = clusterColumnAnchors(xs, Math.max(14, colWidth * 0.055));
+  if (anchors.length >= 2) return anchors;
+
+  const fallback = rows
+    .slice()
+    .sort((a, b) => b.cells.length - a.cells.length || b.seg.width - a.seg.width)[0];
+  return fallback ? fallback.cells.map(c => c.x).sort((a, b) => a - b) : [];
+}
+
+function mapRowCellsToAnchors(cells: TableCellGeom[], anchors: number[]): string[] {
+  if (anchors.length === 0) return cells.map(c => c.text);
+  const mapped = Array.from({ length: anchors.length }, () => '');
+  let minAnchorIndex = 0;
+
+  for (const cell of cells) {
+    let bestIdx = minAnchorIndex;
+    let bestDist = Number.POSITIVE_INFINITY;
+    for (let i = minAnchorIndex; i < anchors.length; i++) {
+      const dist = Math.abs(cell.x - anchors[i]);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestIdx = i;
+      }
+    }
+    mapped[bestIdx] = mapped[bestIdx] ? `${mapped[bestIdx]} ${cell.text}` : cell.text;
+    minAnchorIndex = Math.min(anchors.length - 1, bestIdx + 1);
+  }
+
+  return mapped;
+}
+
+function mergeContinuationTableRows(
+  rows: TableRowGeom[],
+  anchors: number[],
+  colWidth: number
+): Array<{ text: string; seg: LineSegment }> {
+  if (rows.length === 0) return [];
+  const expectedCols = Math.max(anchors.length, rows.reduce((m, r) => Math.max(m, r.cells.length), 0));
+  const output: Array<{ seg: LineSegment; mapped: string[] }> = [];
+
+  for (const row of rows) {
+    const mapped = mapRowCellsToAnchors(row.cells, anchors);
+    while (mapped.length < expectedCols) mapped.push('');
+
+    const nonEmptyIdx = mapped
+      .map((txt, idx) => (txt.trim() ? idx : -1))
+      .filter(idx => idx >= 0);
+    const nonEmptyCount = nonEmptyIdx.length;
+    const firstCol = nonEmptyCount > 0 ? nonEmptyIdx[0] : -1;
+
+    const prev = output[output.length - 1];
+    const yGap = prev ? Math.max(0, row.seg.y - prev.seg.y) : Number.POSITIVE_INFINITY;
+    const closeToPrev = prev ? yGap <= Math.max(prev.seg.height, row.seg.height) * 2.4 : false;
+    const shortRow = nonEmptyCount > 0 && nonEmptyCount <= Math.max(2, expectedCols - 2);
+    const narrowRow = row.seg.width < colWidth * 0.82;
+    const hasLeftKey = mapped[0].trim().length > 0;
+    const looksContinuation = !!prev && closeToPrev && shortRow && narrowRow && !hasLeftKey && firstCol >= 1;
+
+    if (looksContinuation) {
+      for (let i = 0; i < mapped.length; i++) {
+        const txt = mapped[i].trim();
+        if (!txt) continue;
+        prev.mapped[i] = prev.mapped[i] ? `${prev.mapped[i]} ${txt}` : txt;
+      }
+      prev.seg = row.seg;
+      continue;
+    }
+
+    output.push({ seg: row.seg, mapped });
+  }
+
+  return output.map(row => {
+    const cells = [...row.mapped];
+    while (cells.length > 1 && !cells[cells.length - 1].trim()) cells.pop();
+    return {
+      text: cells.join('\t').trim(),
+      seg: row.seg,
+    };
+  });
 }
 
 // ── Existing Helper functions ──
@@ -1919,14 +2114,19 @@ function shouldStartNewBodyParagraph(
   const curText = cur.str.trim();
   const prevText = prev.str.trim();
   const curStartsLower = /^[a-z]/.test(curText);
+  const curStartsUpper = /^[A-Z]/.test(curText);
   const curStartsList = /^(\(?\d+\)?[.)]?\s+|[-•*]\s+)/.test(curText);
   const prevEndsTerminal = /[.!?;:。！？；：]$/.test(prevText);
 
   const curIndent = Math.max(0, cur.x - colMargin);
   const prevIndent = Math.max(0, prev.x - colMargin);
+  const indentDelta = curIndent - prevIndent;
   const hasFirstLineIndent =
     curIndent > Math.max(cur.height * 1.6, 12) &&
-    prevIndent < Math.max(prev.height * 0.6, 5);
+    prevIndent < Math.max(prev.height * 0.6, 5) &&
+    indentDelta > Math.max(cur.height * 0.9, 8);
+
+  const spacingBreak = yGap > Math.max(baseGap * 1.12, lineH * 1.35);
 
   // Conservative keep-together: wrapped lines inside the same paragraph should
   // not be split unless there is strong boundary evidence.
@@ -1934,8 +2134,21 @@ function shouldStartNewBodyParagraph(
     return false;
   }
 
+  // Capitalized sentence starts are common in wrapped academic prose.
+  // Do not split only because the next line begins with uppercase.
+  if (
+    prevEndsTerminal &&
+    curStartsUpper &&
+    !curStartsList &&
+    !hasFirstLineIndent &&
+    !spacingBreak &&
+    Math.abs(indentDelta) <= Math.max(cur.height * 0.9, 7)
+  ) {
+    return false;
+  }
+
   if (curStartsList) return true;
-  if (hasFirstLineIndent && !curStartsLower && prevEndsTerminal) return true;
+  if (hasFirstLineIndent && !curStartsLower && prevEndsTerminal && spacingBreak) return true;
 
   return false;
 }
@@ -1998,16 +2211,26 @@ function splitParagraphIntoSentences(para: LogicalParagraph): SentenceItem[] {
 }
 
 function splitIntoSentences(text: string): string[] {
+  const DOT_PLACEHOLDER = '__DOT_ABBR__';
+  const protectedText = text
+    // Common academic abbreviations that should not terminate a sentence.
+    .replace(/\bet al\./gi, (m) => m.replace('.', DOT_PLACEHOLDER))
+    .replace(/\b(fig|figs|eq|eqs|ref|refs|no|nos|dr|mr|mrs|ms|prof|inc|vs)\./gi, (m) => m.replace('.', DOT_PLACEHOLDER))
+    // Single-letter initials (e.g. "S.-S. Wang", "A. B. Smith")
+    .replace(/\b([A-Z])\./g, `$1${DOT_PLACEHOLDER}`);
+
   const results: string[] = [];
-  const re = /[^.!?]*[.!?]+(?:\s|$)/g;
+  const re = /[^.!?。！？]*[.!?。！？]+(?:\s|$)/g;
   let m: RegExpExecArray | null;
   let last = 0;
-  while ((m = re.exec(text)) !== null) {
+  while ((m = re.exec(protectedText)) !== null) {
     results.push(m[0]);
     last = re.lastIndex;
   }
-  if (last < text.length) results.push(text.slice(last));
-  return results.filter(s => s.trim().length > 2);
+  if (last < protectedText.length) results.push(protectedText.slice(last));
+  return results
+    .map(s => s.replaceAll(DOT_PLACEHOLDER, '.'))
+    .filter(s => s.trim().length > 2);
 }
 
 function isMathArtifact(str: string): boolean {
@@ -2023,12 +2246,124 @@ function isMathArtifact(str: string): boolean {
   return false;
 }
 
+function detectRightEdgeNoiseZones(items: TextItem[], viewport: PdfViewport): RightEdgeNoiseZone[] {
+  const candidates: Array<{ x: number; y: number; width: number; height: number; anchor: boolean }> = [];
+
+  for (const item of items) {
+    if (!item.str || !item.str.trim()) continue;
+    const tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
+    if (!tx || isNaN(tx[4]) || isNaN(tx[5])) continue;
+
+    const x = tx[4];
+    const y = tx[5];
+    const width = item.width * viewport.scale;
+    const height = item.height * viewport.scale;
+    const right = x + width;
+
+    if (height > 8.5) continue;
+    if (x < viewport.width * 0.86 && right < viewport.width * 0.93) continue;
+
+    const text = item.str.trim();
+    const lower = text.toLowerCase();
+    const anchor =
+      /^https?:\/\//.test(lower) ||
+      lower.includes('doi.org') ||
+      lower.includes('downloaded') ||
+      lower.includes('guest') ||
+      lower.includes('rupress.org') ||
+      /\b20\d{2}\b/.test(lower);
+    const weak =
+      /^(from|by|on)$/i.test(text) ||
+      /^(may|june|july|august|september|october|november|december|january|february|march|april)$/i.test(text);
+
+    if (!anchor && !weak) continue;
+    candidates.push({ x, y, width, height, anchor });
+  }
+
+  if (candidates.length === 0 || !candidates.some(c => c.anchor)) return [];
+
+  candidates.sort((a, b) => a.x - b.x);
+  const clusters: Array<{ items: typeof candidates; anchorCount: number }> = [];
+  const xThreshold = 24;
+
+  for (const c of candidates) {
+    const last = clusters[clusters.length - 1];
+    if (!last) {
+      clusters.push({ items: [c], anchorCount: c.anchor ? 1 : 0 });
+      continue;
+    }
+    const lastAvgX = last.items.reduce((sum, it) => sum + it.x, 0) / last.items.length;
+    if (Math.abs(c.x - lastAvgX) <= xThreshold) {
+      last.items.push(c);
+      if (c.anchor) last.anchorCount++;
+    } else {
+      clusters.push({ items: [c], anchorCount: c.anchor ? 1 : 0 });
+    }
+  }
+
+  const zones: RightEdgeNoiseZone[] = [];
+  for (const cluster of clusters) {
+    if (cluster.anchorCount < 1) continue;
+    if (cluster.items.length < 3) continue;
+
+    const xs = cluster.items.map(it => it.x);
+    const ys = cluster.items.map(it => it.y);
+    const rights = cluster.items.map(it => it.x + it.width);
+    const xMin = Math.min(...xs);
+    const xMax = Math.max(...rights);
+    if (xMin < viewport.width * 0.84) continue;
+
+    zones.push({
+      xMin: Math.max(0, xMin - 4),
+      xMax: Math.min(viewport.width, xMax + 4),
+      yMin: Math.max(0, Math.min(...ys) - 6),
+      yMax: Math.min(viewport.height, Math.max(...ys) + 10),
+    });
+  }
+
+  return zones;
+}
+
+function isRightEdgeWatermarkToken(
+  text: string,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  viewportWidth: number,
+  rightEdgeNoiseZones: RightEdgeNoiseZone[]
+): boolean {
+  const t = text.trim().toLowerCase();
+  if (!t) return false;
+
+  const looksWatermarkLexeme =
+    t === 'downloaded' ||
+    t === 'from' ||
+    /^https?:\/\//.test(t) ||
+    t.includes('rupress.org');
+  const weakLexeme = /^(from|by|on|guest)$/i.test(text.trim()) || /\b20\d{2}\b/.test(t);
+
+  const inNoiseZone = rightEdgeNoiseZones.some(zone => {
+    const right = x + width;
+    const yBottom = y + height;
+    const xOverlap = right >= zone.xMin && x <= zone.xMax;
+    const yOverlap = yBottom >= zone.yMin && y <= zone.yMax;
+    return xOverlap && yOverlap;
+  });
+
+  if (inNoiseZone && height <= 8.5 && (looksWatermarkLexeme || weakLexeme)) return true;
+  if (!looksWatermarkLexeme) return false;
+  const rightEdge = x >= viewportWidth * 0.92 || (x + width) >= viewportWidth * 0.985;
+  const tinyFont = height <= 7.5;
+  return rightEdge && tinyFont;
+}
+
 function inferFirstBodyY(lines: ColLayoutItem[][], viewportHeight: number): number {
   if (lines.length === 0) return viewportHeight * 0.45;
   const candidates: number[] = [];
   // Continuation pages can start body text close to the top margin.
   // Keep this loose enough to avoid skipping early dual-column lines.
-  const minY = viewportHeight * 0.10;
+  const minY = viewportHeight * 0.07;
   const maxY = viewportHeight * 0.72;
 
   for (const line of lines) {
@@ -2183,23 +2518,18 @@ function assignLayoutToParagraph(
 
 function shouldSkipParagraphForTranslation(
   para: LogicalParagraph,
+  viewportWidth: number,
   viewportHeight: number,
   firstBodyY: number,
   hasSidebar: boolean
-): boolean {
+): ParagraphSkipReason | null {
   const text = para.text.trim();
-  if (!text) return true;
+  if (!text) return 'empty';
 
   // 0. DOI/ISSN Exception: If it contains a DOI or ISSN, KEEP it (never skip).
   if (/\b10\.\d{4,9}\//.test(text) || /\b\d{4}-\d{3}[\dX]\b/.test(text)) {
-    return false;
+    return null;
   }
-
-  // 1. Sidebar / TOC
-  if (hasSidebar && para.columnIndex === 1) return true;
-
-  // 2. Authors/Headers blockType
-  if (para.blockType === 'authors' || para.blockType === 'header') return true;
 
   // Coordinate thresholds
   const ys = para.items.map(it => it.y);
@@ -2207,23 +2537,48 @@ function shouldSkipParagraphForTranslation(
   const isExtremeTop = avgY < viewportHeight * 0.08;
   const isExtremeBottom = avgY > viewportHeight * 0.92;
   const lowerText = text.toLowerCase();
+  const startsWithHttp = /^https?:\/\//i.test(text);
+  const minX = Math.min(...para.items.map(it => it.x));
+  const rightSideLike = para.section === 'right' || para.columnIndex === 1 || minX > viewportWidth * 0.56;
+  const wordCount = text.split(/\s+/).filter(Boolean).length;
+
+  // Guard rail: top continuation-body prose should not be skipped as header noise.
+  const nearTopBodyProse =
+    avgY <= firstBodyY + 28 &&
+    text.length > 110 &&
+    wordCount >= 18 &&
+    !startsWithHttp &&
+    !lowerText.includes('downloaded from');
+  if (nearTopBodyProse) return null;
+
+  // 1. Sidebar / TOC
+  if (hasSidebar && para.columnIndex === 1) return 'sidebar-column';
+
+  // 2. Authors/Headers blockType
+  if (para.blockType === 'authors' || para.blockType === 'header') return 'header-or-authors';
 
   // 3. Running Headers / Footers metadata
   if (isExtremeTop || isExtremeBottom) {
-    if (lowerText.includes('copyright') || lowerText.includes('©') || lowerText.includes('all rights reserved')) return true;
-    if (lowerText.includes('doi:') || lowerText.includes('doi.org')) return true;
-    if (lowerText.includes('issn') || lowerText.includes('e-issn') || lowerText.includes('eissn')) return true;
-    if (lowerText.includes('http://') || lowerText.includes('https://') || lowerText.includes('www.')) return true;
-    if (/^\d+$/.test(text)) return true;
-    if (/^page\s+\d+$/i.test(text)) return true;
-    if (/^\d+\s+of\s+\d+$/i.test(text)) return true;
-    if (lowerText.includes('downloaded from') || lowerText.includes('published by') || lowerText.includes('sciencedirect')) return true;
-    if (lowerText.includes('consensus statement') || lowerText.includes('check for updates')) return true;
+    if (lowerText.includes('copyright') || lowerText.includes('©') || lowerText.includes('all rights reserved')) return 'edge-metadata';
+    if (lowerText.includes('doi:') || lowerText.includes('doi.org')) return 'edge-metadata';
+    if (lowerText.includes('issn') || lowerText.includes('e-issn') || lowerText.includes('eissn')) return 'edge-metadata';
+    if (lowerText.includes('http://') || lowerText.includes('https://') || lowerText.includes('www.')) return 'edge-metadata';
+    if (/^\d+$/.test(text)) return 'edge-metadata';
+    if (/^page\s+\d+$/i.test(text)) return 'edge-metadata';
+    if (/^\d+\s+of\s+\d+$/i.test(text)) return 'edge-metadata';
+    if (lowerText.includes('downloaded from') || lowerText.includes('published by') || lowerText.includes('sciencedirect')) return 'edge-metadata';
+    if (lowerText.includes('consensus statement') || lowerText.includes('check for updates')) return 'edge-metadata';
   }
 
   // Additional metadata/DOIs anywhere on first page
-  const isMetadata = lowerText.includes('doi:') || lowerText.includes('doi.org') || lowerText.includes('elsevier') || lowerText.includes('edited by') || lowerText.includes('current opinion') || lowerText.includes('sciencedirect') || lowerText.includes('check for updates');
-  if (isMetadata && avgY < firstBodyY + 100) return true;
+  const isMetadata = lowerText.includes('doi:') || lowerText.includes('doi.org') || lowerText.includes('elsevier') || lowerText.includes('edited by') || lowerText.includes('current opinion') || lowerText.includes('sciencedirect') || lowerText.includes('check for updates') || lowerText.includes('downloaded from');
+  if (isMetadata && avgY < firstBodyY + 100) return 'top-metadata';
+
+  // Side watermark fragments can be split into multiple tiny lines ("Downloaded", "from", url).
+  // Skip these regardless of vertical position.
+  if (lowerText === 'downloaded' || lowerText === 'from') return 'watermark-fragment';
+  // Treat right-side http links as page-side metadata/noise.
+  if (startsWithHttp && rightSideLike) return 'right-http-noise';
 
   // 4. Affiliations, Footnotes, Correspondence
   const isAffiliationOrFootnote =
@@ -2242,11 +2597,11 @@ function shouldSkipParagraphForTranslation(
 
   if (isAffiliationOrFootnote) {
     if (avgY < firstBodyY + 90 || avgY > viewportHeight * 0.65) {
-      return true;
+      return 'affiliation-footnote';
     }
   }
 
-  return false;
+  return null;
 }
 
 function isLikelyAuthorList(text: string): boolean {

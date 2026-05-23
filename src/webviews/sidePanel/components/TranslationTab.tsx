@@ -1,6 +1,6 @@
 import { FunctionComponent, useState, useEffect, useMemo } from 'react';
 import { useStore } from '../store';
-import { Languages, FileCheck, RefreshCw } from 'lucide-react';
+import { Languages, FileCheck, RefreshCw, Compass } from 'lucide-react';
 import { postMessage } from '../vscode';
 
 // ── Paragraph role classification ──
@@ -20,9 +20,12 @@ interface AnnotatedPara {
   bold?: boolean;
   blockType?: string;
   skipped?: boolean;
-  lineMarker?: 'horizontal-rule';
+  skipReason?: string;
+  lineMarker?: 'horizontal-rule' | 'table-image';
   ruleX1?: number;
   ruleX2?: number;
+  imageDataUrl?: string;
+  imageAlt?: string;
   role: ParagraphRole;
 }
 
@@ -124,6 +127,45 @@ const EN_INDENT: Record<ParagraphRole, string> = {
   small: '',
 };
 
+function isHeadingContinuation(prev: AnnotatedPara | undefined, cur: AnnotatedPara): boolean {
+  if (!prev) return false;
+  if (cur.role !== 'heading') return false;
+  if (cur.skipped) return false;
+
+  const prevIsHeadingLike = prev.role === 'heading' || prev.blockType === 'heading';
+  if (!prevIsHeadingLike) return false;
+
+  const prevText = prev.text.trim();
+  const curText = cur.text.trim();
+  if (!prevText || !curText) return false;
+  if (/[.!?;:。！？；：]$/.test(prevText)) return false;
+
+  if (/^[a-z0-9(]/.test(curText)) return true;
+  if (/^(and|or|of|for|to|in|on|with|without|between|by)\b/i.test(curText)) return true;
+  if (curText.length <= 42) return true;
+  return false;
+}
+
+function isCollapsibleNoiseSkip(para: AnnotatedPara | undefined): boolean {
+  if (!para?.skipped) return false;
+  const reason = (para.skipReason || '').toLowerCase();
+  if (!reason) return false;
+  return reason.includes('watermark')
+    || reason.includes('http')
+    || reason.includes('repeated-noise')
+    || reason.includes('table-image');
+}
+
+function previousSemanticParagraph(paragraphs: AnnotatedPara[], index: number): AnnotatedPara | undefined {
+  for (let i = index - 1; i >= 0; i--) {
+    const prev = paragraphs[i];
+    if (prev.lineMarker === 'horizontal-rule') return undefined;
+    if (isCollapsibleNoiseSkip(prev)) continue;
+    return prev;
+  }
+  return undefined;
+}
+
 // ── Layout block helpers ──
 
 interface LayoutBlock {
@@ -161,7 +203,17 @@ export const TranslationTab: FunctionComponent = () => {
   const currentPageText = useStore((state) => state.currentPageText);
   const activeSentenceId = useStore((state) => state.activeSentenceId);
 
-  const [layoutMode, setLayoutMode] = useState<'translation' | 'bilingual' | 'original'>('original');
+  const layoutMode = useStore((state) => state.layoutMode);
+  const setLayoutMode = useStore((state) => state.setLayoutMode);
+
+  // Auto-translate on page turn if remembered mode is translation or bilingual
+  useEffect(() => {
+    if (!currentPageText) return;
+    const hasTrans = !!(currentPageText.translations && Object.keys(currentPageText.translations).length > 0);
+    if ((layoutMode === 'translation' || layoutMode === 'bilingual') && !hasTrans && !loading) {
+      handleTranslatePage();
+    }
+  }, [currentPageText?.pageNumber, layoutMode]);
 
   const hasTranslations = !!(currentPageText?.translations && Object.keys(currentPageText.translations).length > 0);
 
@@ -295,7 +347,11 @@ export const TranslationTab: FunctionComponent = () => {
     });
   };
 
-  const paraClass = (para: AnnotatedPara, mode: 'en' | 'zh' | 'bi-en' | 'bi-zh'): string => {
+  const paraClass = (
+    para: AnnotatedPara,
+    mode: 'en' | 'zh' | 'bi-en' | 'bi-zh',
+    prevPara?: AnnotatedPara
+  ): string => {
     const role = para.role;
     const styles = mode === 'en' ? EN_STYLES
       : mode === 'zh' ? ZH_STYLES
@@ -306,7 +362,10 @@ export const TranslationTab: FunctionComponent = () => {
       : '';
     // Add font-bold from PDF data when role doesn't already include bold
     const boldClass = (para.bold && role !== 'title' && role !== 'heading') ? 'font-bold' : '';
-    return `${styles[role]} ${indent} ${boldClass} ${PARA_SPACING[role]}`;
+    const spacing = (role === 'heading' && isHeadingContinuation(prevPara, para))
+      ? 'mb-1'
+      : PARA_SPACING[role];
+    return `${styles[role]} ${indent} ${boldClass} ${spacing}`;
   };
 
   const renderTableRow = (id: string, text: string, className: string) => {
@@ -334,34 +393,50 @@ export const TranslationTab: FunctionComponent = () => {
     );
   };
 
-  const renderOriginalParagraphNode = (para: AnnotatedPara) => {
+  const renderOriginalParagraphNode = (para: AnnotatedPara, prevPara?: AnnotatedPara) => {
     if (para.lineMarker === 'horizontal-rule') {
       return <hr key={para.id} className="border-0 border-t border-border/45 my-4" />;
     }
+    if (para.imageDataUrl) {
+      return (
+        <figure key={para.id} className="mb-4">
+          <img src={para.imageDataUrl} alt={para.imageAlt || 'table image'} className="w-full rounded border border-border/40 shadow-sm" />
+        </figure>
+      );
+    }
     if (para.skipped) {
+      if (isCollapsibleNoiseSkip(para)) return null;
       const h = Math.max(4, Math.min(220, para.height || para.fontSize || 12));
       return <div key={para.id} className="opacity-0 pointer-events-none" style={{ height: `${h}px` }} aria-hidden />;
     }
-    const className = paraClass(para, 'en');
+    const className = paraClass(para, 'en', prevPara);
     if (para.blockType === 'table') {
       return renderTableRow(para.id, para.text, className);
     }
     return (
       <p key={para.id} className={className}>
-        {renderEnglishParagraph(para)}
+        {para.text}
       </p>
     );
   };
 
-  const renderTranslatedParagraphNode = (para: AnnotatedPara) => {
+  const renderTranslatedParagraphNode = (para: AnnotatedPara, prevPara?: AnnotatedPara) => {
     if (para.lineMarker === 'horizontal-rule') {
       return <hr key={para.id} className="border-0 border-t border-border/45 my-4" />;
     }
+    if (para.imageDataUrl) {
+      return (
+        <figure key={para.id} className="mb-4">
+          <img src={para.imageDataUrl} alt={para.imageAlt || 'table image'} className="w-full rounded border border-border/40 shadow-sm" />
+        </figure>
+      );
+    }
     if (para.skipped) {
+      if (isCollapsibleNoiseSkip(para)) return null;
       const h = Math.max(4, Math.min(220, para.height || para.fontSize || 12));
       return <div key={para.id} className="opacity-0 pointer-events-none" style={{ height: `${h}px` }} aria-hidden />;
     }
-    const className = paraClass(para, 'zh');
+    const className = paraClass(para, 'zh', prevPara);
     const translated = currentPageText!.translations?.[para.id] || '';
     if (para.blockType === 'table') {
       return renderTableRow(para.id, translated || para.text, className);
@@ -373,11 +448,19 @@ export const TranslationTab: FunctionComponent = () => {
     );
   };
 
-  const renderBilingualParagraphNode = (para: AnnotatedPara) => {
+  const renderBilingualParagraphNode = (para: AnnotatedPara, prevPara?: AnnotatedPara) => {
     if (para.lineMarker === 'horizontal-rule') {
       return <hr key={para.id} className="border-0 border-t border-border/45 my-4" />;
     }
+    if (para.imageDataUrl) {
+      return (
+        <figure key={para.id} className="mb-4">
+          <img src={para.imageDataUrl} alt={para.imageAlt || 'table image'} className="w-full rounded border border-border/40 shadow-sm" />
+        </figure>
+      );
+    }
     if (para.skipped) {
+      if (isCollapsibleNoiseSkip(para)) return null;
       const h = Math.max(4, Math.min(220, para.height || para.fontSize || 12));
       return <div key={para.id} className="opacity-0 pointer-events-none" style={{ height: `${h}px` }} aria-hidden />;
     }
@@ -385,17 +468,17 @@ export const TranslationTab: FunctionComponent = () => {
     return (
       <div key={para.id} className="mb-4 pb-3 border-b border-border/20 last:border-0">
         {para.blockType === 'table'
-          ? renderTableRow(`${para.id}-en`, para.text, `${paraClass(para, 'bi-en')} mb-1.5`)
+          ? renderTableRow(`${para.id}-en`, para.text, `${paraClass(para, 'bi-en', prevPara)} mb-1.5`)
           : (
-            <p className={`${paraClass(para, 'bi-en')} mb-1.5`}>
+            <p className={`${paraClass(para, 'bi-en', prevPara)} mb-1.5`}>
               {renderEnglishParagraph(para)}
             </p>
           )}
         {translation && (
           para.blockType === 'table'
-            ? renderTableRow(`${para.id}-zh`, translation, `${paraClass(para, 'bi-zh')} mt-1 border-l-2 border-primary/20 pl-3`)
+            ? renderTableRow(`${para.id}-zh`, translation, `${paraClass(para, 'bi-zh', prevPara)} mt-1 border-l-2 border-primary/20 pl-3`)
             : (
-              <p className={`${paraClass(para, 'bi-zh')} mt-1 border-l-2 border-primary/20 pl-3`}>
+              <p className={`${paraClass(para, 'bi-zh', prevPara)} mt-1 border-l-2 border-primary/20 pl-3`}>
                 {renderChineseParagraph(para, translation)}
               </p>
             )
@@ -407,7 +490,7 @@ export const TranslationTab: FunctionComponent = () => {
   const renderColumnBlock = (
     block: LayoutBlock,
     columnsCount: number,
-    renderPara: (para: AnnotatedPara) => JSX.Element
+    renderPara: (para: AnnotatedPara, prevPara?: AnnotatedPara) => JSX.Element | null
   ) => {
     const perColumn: AnnotatedPara[][] = Array.from({ length: columnsCount }, () => []);
     for (const para of block.paragraphs) {
@@ -424,7 +507,7 @@ export const TranslationTab: FunctionComponent = () => {
             key={`col-${colIdx}`}
             className={colIdx > 0 ? 'flex flex-col border-l border-dashed border-border/40 pl-5' : 'flex flex-col'}
           >
-            {colParas.map(para => renderPara(para))}
+            {colParas.map((para, idx) => renderPara(para, previousSemanticParagraph(colParas, idx)))}
           </div>
         ))}
       </div>
@@ -445,7 +528,7 @@ export const TranslationTab: FunctionComponent = () => {
             if (block.type === 'single') {
               return (
                 <div key={idx} className="w-full">
-                  {block.paragraphs.map(para => renderOriginalParagraphNode(para))}
+                  {block.paragraphs.map((para, i) => renderOriginalParagraphNode(para, previousSemanticParagraph(block.paragraphs, i)))}
                 </div>
               );
             }
@@ -464,7 +547,7 @@ export const TranslationTab: FunctionComponent = () => {
           columnRule: currentPageText!.columnsCount > 1 ? '1px dashed var(--border)' : undefined,
         }}
         >
-        {annotatedParagraphs.map((para) => renderOriginalParagraphNode(para))}
+        {annotatedParagraphs.map((para, i) => renderOriginalParagraphNode(para, previousSemanticParagraph(annotatedParagraphs, i)))}
       </div>
     );
   };
@@ -481,7 +564,7 @@ export const TranslationTab: FunctionComponent = () => {
             if (block.type === 'single') {
               return (
                 <div key={idx} className="w-full">
-                  {block.paragraphs.map(para => renderTranslatedParagraphNode(para))}
+                  {block.paragraphs.map((para, i) => renderTranslatedParagraphNode(para, previousSemanticParagraph(block.paragraphs, i)))}
                 </div>
               );
             }
@@ -500,7 +583,7 @@ export const TranslationTab: FunctionComponent = () => {
           columnRule: currentPageText!.columnsCount > 1 ? '1px dashed var(--border)' : undefined,
         }}
         >
-        {annotatedParagraphs.map((para) => renderTranslatedParagraphNode(para))}
+        {annotatedParagraphs.map((para, i) => renderTranslatedParagraphNode(para, previousSemanticParagraph(annotatedParagraphs, i)))}
       </div>
     );
   };
@@ -517,7 +600,7 @@ export const TranslationTab: FunctionComponent = () => {
             if (block.type === 'single') {
               return (
                 <div key={idx} className="w-full">
-                  {block.paragraphs.map(para => renderBilingualParagraphNode(para))}
+                  {block.paragraphs.map((para, i) => renderBilingualParagraphNode(para, previousSemanticParagraph(block.paragraphs, i)))}
                 </div>
               );
             }
@@ -529,7 +612,7 @@ export const TranslationTab: FunctionComponent = () => {
 
     return (
       <div className="select-text selection:bg-accent/30 break-words animate-in fade-in duration-300">
-        {annotatedParagraphs.map((para) => renderBilingualParagraphNode(para))}
+        {annotatedParagraphs.map((para, i) => renderBilingualParagraphNode(para, previousSemanticParagraph(annotatedParagraphs, i)))}
       </div>
     );
   };
@@ -550,16 +633,6 @@ export const TranslationTab: FunctionComponent = () => {
             纯原文 (英文)
           </button>
           <button
-            onClick={() => setLayoutMode('bilingual')}
-            className={`flex-1 py-1 rounded text-center cursor-pointer transition-all duration-150 ${
-              layoutMode === 'bilingual'
-                ? 'bg-primary text-primary-foreground shadow-sm font-bold'
-                : 'text-secondary-foreground hover:text-foreground'
-            }`}
-          >
-            双语对照
-          </button>
-          <button
             onClick={() => setLayoutMode('translation')}
             className={`flex-1 py-1 rounded text-center cursor-pointer transition-all duration-150 ${
               layoutMode === 'translation'
@@ -568,6 +641,16 @@ export const TranslationTab: FunctionComponent = () => {
             }`}
           >
             纯译文 (中文)
+          </button>
+          <button
+            onClick={() => setLayoutMode('bilingual')}
+            className={`flex-1 py-1 rounded text-center cursor-pointer transition-all duration-150 ${
+              layoutMode === 'bilingual'
+                ? 'bg-primary text-primary-foreground shadow-sm font-bold'
+                : 'text-secondary-foreground hover:text-foreground'
+            }`}
+          >
+            双语对照
           </button>
         </div>
         <button
@@ -600,11 +683,23 @@ export const TranslationTab: FunctionComponent = () => {
         {/* Main Document Content */}
         <div className="flex-1 flex flex-col justify-start">
           {loading ? (
-            <div className="flex flex-col gap-3 py-4 animate-pulse">
-              <div className="h-4 bg-secondary/50 rounded w-11/12"></div>
-              <div className="h-4 bg-secondary/50 rounded w-full"></div>
-              <div className="h-4 bg-secondary/50 rounded w-full"></div>
-              <div className="h-4 bg-secondary/50 rounded w-3/4"></div>
+            <div className="flex-grow flex flex-col items-center justify-center py-16 text-center animate-in fade-in duration-300">
+              <div className="relative mb-6">
+                {/* Spinning Outer Ring */}
+                <div className="w-12 h-12 rounded-full border-2 border-primary/20 border-t-primary animate-spin"></div>
+                {/* Center Icon */}
+                <Compass className="w-5 h-5 text-primary absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-80" />
+              </div>
+              <h3 className="font-zhSerif text-sm font-bold text-foreground mb-1 animate-pulse">正在翻译第 {currentPageText?.pageNumber || 1} 页</h3>
+              <p className="text-[11px] text-secondary-foreground/60 max-w-[220px] leading-relaxed mb-6">
+                正在使用高精度学术翻译引擎进行整页解析与对照翻译，请稍候...
+              </p>
+              {/* Skeleton placeholder underneath */}
+              <div className="flex flex-col gap-3.5 py-2 animate-pulse w-full max-w-xs opacity-40">
+                <div className="h-3 bg-secondary/50 rounded w-11/12"></div>
+                <div className="h-3 bg-secondary/50 rounded w-full"></div>
+                <div className="h-3 bg-secondary/50 rounded w-4/5"></div>
+              </div>
             </div>
           ) : error ? (
             <div className="p-3.5 rounded bg-error/10 border border-error/20 text-error text-xs leading-relaxed font-mono">

@@ -1,20 +1,23 @@
 import * as vscode from 'vscode';
-import { TranslationEngine, TranslationResult } from '../types';
+import { TranslationEngine, TranslationResult, GlossaryEntry } from '../types';
 import { BaiduEngine } from './engines/baiduEngine';
 import { DeepLEngine } from './engines/deeplEngine';
 import { OpenAIEngine, CustomHttpEngine } from './engines/openaiEngine';
 import { ClaudeCliEngine } from './engines/claudeCliEngine';
 import { CacheService } from './cacheService';
+import { GlossaryService } from './glossaryService';
 
 /**
- * 翻译服务 — 多引擎自动降级
+ * 翻译服务 — 多引擎自动降级与术语表动态集成
  */
 export class TranslationService {
   private engines: Map<string, TranslationEngine> = new Map();
   private cache: CacheService;
+  private glossaryService: GlossaryService;
 
   constructor(context: vscode.ExtensionContext) {
     this.cache = new CacheService(context);
+    this.glossaryService = new GlossaryService(context);
     this.engines.set('baidu', new BaiduEngine());
     this.engines.set('deepl', new DeepLEngine());
     this.engines.set('openai', new OpenAIEngine());
@@ -36,6 +39,9 @@ export class TranslationService {
       return { text: translation, engine, cached: true };
     }
 
+    // 扫描匹配的术语（优化：只选择本段中出现的词汇）
+    const matchingTerms = this.glossaryService.getMatchingTerms(trimmed);
+
     // 按优先级尝试各引擎
     const priority = vscode.workspace
       .getConfiguration('chunzen.translation')
@@ -49,11 +55,17 @@ export class TranslationService {
       if (!engine.isConfigured()) continue;
 
       try {
-        const result = await engine.translate(trimmed);
+        const result = await engine.translate(trimmed, undefined, undefined, matchingTerms);
         if (result) {
+          // 如果是非大模型（如百度、DeepL、自定义接口），在本地进行后处理词汇替换
+          let processedResult = result;
+          if (engineName === 'baidu' || engineName === 'deepl' || engineName === 'custom') {
+            processedResult = this.postProcessGlossary(processedResult, matchingTerms);
+          }
+
           // 存入缓存（引擎名 + 翻译结果）
-          this.cache.set(cacheKey, `${engine.name}\x00${result}`);
-          return { text: result, engine: engine.displayName, cached: false };
+          this.cache.set(cacheKey, `${engine.name}\x00${processedResult}`);
+          return { text: processedResult, engine: engine.displayName, cached: false };
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -84,7 +96,13 @@ export class TranslationService {
       throw new Error(`翻译引擎 ${engine.displayName} 未配置`);
     }
 
-    return await engine.translate(trimmed);
+    const matchingTerms = this.glossaryService.getMatchingTerms(trimmed);
+    const result = await engine.translate(trimmed, undefined, undefined, matchingTerms);
+
+    if (engineName === 'baidu' || engineName === 'deepl' || engineName === 'custom') {
+      return this.postProcessGlossary(result, matchingTerms);
+    }
+    return result;
   }
 
   clearCache(): void {
@@ -100,5 +118,23 @@ export class TranslationService {
     return [...this.engines.values()]
       .filter(e => e.isConfigured())
       .map(e => e.displayName);
+  }
+
+  /**
+   * 对非大模型翻译结果进行后处理纠偏替换
+   */
+  private postProcessGlossary(translatedText: string, glossary: GlossaryEntry[]): string {
+    let result = translatedText;
+    for (const term of glossary) {
+      const sources = term.source.split('|').map(s => s.trim());
+      for (const s of sources) {
+        if (!s) continue;
+        const isEnglish = /^[a-zA-Z\s\-_]+$/.test(s);
+        const escS = s.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+        const reg = isEnglish ? new RegExp(`\\b${escS}\\b`, 'gi') : new RegExp(escS, 'g');
+        result = result.replace(reg, term.target);
+      }
+    }
+    return result;
   }
 }

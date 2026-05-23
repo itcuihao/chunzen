@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { TranslationEngine } from '../../types';
+import { TranslationEngine, GlossaryEntry } from '../../types';
 
 const execFileAsync = promisify(execFile);
 
@@ -17,7 +17,7 @@ export class ClaudeCliEngine implements TranslationEngine {
     return cfg.get<boolean>('enabled', false);
   }
 
-  async translate(text: string): Promise<string> {
+  async translate(text: string, sourceLang?: string, targetLang?: string, glossary?: GlossaryEntry[]): Promise<string> {
     const cfg = vscode.workspace.getConfiguration('chunzen.translation.claudeCli');
     const enabled = cfg.get<boolean>('enabled', false);
     const prompt = cfg.get<string>('prompt', '将以下学术英文翻译为中文，只输出译文：');
@@ -26,7 +26,13 @@ export class ClaudeCliEngine implements TranslationEngine {
       throw new Error('Claude CLI 未启用');
     }
 
-    const fullPrompt = `${prompt}\n\n${text}`;
+    let glossaryPrompt = '';
+    if (glossary && glossary.length > 0) {
+      glossaryPrompt = '\n\n在翻译时，请严格遵守以下学术专有名词/术语对照表：\n' +
+        glossary.map(g => `- ${g.source} -> ${g.target}`).join('\n');
+    }
+
+    const fullPrompt = `${prompt}${glossaryPrompt}\n\n${text}`;
 
     try {
       const { stdout } = await execFileAsync('claude', ['-p', fullPrompt], {
