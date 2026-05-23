@@ -5,6 +5,10 @@
 ![Version](https://img.shields.io/badge/version-0.1.0-blue)
 ![VSCode](https://img.shields.io/badge/VSCode-≥1.85.0-blue)
 
+<p align="center">
+  <img src="media/summary.png" alt="春蝉预览" />
+</p>
+
 ## 功能特性
 
 ### 实时翻译
