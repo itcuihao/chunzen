@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { TranslationEngine } from '../../types';
+import { TranslationEngine, GlossaryEntry } from '../../types';
 
 /**
  * DeepL 翻译引擎
@@ -15,7 +15,7 @@ export class DeepLEngine implements TranslationEngine {
     return !!apiKey;
   }
 
-  async translate(text: string): Promise<string> {
+  async translate(text: string, sourceLang?: string, targetLang?: string, glossary?: GlossaryEntry[]): Promise<string> {
     const cfg = vscode.workspace.getConfiguration('chunzen.translation.deepl');
     const apiKey = cfg.get<string>('apiKey', '').trim();
     const freeApi = cfg.get<boolean>('freeApi', true);

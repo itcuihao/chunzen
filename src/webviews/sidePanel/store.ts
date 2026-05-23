@@ -48,13 +48,13 @@ interface PanelState {
   setTranslationError: (err: string) => void;
   currentPageText: {
     pageNumber: number;
-    paragraphs: Array<{ id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' | 'full'; columnIndex?: number; fontSize?: number; height?: number; bold?: boolean; blockType?: string; skipped?: boolean; lineMarker?: 'horizontal-rule'; ruleX1?: number; ruleX2?: number }>;
+    paragraphs: Array<{ id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' | 'full'; columnIndex?: number; fontSize?: number; height?: number; bold?: boolean; blockType?: string; skipped?: boolean; skipReason?: string; lineMarker?: 'horizontal-rule' | 'table-image'; ruleX1?: number; ruleX2?: number; imageDataUrl?: string; imageAlt?: string }>;
     columnsCount: number;
     translations?: Record<string, string>;
   } | null;
   setCurrentPageText: (val: {
     pageNumber: number;
-    paragraphs: Array<{ id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' | 'full'; columnIndex?: number; fontSize?: number; height?: number; bold?: boolean; blockType?: string; skipped?: boolean; lineMarker?: 'horizontal-rule'; ruleX1?: number; ruleX2?: number }>;
+    paragraphs: Array<{ id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' | 'full'; columnIndex?: number; fontSize?: number; height?: number; bold?: boolean; blockType?: string; skipped?: boolean; skipReason?: string; lineMarker?: 'horizontal-rule' | 'table-image'; ruleX1?: number; ruleX2?: number; imageDataUrl?: string; imageAlt?: string }>;
     columnsCount: number;
     translations?: Record<string, string>;
   } | null) => void;
@@ -88,6 +88,8 @@ interface PanelState {
   testResults: Record<string, { success: boolean; message: string } | null>;
   setTestResults: (results: PanelState['testResults']) => void;
   setTestResultForEngine: (engineName: string, success: boolean, message: string) => void;
+  layoutMode: 'translation' | 'bilingual' | 'original';
+  setLayoutMode: (mode: 'translation' | 'bilingual' | 'original') => void;
 }
 
 export const useStore = create<PanelState>((set) => ({
@@ -152,5 +154,7 @@ export const useStore = create<PanelState>((set) => ({
         ...state.testResults,
         [engineName]: { success, message }
       }
-    }))
+    })),
+  layoutMode: 'original',
+  setLayoutMode: (layoutMode) => set({ layoutMode })
 }));

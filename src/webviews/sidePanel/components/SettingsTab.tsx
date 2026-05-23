@@ -315,11 +315,18 @@ const EngineConfigForm: FunctionComponent<EngineConfigFormProps> = ({
 // ── JournalSourceSettings ──
 
 const JournalSourceSettings: FunctionComponent = () => {
-  const journalSource = useStore((state) => state.journalSource) || { type: 'letpub' };
+  const journalSource = useStore((state) => state.journalSource) || { type: 'ablesci' };
   const setJournalSource = useStore((state) => state.setJournalSource);
 
   const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setJournalSource({ type: e.target.value });
+    const val = e.target.value as 'ablesci' | 'letpub' | 'crossref' | 'custom';
+    setJournalSource({ type: val });
+    postMessage({
+      type: 'save-general-settings',
+      settings: {
+        journalSource: { type: val }
+      }
+    });
   };
 
   return (
@@ -331,14 +338,19 @@ const JournalSourceSettings: FunctionComponent = () => {
       <div className="p-3.5">
         <div className="relative">
           <select
-            className="w-full px-3 py-2 text-xs rounded-md border border-border bg-card/25 text-foreground outline-none focus:border-accent/60 focus:ring-1 focus:ring-accent/20 appearance-none cursor-pointer pr-10"
-            value={journalSource?.type || 'letpub'}
+            className="w-full px-3 py-2 text-xs rounded-md border border-border outline-none focus:border-accent/60 focus:ring-1 focus:ring-accent/20 appearance-none cursor-pointer pr-10"
+            style={{
+              backgroundColor: 'var(--bg-section)',
+              color: 'var(--text-primary)',
+              borderColor: 'var(--border)'
+            }}
+            value={journalSource?.type || 'ablesci'}
             onChange={handleChange}
           >
-            <option value="letpub">LetPub 数据源 (免费公开数据)</option>
-            <option value="crossref">CrossRef API 数据源 (基础文献数据)</option>
+            <option value="ablesci" style={{ backgroundColor: 'var(--bg-section)', color: 'var(--text-primary)' }}>科研通数据源 (最新影响因子 & 新锐分区)</option>
+            <option value="letpub" style={{ backgroundColor: 'var(--bg-section)', color: 'var(--text-primary)' }}>LetPub 数据源 (历史影响因子 & 中科院分区)</option>
           </select>
-          <ChevronDown className="absolute right-3 top-2.5 w-4 h-4 text-secondary-foreground/60 pointer-events-none" />
+          <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-secondary-foreground/60 pointer-events-none" />
         </div>
       </div>
     </section>

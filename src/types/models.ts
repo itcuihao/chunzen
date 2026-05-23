@@ -10,7 +10,7 @@ export interface TranslationEngine {
   name: string;
   displayName: string;
   isConfigured(): boolean;
-  translate(text: string, sourceLang?: string, targetLang?: string): Promise<string>;
+  translate(text: string, sourceLang?: string, targetLang?: string, glossary?: GlossaryEntry[]): Promise<string>;
 }
 
 export interface JournalInfo {
@@ -26,12 +26,25 @@ export interface JournalInfo {
   url?: string;
   publisher?: string;
   country?: string;
+  selfCitationRate?: string;
+  submissionUrl?: string;
+  publicationPeriod?: string;
+  reviewSpeed?: string;
+  acceptanceRate?: string;
+  publishYear?: string;
+  firstAuthor?: string;
+  firstAuthorAffiliation?: string;
+  lastAuthor?: string;
+  lastAuthorAffiliation?: string;
+  journalSource?: 'ablesci' | 'letpub';
+  paperSource?: 'crossref' | 'openalex';
 }
 
 export interface GlossaryEntry {
   id: string;
   source: string;
   target: string;
+  category?: string;
 }
 
 export interface TranslationHistoryEntry {

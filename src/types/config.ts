@@ -11,13 +11,14 @@ export interface EngineConfig {
 }
 
 export interface JournalSource {
-  type: 'letpub' | 'crossref' | 'custom';
+  type: 'letpub' | 'ablesci' | 'crossref' | 'custom';
   customUrl?: string;
 }
 
 export interface GeneralSettings {
   cacheMaxSize?: number;
   journalEnabled?: boolean;
+  journalSource?: JournalSource;
   layout?: LayoutConfig;
 }
 

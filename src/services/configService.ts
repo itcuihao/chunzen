@@ -35,7 +35,10 @@ export class ConfigService {
 
   getJournalConfig() {
     const cfg = vscode.workspace.getConfiguration('chunzen.journal');
-    return { enabled: cfg.get<boolean>('enabled', true) };
+    return {
+      enabled: cfg.get<boolean>('enabled', true),
+      source: cfg.get<'ablesci' | 'letpub'>('source', 'ablesci')
+    };
   }
 
   getCacheConfig() {
@@ -121,6 +124,10 @@ export class ConfigService {
 
     if (typeof settings.journalEnabled === 'boolean') {
       await journalCfg.update('enabled', settings.journalEnabled, vscode.ConfigurationTarget.Global);
+    }
+
+    if (settings.journalSource) {
+      await journalCfg.update('source', settings.journalSource.type, vscode.ConfigurationTarget.Global);
     }
 
     if (settings.layout) {

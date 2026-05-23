@@ -25,10 +25,11 @@ export class SidePanelProvider {
 
   private lastPageText: {
     pageNumber: number;
-    paragraphs: Array<{ id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' | 'full'; columnIndex?: number; fontSize?: number; height?: number; bold?: boolean; blockType?: string; skipped?: boolean; lineMarker?: 'horizontal-rule'; ruleX1?: number; ruleX2?: number }>;
+    paragraphs: Array<{ id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' | 'full'; columnIndex?: number; fontSize?: number; height?: number; bold?: boolean; blockType?: string; skipped?: boolean; skipReason?: string; lineMarker?: 'horizontal-rule' | 'table-image'; ruleX1?: number; ruleX2?: number; imageDataUrl?: string; imageAlt?: string }>;
     columnsCount: number;
     translations?: Array<{ id: string; translatedText: string }>;
   } | null = null;
+  private lastJournalInfo: JournalInfo | null = null;
 
   constructor(
     context: vscode.ExtensionContext,
@@ -79,11 +80,11 @@ export class SidePanelProvider {
             this.sendInitState();
             break;
           case 'add-term':
-            this.glossaryService.add(msg.source, msg.target);
+            this.glossaryService.add(msg.source, msg.target, msg.category);
             this.syncGlossary();
             break;
           case 'update-term':
-            this.glossaryService.update(msg.id, msg.source, msg.target);
+            this.glossaryService.update(msg.id, msg.source, msg.target, msg.category);
             this.syncGlossary();
             break;
           case 'delete-term':
@@ -120,7 +121,12 @@ export class SidePanelProvider {
             await this.onLayoutConfigChanged?.(this.configService.getLayoutConfig());
             break;
           case 'import-glossary':
-            vscode.window.showInformationMessage('术语导入功能即将推出');
+            await this.handleImportGlossary(msg.defaultCategory);
+            break;
+          case 'restore-default-glossary':
+            this.glossaryService.restoreDefaults();
+            this.syncGlossary();
+            vscode.window.showInformationMessage('已成功恢复默认学术常用术语库');
             break;
           case 'export-translations':
             await this.handleExport(msg.format);
@@ -166,12 +172,13 @@ export class SidePanelProvider {
   }
 
   updateJournal(info: JournalInfo): void {
+    this.lastJournalInfo = info;
     this.postMessage({ type: 'update-journal', info });
   }
 
   syncPageText(
     pageNumber: number,
-    paragraphs: Array<{ id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' | 'full'; columnIndex?: number; fontSize?: number; height?: number; bold?: boolean; blockType?: string; skipped?: boolean; lineMarker?: 'horizontal-rule'; ruleX1?: number; ruleX2?: number }>,
+    paragraphs: Array<{ id: string; text: string; section?: 'header' | 'left' | 'right' | 'footer' | 'full'; columnIndex?: number; fontSize?: number; height?: number; bold?: boolean; blockType?: string; skipped?: boolean; skipReason?: string; lineMarker?: 'horizontal-rule' | 'table-image'; ruleX1?: number; ruleX2?: number; imageDataUrl?: string; imageAlt?: string }>,
     columnsCount: number,
     translations?: Array<{ id: string; translatedText: string }>
   ): void {
@@ -216,10 +223,16 @@ export class SidePanelProvider {
       engines: this.configService.getEngineStatuses(),
       priority: this.configService.getTranslationConfig().priority,
       engineConfigs: this.configService.getEngineConfigs(),
-      journalSource: { type: 'letpub' },
+      journalSource: { type: this.configService.getJournalConfig().source },
       cacheMaxSize: this.configService.getCacheConfig().maxSize,
       layoutConfig: this.configService.getLayoutConfig()
     });
+    if (this.lastJournalInfo) {
+      this.postMessage({
+        type: 'update-journal',
+        info: this.lastJournalInfo
+      });
+    }
     if (this.lastPageText) {
       this.postMessage({
         type: 'sync-page-text',
@@ -292,6 +305,41 @@ export class SidePanelProvider {
       language: format === 'markdown' ? 'markdown' : 'plaintext'
     });
     await vscode.window.showTextDocument(doc);
+  }
+
+  private async handleImportGlossary(defaultCategory?: string): Promise<void> {
+    let category = defaultCategory;
+    if (!category) {
+      const selected = await vscode.window.showQuickPick(
+        ['计算机与人工智能', '生物医学', '化学', '物理学', '通用学术', '其他'],
+        {
+          placeHolder: '选择导入术语的默认学科分类'
+        }
+      );
+      if (!selected) {
+        return; // Cancelled
+      }
+      category = selected;
+    }
+
+    const uris = await vscode.window.showOpenDialog({
+      canSelectMany: false,
+      openLabel: '选择数据表文件',
+      filters: {
+        '数据表文件 (*.csv, *.txt, *.tsv, *.json)': ['csv', 'txt', 'tsv', 'json']
+      }
+    });
+
+    if (uris && uris.length > 0) {
+      try {
+        const count = await this.glossaryService.importFromFile(uris[0].fsPath, category);
+        this.syncGlossary();
+        vscode.window.showInformationMessage(`成功导入 ${count} 条术语到分类「${category}」！`);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        vscode.window.showErrorMessage(`导入失败: ${msg}`);
+      }
+    }
   }
 
   private async ensureLayoutEndpointStarted(): Promise<void> {
