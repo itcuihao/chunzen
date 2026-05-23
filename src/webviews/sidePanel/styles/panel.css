@@ -910,6 +910,25 @@ body {
 }
 
 /* ── Sentence Highlight in translation/bilingual panel ── */
+.translation-tab-paragraph {
+  position: relative;
+  border-radius: 4px;
+  transition: background-color 0.15s ease;
+  padding: 1px 4px;
+  margin: 0 -4px;
+  border-left: 2px solid transparent;
+}
+
+.translation-tab-paragraph:hover {
+  background-color: color-mix(in srgb, var(--vscode-list-hoverBackground, rgba(255, 255, 255, 0.05)) 75%, transparent);
+}
+
+.translation-tab-paragraph.active {
+  background-color: color-mix(in srgb, var(--vscode-button-background, #4f8ef7) 18%, transparent) !important;
+  border-left-color: var(--vscode-button-background, #4f8ef7);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--vscode-button-background, #4f8ef7) 35%, transparent);
+}
+
 .translation-tab-sentence {
   transition: background-color 0.15s ease, border-bottom-color 0.15s ease;
   border-bottom: 1.5px solid transparent;

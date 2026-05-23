@@ -40,6 +40,7 @@ let currentRichContent: RichTextContent | null = null;
 const pageTranslationsCache = new Map<number, Record<string, string>>();
 const repeatCandidateSignaturesByPage = new Map<number, Set<string>>();
 const repeatSignaturePages = new Map<string, Set<number>>();
+let paragraphHoverOverlay: HTMLDivElement | null = null;
 
 // DOM refs
 const container = document.getElementById('pdf-container')!;
@@ -104,12 +105,16 @@ async function renderCurrentPage() {
   currentRichContent = items;
   const modelHints = await getLayoutHints(items, viewport);
   const { paragraphs: newParagraphs, columnsCount } = buildTextLayer(textLayer, items, viewport, {
-    layoutHints: modelHints || undefined
+    layoutHints: modelHints || undefined,
+    pageNumber: currentPage
   });
+  ensureParagraphHoverOverlay();
   applyRepeatedNoiseSkips(currentPage, newParagraphs, viewport.width, viewport.height);
   injectTableImageFallback(newParagraphs, viewport);
 
   currentParagraphs = newParagraphs;
+  activeHoverParagraphId = null;
+  hideParagraphHoverOverlay();
 
   // Retrieve cached translations for current page if available
   const cacheObj = pageTranslationsCache.get(currentPage);
@@ -550,40 +555,63 @@ function hideLoading() {
   setTimeout(() => { loadingOverlay.style.display = 'none'; }, 400);
 }
 
-// Highlight PDF sentences
-function highlightPdfSentence(sid: string) {
+let activeHoverParagraphId: string | null = null;
+
+function ensureParagraphHoverOverlay() {
+  paragraphHoverOverlay = document.createElement('div');
+  paragraphHoverOverlay.className = 'paragraph-hover-overlay';
+  textLayer.appendChild(paragraphHoverOverlay);
+}
+
+function hideParagraphHoverOverlay() {
+  if (!paragraphHoverOverlay) return;
+  paragraphHoverOverlay.style.display = 'none';
+}
+
+// Highlight PDF paragraph
+function highlightPdfParagraph(paragraphId: string) {
   clearPdfHighlight();
-  const spans = document.querySelectorAll(`span[data-sentence-id="${sid}"]`);
+  const spans = textLayer.querySelectorAll(`span[data-paragraph-id="${paragraphId}"]`);
   spans.forEach(span => {
     (span as HTMLElement).classList.add('sentence-active');
   });
+  const para = currentParagraphs.find(p => p.id === paragraphId);
+  if (para && paragraphHoverOverlay) {
+    paragraphHoverOverlay.style.left = `${para.x}px`;
+    paragraphHoverOverlay.style.top = `${para.y}px`;
+    paragraphHoverOverlay.style.width = `${Math.max(2, para.width)}px`;
+    paragraphHoverOverlay.style.height = `${Math.max(2, para.height)}px`;
+    paragraphHoverOverlay.style.display = 'block';
+  }
+  activeHoverParagraphId = paragraphId;
 }
 
 function clearPdfHighlight() {
-  const spans = document.querySelectorAll('.sentence-active');
+  const spans = textLayer.querySelectorAll('.sentence-active');
   spans.forEach(span => {
     (span as HTMLElement).classList.remove('sentence-active');
   });
+  hideParagraphHoverOverlay();
+  activeHoverParagraphId = null;
 }
 
-// Hover event listeners on textLayer
+// Hover event listeners on textLayer (paragraph-level sync)
 textLayer.addEventListener('mouseover', (e) => {
   const target = e.target as HTMLElement;
-  if (target && target.tagName === 'SPAN' && target.dataset.sentenceId) {
-    const sid = target.dataset.sentenceId;
-    console.log('[PDF Viewer] mouseover sentence id:', sid);
-    highlightPdfSentence(sid);
-    vscode.postMessage({ type: 'pdf-hover', id: sid });
-  }
+  if (!target || target.tagName !== 'SPAN') return;
+  const paragraphId = target.dataset.paragraphId;
+  if (!paragraphId || paragraphId === activeHoverParagraphId) return;
+
+  console.log('[PDF Viewer] mouseover paragraph id:', paragraphId);
+  highlightPdfParagraph(paragraphId);
+  vscode.postMessage({ type: 'pdf-hover', id: paragraphId });
 });
 
-textLayer.addEventListener('mouseout', (e) => {
-  const target = e.target as HTMLElement;
-  if (target && target.tagName === 'SPAN' && target.dataset.sentenceId) {
-    console.log('[PDF Viewer] mouseout sentence id:', target.dataset.sentenceId);
-    clearPdfHighlight();
-    vscode.postMessage({ type: 'pdf-hover' });
-  }
+textLayer.addEventListener('mouseleave', () => {
+  if (!activeHoverParagraphId) return;
+  console.log('[PDF Viewer] mouseleave text layer, clear paragraph hover:', activeHoverParagraphId);
+  clearPdfHighlight();
+  vscode.postMessage({ type: 'pdf-hover' });
 });
 
 // Toolbar
@@ -1080,8 +1108,8 @@ window.addEventListener('message', event => {
     case 'sync-panel-hover': {
       console.log('[PDF Viewer] received sync-panel-hover with id:', message.id);
       if (message.id) {
-        highlightPdfSentence(message.id);
-        const firstSpan = textLayer.querySelector(`span[data-sentence-id="${message.id}"]`);
+        highlightPdfParagraph(message.id);
+        const firstSpan = textLayer.querySelector(`span[data-paragraph-id="${message.id}"]`);
         if (firstSpan) {
           firstSpan.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }

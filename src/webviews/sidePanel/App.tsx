@@ -117,12 +117,13 @@ export const App: FunctionComponent = () => {
           columnsCount: msg.columnsCount,
           translations: msg.translations ? transRecord : undefined
         });
+        useStore.setState({ activeParagraphId: null });
         setIsTranslating(false);
         break;
       }
       case 'pdf-hover': {
         console.log('[Side Panel Webview] received pdf-hover with id:', msg.id);
-        useStore.setState({ activeSentenceId: msg.id || null });
+        useStore.setState({ activeParagraphId: msg.id || null });
         break;
       }
       case 'sync-page-translation': {
