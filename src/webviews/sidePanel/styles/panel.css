@@ -969,3 +969,102 @@ body {
   border-top: 1px solid var(--vscode-widget-border, rgba(255, 255, 255, 0.06));
   padding-top: 0.5em;
 }
+
+/* ── Explicit Theme Overrides (using higher specificity to override body.vscode-dark/light) ── */
+html body.theme-dark {
+  --bg: #241e15;
+  --bg-section: #32291d;
+  --bg-hover: #453929;
+  --border: #453929;
+  --accent: #f59e0b;
+  --accent-glow: rgba(245, 158, 11, 0.12);
+  --text-primary: #ffffff;
+  --text-secondary: #f4efe6;
+  --text-muted: #c8bfae;
+  --success: #a3e635;
+  --warning: #f59e0b;
+  --error: #f87171;
+  --cached: #a3e635;
+
+  --badge-if-bg: rgba(245, 158, 11, 0.12);
+  --badge-if-border: rgba(245, 158, 11, 0.3);
+  --badge-if-text: #f59e0b;
+  --badge-success-bg: rgba(163, 230, 53, 0.12);
+  --badge-success-border: rgba(163, 230, 53, 0.3);
+  --badge-success-text: #a3e635;
+  --badge-warning-bg: rgba(245, 158, 11, 0.12);
+  --badge-warning-border: rgba(245, 158, 11, 0.3);
+  --badge-warning-text: #f59e0b;
+  --badge-error-bg: rgba(248, 113, 113, 0.12);
+  --badge-error-border: rgba(248, 113, 113, 0.3);
+  --badge-error-text: #f87171;
+  --badge-jcr-bg: rgba(244, 63, 94, 0.12);
+  --badge-jcr-border: rgba(244, 63, 94, 0.3);
+  --badge-jcr-text: #fb7185;
+
+  /* VSCode overrides for tailwind themes */
+  --vscode-sideBar-background: #241e15;
+  --vscode-editor-background: #241e15;
+  --vscode-sideBar-foreground: #ffffff;
+  --vscode-editor-foreground: #ffffff;
+  --vscode-sideBar-border: #453929;
+  --vscode-widget-border: #453929;
+  --vscode-button-background: #f59e0b;
+  --vscode-button-hoverBackground: #d97706;
+  --vscode-button-foreground: #241e15;
+  --vscode-button-secondaryBackground: #32291d;
+  --vscode-button-secondaryForeground: #f4efe6;
+  --vscode-button-secondaryHoverBackground: #453929;
+  --vscode-list-hoverBackground: rgba(245, 158, 11, 0.08);
+  --vscode-scrollbarSlider-background: rgba(245, 158, 11, 0.15);
+  --vscode-scrollbarSlider-hoverBackground: rgba(245, 158, 11, 0.25);
+}
+
+html body.theme-light {
+  --bg: #FAF7F0; /* Spring Cicada warm cream */
+  --bg-section: #f3ede2;
+  --bg-hover: #ebe3d5;
+  --border: #e8dfd0;
+  --accent: #b45309;
+  --accent-glow: rgba(180, 83, 9, 0.08);
+  --text-primary: #2c2724; /* deep espresso */
+  --text-secondary: #5c544f;
+  --text-muted: #8e8278;
+  --success: #166534;
+  --warning: #b45309;
+  --error: #991b1b;
+  --cached: #166534;
+
+  --badge-if-bg: rgba(180, 83, 9, 0.08);
+  --badge-if-border: rgba(180, 83, 9, 0.25);
+  --badge-if-text: #b45309;
+  --badge-success-bg: rgba(22, 101, 52, 0.08);
+  --badge-success-border: rgba(22, 101, 52, 0.25);
+  --badge-success-text: #166534;
+  --badge-warning-bg: rgba(217, 119, 6, 0.08);
+  --badge-warning-border: rgba(217, 119, 6, 0.25);
+  --badge-warning-text: #9a3412;
+  --badge-error-bg: rgba(220, 38, 38, 0.08);
+  --badge-error-border: rgba(220, 38, 38, 0.25);
+  --badge-error-text: #991b1b;
+  --badge-jcr-bg: rgba(109, 40, 217, 0.08);
+  --badge-jcr-border: rgba(109, 40, 217, 0.25);
+  --badge-jcr-text: #6d28d9;
+
+  /* VSCode overrides for tailwind themes */
+  --vscode-sideBar-background: #FAF7F0;
+  --vscode-editor-background: #FAF7F0;
+  --vscode-sideBar-foreground: #5c544f;
+  --vscode-editor-foreground: #2c2724;
+  --vscode-sideBar-border: #e8dfd0;
+  --vscode-widget-border: #e8dfd0;
+  --vscode-button-background: #b45309;
+  --vscode-button-hoverBackground: #92400e;
+  --vscode-button-foreground: #ffffff;
+  --vscode-button-secondaryBackground: #f3ede2;
+  --vscode-button-secondaryForeground: #5c544f;
+  --vscode-button-secondaryHoverBackground: #ebe3d5;
+  --vscode-list-hoverBackground: rgba(180, 83, 9, 0.06);
+  --vscode-scrollbarSlider-background: rgba(180, 83, 9, 0.1);
+  --vscode-scrollbarSlider-hoverBackground: rgba(180, 83, 9, 0.2);
+}

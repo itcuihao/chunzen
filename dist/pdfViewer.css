@@ -366,3 +366,44 @@ html, body {
 .hidden {
   display: none !important;
 }
+
+/* ── Explicit Theme Overrides (using higher specificity to override body.vscode-dark/light) ── */
+html body.theme-dark {
+  --bg: #241e15;
+  --toolbar-bg: #1c1811;
+  --toolbar-border: #453929;
+  --btn-bg: #32291d;
+  --btn-hover: #453929;
+  --btn-active: #5c4d39;
+  --text: #ffffff;
+  --text-muted: #c8bfae;
+  --accent: #f59e0b;
+  --highlight-bg: rgba(245, 158, 11, 0.18);
+  --highlight-border: rgba(245, 158, 11, 0.55);
+  --sentence-hover: rgba(245, 158, 11, 0.08);
+  --scrollbar-thumb: #4c3f2d;
+  --scrollbar-thumb-hover: #5c4d39;
+  --overlay-bg: #32291d;
+  --overlay-text: #ffffff;
+  --loading-overlay-bg: rgba(36, 30, 21, 0.85);
+}
+
+html body.theme-light {
+  --bg: #FAF7F0; /* Spring Cicada warm cream ivory */
+  --toolbar-bg: #f3ede2;
+  --toolbar-border: #e8dfd0;
+  --btn-bg: #FAF7F0;
+  --btn-hover: #ebe3d5;
+  --btn-active: #ddd2bf;
+  --text: #2c2724; /* deep espresso */
+  --text-muted: #8e8278;
+  --accent: #b45309; /* warm amber */
+  --highlight-bg: rgba(180, 83, 9, 0.14);
+  --highlight-border: rgba(180, 83, 9, 0.5);
+  --sentence-hover: rgba(180, 83, 9, 0.08);
+  --scrollbar-thumb: #d7cebf;
+  --scrollbar-thumb-hover: #bcae97;
+  --overlay-bg: #f3ede2;
+  --overlay-text: #2c2724;
+  --loading-overlay-bg: rgba(250, 247, 240, 0.85);
+}

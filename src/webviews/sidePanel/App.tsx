@@ -53,45 +53,15 @@ export const App: FunctionComponent = () => {
 
   useEffect(() => {
     const themeSetting = layoutConfig?.theme || 'auto';
-    let lastSystemTheme = document.body.classList.contains('vscode-light') ? 'vscode-light' : 'vscode-dark';
-    let isApplyingTheme = false;
-
-    const applyTheme = (t: string) => {
-      isApplyingTheme = true;
-      if (t === 'dark') {
-        document.body.classList.remove('vscode-light', 'vscode-high-contrast');
-        document.body.classList.add('vscode-dark');
-      } else if (t === 'light') {
-        document.body.classList.remove('vscode-dark', 'vscode-high-contrast');
-        document.body.classList.add('vscode-light');
-      } else {
-        document.body.classList.remove('vscode-dark', 'vscode-light', 'vscode-high-contrast');
-        document.body.classList.add(lastSystemTheme);
-      }
-      isApplyingTheme = false;
-    };
-
-    const observer = new MutationObserver(() => {
-      if (isApplyingTheme) return;
-      const isLight = document.body.classList.contains('vscode-light');
-      const isDark = document.body.classList.contains('vscode-dark');
-      if (isLight) {
-        lastSystemTheme = 'vscode-light';
-      } else if (isDark) {
-        lastSystemTheme = 'vscode-dark';
-      }
-      const targetTheme = layoutConfig?.theme || 'auto';
-      if (targetTheme !== 'auto') {
-        applyTheme(targetTheme);
-      }
-    });
-
-    observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
-    applyTheme(themeSetting);
-
-    return () => {
-      observer.disconnect();
-    };
+    if (themeSetting === 'dark') {
+      document.body.classList.remove('theme-light');
+      document.body.classList.add('theme-dark');
+    } else if (themeSetting === 'light') {
+      document.body.classList.remove('theme-dark');
+      document.body.classList.add('theme-light');
+    } else {
+      document.body.classList.remove('theme-dark', 'theme-light');
+    }
   }, [layoutConfig?.theme]);
 
   const handleMessage = useCallback((msg: ExtToPanelMessage) => {
