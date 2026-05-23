@@ -35,7 +35,18 @@ npx webpack --mode production --devtool hidden-source-map
 echo "[4/5] Packaging VSIX..."
 node -e "
 const vsce = require('@vscode/vsce');
-vsce.createVSIX({ useYarn: false, allowMissingRepository: true }).then(() => console.log('packaged')).catch(e => { console.error(e.message); process.exit(1); });
+vsce
+  .createVSIX({
+    useYarn: false,
+    allowMissingRepository: true,
+    baseContentUrl: 'https://gitea.awsl.icu/itcuihao/chunzen/src/branch/main',
+    baseImagesUrl: 'https://gitea.awsl.icu/itcuihao/chunzen/raw/branch/main'
+  })
+  .then(() => console.log('packaged'))
+  .catch(e => {
+    console.error(e.message);
+    process.exit(1);
+  });
 "
 
 PACKAGE_FILE=$(ls chunzen-*.vsix 2>/dev/null | head -1)

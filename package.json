@@ -4,6 +4,10 @@
   "description": "春蝉 — 在 VSCode 中沉浸式阅读学术 PDF，支持实时翻译、期刊信息查询（IF、中科院分区）",
   "version": "0.1.0",
   "publisher": "chunzen",
+  "repository": {
+    "type": "git",
+    "url": "https://gitea.awsl.icu/itcuihao/chunzen.git"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -115,22 +119,22 @@
         "chunzen.translation.openai.apiKey": {
           "type": "string",
           "default": "",
-          "description": "OpenAI / Gemini / 兼容接口 API Key"
+          "description": "OpenAI / MiniMax / 兼容接口 API Key"
         },
         "chunzen.translation.openai.baseUrl": {
           "type": "string",
           "default": "https://api.openai.com/v1",
-          "description": "OpenAI 兼容接口 Base URL（可填 Gemini 或其他代理地址）"
+          "description": "OpenAI 兼容接口 Base URL（可填 MiniMax、Gemini 等代理地址）"
         },
         "chunzen.translation.openai.model": {
           "type": "string",
           "default": "gpt-4o-mini",
-          "description": "使用的模型名称"
+          "description": "使用的模型名称（如 gpt-4o-mini、MiniMax-M2.7 等）"
         },
         "chunzen.translation.openai.systemPrompt": {
           "type": "string",
           "default": "你是一个学术论文翻译专家。请将以下英文学术句子翻译成中文，保持专业术语准确，语言简洁流畅。只输出翻译结果，不要解释。",
-          "description": "AI 翻译的系统提示词"
+          "description": "AI 翻译的系统提示词（可自定义）"
         },
         "chunzen.translation.custom.url": {
           "type": "string",
@@ -204,7 +208,7 @@
     "compile": "webpack",
     "watch": "webpack --watch",
     "package": "webpack --mode production --devtool hidden-source-map",
-    "vsix": "npm run package && node ./node_modules/@vscode/vsce/out/main.js package",
+    "vsix": "npm run package && node ./node_modules/@vscode/vsce/out/main.js package --allow-missing-repository --baseContentUrl \"https://gitea.awsl.icu/itcuihao/chunzen/src/branch/main\" --baseImagesUrl \"https://gitea.awsl.icu/itcuihao/chunzen/raw/branch/main\"",
     "deploy": "npm run vsix && code --uninstall-extension chunzen.chunzen; code --install-extension chunzen-0.1.0.vsix && echo '✅ 安装完成，请在VSCode执行 Reload Window'",
     "compile-tests": "tsc -p . --outDir out",
     "lint": "eslint src --ext ts"

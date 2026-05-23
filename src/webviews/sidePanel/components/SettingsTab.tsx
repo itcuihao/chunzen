@@ -1,7 +1,7 @@
 import { FunctionComponent, useEffect, useState } from 'react';
 import { useStore, EngineStatus, EngineConfigFields } from '../store';
 import { postMessage } from '../vscode';
-import { Database, Sparkles, Trash2, Settings, ChevronDown, ChevronUp, Network, Play, CheckCircle2, XCircle, Info, Lock, Eye, EyeOff, Bot } from 'lucide-react';
+import { Database, Sparkles, Trash2, Settings, ChevronDown, ChevronUp, Network, Play, CheckCircle2, XCircle, Info, Lock, Eye, EyeOff, Bot, GripVertical } from 'lucide-react';
 import { BUILD_INFO } from '../../../build-info';
 
 export const SettingsTab: FunctionComponent = () => {
@@ -58,11 +58,43 @@ const engineFields: Record<string, EngineField[]> = {
 const EngineSettings: FunctionComponent = () => {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [overIndex, setOverIndex] = useState<number | null>(null);
 
   const enginePriority = useStore((state) => state.enginePriority) || [];
   const engineStatuses = useStore((state) => state.engineStatuses) || [];
   const engineConfigs = useStore((state) => state.engineConfigs) || {};
   const testResults = useStore((state) => state.testResults) || {};
+  const setEnginePriority = useStore((state) => state.setEnginePriority);
+
+  const handleDragStart = (index: number) => {
+    setDragIndex(index);
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    setOverIndex(index);
+  };
+
+  const handleDrop = (dropIndex: number) => {
+    if (dragIndex === null || dragIndex === dropIndex) {
+      setDragIndex(null);
+      setOverIndex(null);
+      return;
+    }
+    const newPriority = [...enginePriority];
+    const [moved] = newPriority.splice(dragIndex, 1);
+    newPriority.splice(dropIndex, 0, moved);
+    setEnginePriority(newPriority);
+    postMessage({ type: 'set-engine-priority', priority: newPriority });
+    setDragIndex(null);
+    setOverIndex(null);
+  };
+
+  const handleDragEnd = () => {
+    setDragIndex(null);
+    setOverIndex(null);
+  };
 
   const handleTest = (engineName: string) => {
     setTesting(engineName);
@@ -95,19 +127,33 @@ const EngineSettings: FunctionComponent = () => {
             const isExpanded = expanded === name;
             const isTesting = testing === name;
             const testResult = testResults[name];
+            const isDragging = dragIndex === i;
+            const isOver = overIndex === i && dragIndex !== null && dragIndex !== i;
 
             return (
-              <div 
-                key={name} 
+              <div
+                key={name}
+                draggable
+                onDragStart={() => handleDragStart(i)}
+                onDragOver={(e) => handleDragOver(e, i)}
+                onDrop={() => handleDrop(i)}
+                onDragEnd={handleDragEnd}
                 className={`rounded-lg border bg-card/10 overflow-hidden transition-all duration-200 ${
                   isExpanded ? 'border-accent/40 shadow-sm ring-1 ring-accent/10' : 'border-border hover:border-border/80'
-                }`}
+                } ${isDragging ? 'opacity-40 scale-[0.98]' : ''} ${isOver ? 'border-accent/60 ring-1 ring-accent/20' : ''}`}
               >
-                <div 
+                {isOver && overIndex !== null && overIndex < (dragIndex ?? 0) && (
+                  <div className="h-0.5 bg-accent rounded-full mx-2 -mt-0.5 mb-1 animate-pulse" />
+                )}
+                <div
                   className="flex items-center justify-between p-3.5 cursor-pointer select-none hover:bg-secondary/15 transition-colors"
                   onClick={() => setExpanded(isExpanded ? null : name)}
                 >
                   <div className="flex items-center gap-3">
+                    <GripVertical
+                      className="w-3.5 h-3.5 text-secondary-foreground/40 cursor-grab active:cursor-grabbing flex-shrink-0"
+                      onMouseDown={(e) => e.stopPropagation()}
+                    />
                     <span className="text-[10px] font-mono font-bold text-secondary-foreground bg-secondary px-2 py-1 rounded-full border border-border">
                       {i + 1}
                     </span>
@@ -147,6 +193,9 @@ const EngineSettings: FunctionComponent = () => {
                     isTesting={isTesting}
                     testResult={testResult}
                   />
+                )}
+                {isOver && overIndex !== null && overIndex > (dragIndex ?? 0) && (
+                  <div className="h-0.5 bg-accent rounded-full mx-2 -mb-0.5 mt-1 animate-pulse" />
                 )}
               </div>
             );
