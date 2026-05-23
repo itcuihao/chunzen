@@ -8,7 +8,7 @@ echo "🔨 重新编译..."
 npm run compile
 
 echo "📦 打包..."
-npx vsce package --no-dependencies
+npm run vsix
 
 echo "🔄 卸载旧版..."
 code --uninstall-extension chunzen.chunzen 2>/dev/null || true
