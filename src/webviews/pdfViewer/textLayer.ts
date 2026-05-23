@@ -124,6 +124,7 @@ export function buildTextLayer(
   viewport: PdfViewport,
   options?: {
     layoutHints?: LayoutHints;
+    pageNumber?: number;
   }
 ): {
   sentences: Map<string, Sentence>;
@@ -281,7 +282,7 @@ export function buildTextLayer(
     }
   }
   if (firstBodyY === 0) {
-    firstBodyY = inferFirstBodyY(filteredRawLines, viewport.height);
+    firstBodyY = inferFirstBodyY(filteredRawLines, viewport.height, options?.pageNumber);
   }
 
   // 4. Split lines into segments & count splits (Two-pass analysis for hybrid layouts)
@@ -979,6 +980,7 @@ export function buildTextLayer(
           const span = document.createElement('span');
           span.textContent = item.str;
           span.dataset.sentenceId = sid;
+          span.dataset.paragraphId = para.id;
           span.style.left = item.x + 'px';
           span.style.top = item.y + 'px';
           span.style.fontSize = item.height + 'px';
@@ -1320,6 +1322,26 @@ function detectStructuralBlocks(
       i++;
     }
     blocks.push({ type: 'body', segments: bodySegs });
+  }
+
+  // Post-pass: detect reference-only continuation pages
+  // If no reference blocks were found, check if the page is predominantly reference-like.
+  // This handles continuation pages where the "References" heading was on a previous page.
+  if (!blocks.some(b => b.type === 'reference')) {
+    let refStartCount = 0;
+    let totalNonEmpty = 0;
+    for (const seg of segments) {
+      if (!seg.str.trim()) continue;
+      totalNonEmpty++;
+      if (isReferenceStart(seg.str)) refStartCount++;
+    }
+    if (refStartCount >= 3 && totalNonEmpty > 0 && refStartCount / totalNonEmpty > 0.15) {
+      for (const block of blocks) {
+        if (block.type === 'body' || block.type === 'unknown') {
+          block.type = 'reference';
+        }
+      }
+    }
   }
 
   return blocks;
@@ -2358,13 +2380,14 @@ function isRightEdgeWatermarkToken(
   return rightEdge && tinyFont;
 }
 
-function inferFirstBodyY(lines: ColLayoutItem[][], viewportHeight: number): number {
+function inferFirstBodyY(lines: ColLayoutItem[][], viewportHeight: number, pageNumber?: number): number {
   if (lines.length === 0) return viewportHeight * 0.45;
   const candidates: number[] = [];
   // Continuation pages can start body text close to the top margin.
   // Keep this loose enough to avoid skipping early dual-column lines.
   const minY = viewportHeight * 0.07;
   const maxY = viewportHeight * 0.72;
+  const isFirstPage = pageNumber === undefined || pageNumber === 1;
 
   for (const line of lines) {
     if (line.length === 0) continue;
@@ -2375,7 +2398,7 @@ function inferFirstBodyY(lines: ColLayoutItem[][], viewportHeight: number): numb
     if (!text) continue;
 
     const lower = text.toLowerCase();
-    if (isLikelyAuthorList(text)) continue;
+    if (isFirstPage && isLikelyAuthorList(text)) continue;
     if (
       lower.includes('corresponding author') ||
       lower.includes('addresses') ||
@@ -2457,6 +2480,15 @@ function isRunningHeaderFooter(lineStr: string, lineY: number, viewportHeight: n
   const isExtremeBottom = lineY > viewportHeight * 0.95;
   if ((isExtremeTop || isExtremeBottom) && trimmed.length < 40) {
     return true;
+  }
+
+  // 4. Journal running headers in top region (e.g. "circRNAs in cancer Patop and Kadener 127")
+  //    These contain article title + author names + trailing page number
+  if (isTopRegion && /\d{1,5}\s*$/.test(trimmed)) {
+    const withoutTrailingNum = trimmed.replace(/\d{1,5}\s*$/, '').trim();
+    if (withoutTrailingNum.length >= 10 && /[A-Z][a-z]/.test(withoutTrailingNum)) {
+      return true;
+    }
   }
 
   return false;

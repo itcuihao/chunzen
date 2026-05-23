@@ -29,8 +29,8 @@ interface PanelState {
   // UI State
   activeTab: TabId;
   setActiveTab: (tab: TabId) => void;
-  activeSentenceId: string | null;
-  setActiveSentenceId: (id: string | null) => void;
+  activeParagraphId: string | null;
+  setActiveParagraphId: (id: string | null) => void;
 
   // Translation State
   currentTranslation: {
@@ -96,8 +96,8 @@ export const useStore = create<PanelState>((set) => ({
   // UI State initial
   activeTab: 'translation',
   setActiveTab: (activeTab) => set({ activeTab }),
-  activeSentenceId: null,
-  setActiveSentenceId: (activeSentenceId) => set({ activeSentenceId }),
+  activeParagraphId: null,
+  setActiveParagraphId: (activeParagraphId) => set({ activeParagraphId }),
 
   // Translation State initial
   currentTranslation: null,

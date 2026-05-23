@@ -229,6 +229,17 @@ html, body {
   outline: 1px solid var(--highlight-border);
 }
 
+#text-layer .paragraph-hover-overlay {
+  position: absolute;
+  display: none;
+  pointer-events: none;
+  border-radius: 3px;
+  background: rgba(245, 158, 11, 0.2);
+  border: 1px solid rgba(245, 158, 11, 0.55);
+  box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.18);
+  z-index: 2;
+}
+
 /* ── 加载蒙层 ── */
 #loading-overlay {
   position: fixed;

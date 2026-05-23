@@ -201,7 +201,7 @@ export const TranslationTab: FunctionComponent = () => {
   const loading = useStore((state) => state.isTranslating);
   const error = useStore((state) => state.translationError);
   const currentPageText = useStore((state) => state.currentPageText);
-  const activeSentenceId = useStore((state) => state.activeSentenceId);
+  const activeParagraphId = useStore((state) => state.activeParagraphId);
 
   const layoutMode = useStore((state) => state.layoutMode);
   const setLayoutMode = useStore((state) => state.setLayoutMode);
@@ -226,18 +226,18 @@ export const TranslationTab: FunctionComponent = () => {
     }));
   }, [currentPageText?.paragraphs]);
 
-  // Scroll active sentence into view
+  // Scroll active paragraph into view
   useEffect(() => {
-    if (activeSentenceId) {
-      const elements = document.querySelectorAll(`span[data-sentence-id="${activeSentenceId}"]`);
+    if (activeParagraphId) {
+      const elements = document.querySelectorAll(`[data-paragraph-id="${activeParagraphId}"]`);
       if (elements.length > 0) {
-        elements[0].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        (elements[0] as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       }
     }
-  }, [activeSentenceId]);
+  }, [activeParagraphId]);
 
-  const handleSentenceHover = (id: string | null) => {
-    useStore.setState({ activeSentenceId: id });
+  const handleParagraphHover = (id: string | null) => {
+    useStore.setState({ activeParagraphId: id });
     postMessage({
       type: 'panel-hover',
       id: id || undefined
@@ -291,11 +291,7 @@ export const TranslationTab: FunctionComponent = () => {
         <span
           key={sent.id}
           data-sentence-id={sent.id}
-          onMouseEnter={() => handleSentenceHover(sent.id)}
-          onMouseLeave={() => handleSentenceHover(null)}
-          className={`translation-tab-sentence ${
-            activeSentenceId === sent.id ? 'active' : ''
-          }`}
+          className="translation-tab-sentence"
         >
           {sent.text}{' '}
         </span>
@@ -315,11 +311,7 @@ export const TranslationTab: FunctionComponent = () => {
         <span
           key={sent.id || para.id}
           data-sentence-id={sent.id || undefined}
-          onMouseEnter={() => sent.id ? handleSentenceHover(sent.id) : undefined}
-          onMouseLeave={() => sent.id ? handleSentenceHover(null) : undefined}
-          className={`translation-tab-sentence ${
-            sent.id && activeSentenceId === sent.id ? 'active' : ''
-          }`}
+          className="translation-tab-sentence"
         >
           {sent.text}
         </span>
@@ -393,6 +385,18 @@ export const TranslationTab: FunctionComponent = () => {
     );
   };
 
+  const wrapHoverableParagraph = (para: AnnotatedPara, child: JSX.Element) => (
+    <div
+      key={para.id}
+      data-paragraph-id={para.id}
+      onMouseEnter={() => handleParagraphHover(para.id)}
+      onMouseLeave={() => handleParagraphHover(null)}
+      className={`translation-tab-paragraph ${activeParagraphId === para.id ? 'active' : ''}`}
+    >
+      {child}
+    </div>
+  );
+
   const renderOriginalParagraphNode = (para: AnnotatedPara, prevPara?: AnnotatedPara) => {
     if (para.lineMarker === 'horizontal-rule') {
       return <hr key={para.id} className="border-0 border-t border-border/45 my-4" />;
@@ -411,13 +415,9 @@ export const TranslationTab: FunctionComponent = () => {
     }
     const className = paraClass(para, 'en', prevPara);
     if (para.blockType === 'table') {
-      return renderTableRow(para.id, para.text, className);
+      return wrapHoverableParagraph(para, renderTableRow(`${para.id}-en`, para.text, className));
     }
-    return (
-      <p key={para.id} className={className}>
-        {para.text}
-      </p>
-    );
+    return wrapHoverableParagraph(para, <p className={className}>{para.text}</p>);
   };
 
   const renderTranslatedParagraphNode = (para: AnnotatedPara, prevPara?: AnnotatedPara) => {
@@ -439,13 +439,9 @@ export const TranslationTab: FunctionComponent = () => {
     const className = paraClass(para, 'zh', prevPara);
     const translated = currentPageText!.translations?.[para.id] || '';
     if (para.blockType === 'table') {
-      return renderTableRow(para.id, translated || para.text, className);
+      return wrapHoverableParagraph(para, renderTableRow(`${para.id}-zh`, translated || para.text, className));
     }
-    return (
-      <p key={para.id} className={className}>
-        {renderChineseParagraph(para, translated)}
-      </p>
-    );
+    return wrapHoverableParagraph(para, <p className={className}>{renderChineseParagraph(para, translated)}</p>);
   };
 
   const renderBilingualParagraphNode = (para: AnnotatedPara, prevPara?: AnnotatedPara) => {
@@ -465,8 +461,9 @@ export const TranslationTab: FunctionComponent = () => {
       return <div key={para.id} className="opacity-0 pointer-events-none" style={{ height: `${h}px` }} aria-hidden />;
     }
     const translation = currentPageText!.translations?.[para.id];
-    return (
-      <div key={para.id} className="mb-4 pb-3 border-b border-border/20 last:border-0">
+    return wrapHoverableParagraph(
+      para,
+      <div className="mb-4 pb-3 border-b border-border/20 last:border-0">
         {para.blockType === 'table'
           ? renderTableRow(`${para.id}-en`, para.text, `${paraClass(para, 'bi-en', prevPara)} mb-1.5`)
           : (
