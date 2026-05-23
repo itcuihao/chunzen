@@ -144,7 +144,8 @@ export const useStore = create<PanelState>((set) => ({
     useModel: false,
     modelEndpoint: '',
     timeoutMs: 3500,
-    hoverHighlightStyle: 'overlay'
+    hoverHighlightStyle: 'overlay',
+    theme: 'auto'
   },
   setLayoutConfig: (layoutConfig) => set({ layoutConfig }),
   testResults: {},

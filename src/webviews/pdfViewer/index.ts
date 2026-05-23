@@ -17,13 +17,15 @@ type LayoutConfig = {
   modelEndpoint: string;
   timeoutMs: number;
   hoverHighlightStyle: 'overlay' | 'bar';
+  theme: 'auto' | 'dark' | 'light';
 };
 
 const defaultLayoutConfig: LayoutConfig = {
   useModel: false,
   modelEndpoint: '',
   timeoutMs: 3500,
-  hoverHighlightStyle: 'overlay'
+  hoverHighlightStyle: 'overlay',
+  theme: 'auto'
 };
 
 let pdfDoc: PdfDocument | null = null;
@@ -32,6 +34,40 @@ let totalPages = 0;
 let scale = 1.2;
 let renderTask: { cancel(): void } | null = null;
 let layoutConfig: LayoutConfig = { ...defaultLayoutConfig };
+
+let lastSystemTheme = document.body.classList.contains('vscode-light') ? 'vscode-light' : 'vscode-dark';
+let isApplyingTheme = false;
+
+function applyTheme(t: 'auto' | 'dark' | 'light') {
+  isApplyingTheme = true;
+  if (t === 'dark') {
+    document.body.classList.remove('vscode-light', 'vscode-high-contrast');
+    document.body.classList.add('vscode-dark');
+  } else if (t === 'light') {
+    document.body.classList.remove('vscode-dark', 'vscode-high-contrast');
+    document.body.classList.add('vscode-light');
+  } else {
+    document.body.classList.remove('vscode-dark', 'vscode-light', 'vscode-high-contrast');
+    document.body.classList.add(lastSystemTheme);
+  }
+  isApplyingTheme = false;
+}
+
+const themeObserver = new MutationObserver(() => {
+  if (isApplyingTheme) return;
+  const isLight = document.body.classList.contains('vscode-light');
+  const isDark = document.body.classList.contains('vscode-dark');
+  if (isLight) {
+    lastSystemTheme = 'vscode-light';
+  } else if (isDark) {
+    lastSystemTheme = 'vscode-dark';
+  }
+  if (layoutConfig.theme !== 'auto') {
+    applyTheme(layoutConfig.theme);
+  }
+});
+
+themeObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
 
 // Removed hover/selection translation state variables
 
@@ -509,11 +545,13 @@ function normalizeLayoutConfig(input: unknown): LayoutConfig {
   const raw = input as Record<string, unknown>;
   const timeoutRaw = Number(raw.timeoutMs);
   const hoverHighlightStyle = raw.hoverHighlightStyle === 'bar' ? 'bar' : 'overlay';
+  const theme = raw.theme === 'dark' || raw.theme === 'light' ? raw.theme : 'auto';
   return {
     useModel: Boolean(raw.useModel),
     modelEndpoint: typeof raw.modelEndpoint === 'string' ? raw.modelEndpoint.trim() : '',
     timeoutMs: Number.isFinite(timeoutRaw) ? Math.max(500, Math.min(20000, Math.round(timeoutRaw))) : 3500,
-    hoverHighlightStyle
+    hoverHighlightStyle,
+    theme
   };
 }
 
@@ -521,7 +559,8 @@ function isLayoutConfigEqual(a: LayoutConfig, b: LayoutConfig): boolean {
   return a.useModel === b.useModel
     && a.modelEndpoint === b.modelEndpoint
     && a.timeoutMs === b.timeoutMs
-    && a.hoverHighlightStyle === b.hoverHighlightStyle;
+    && a.hoverHighlightStyle === b.hoverHighlightStyle
+    && a.theme === b.theme;
 }
 
 // Removed unused hover text events to avoid single sentence translation
@@ -1106,6 +1145,7 @@ window.addEventListener('message', event => {
       if (message.layoutConfig) {
         layoutConfig = normalizeLayoutConfig(message.layoutConfig);
       }
+      applyTheme(layoutConfig.theme);
       renderCurrentPage();
       break;
     }
@@ -1113,6 +1153,7 @@ window.addEventListener('message', event => {
       const next = normalizeLayoutConfig(message.config);
       const changed = !isLayoutConfigEqual(layoutConfig, next);
       layoutConfig = next;
+      applyTheme(layoutConfig.theme);
       if (changed) {
         renderCurrentPage();
       }
