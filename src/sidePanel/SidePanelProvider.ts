@@ -25,6 +25,8 @@ export class SidePanelProvider {
   public onRefreshPageTextRequested?: () => Promise<void>;
   public onPanelHoverRequested?: (id?: string) => Promise<void>;
   public onLayoutConfigChanged?: (layoutConfig: LayoutConfig) => Promise<void> | void;
+  public onJumpToPageRequested?: (pageNumber: number) => void;
+  public onFindAndJumpToCaptionRequested?: (query: string) => void;
 
   private currentExportConfig: {
     untranslatedPolicy: 'english' | 'translate';
@@ -39,7 +41,7 @@ export class SidePanelProvider {
     translations?: Array<{ id: string; translatedText: string }>;
   } | null = null;
   private lastJournalInfo: JournalInfo | null = null;
-  private lastBibliography?: Array<{ key: string; text: string }>;
+  private lastBibliography?: Array<{ key: string; text: string; pageNumber: number }>;
   private activePdfUri?: string;
 
   constructor(
@@ -226,6 +228,12 @@ export class SidePanelProvider {
             console.log('[Extension] SidePanelProvider received panel-hover from side panel webview with id:', msg.id);
             await this.onPanelHoverRequested?.(msg.id);
             break;
+          case 'jump-to-page':
+            this.onJumpToPageRequested?.(msg.pageNumber);
+            break;
+          case 'find-and-jump-to-caption':
+            this.onFindAndJumpToCaptionRequested?.(msg.query);
+            break;
         }
       },
       undefined,
@@ -300,7 +308,7 @@ export class SidePanelProvider {
     });
   }
 
-  syncBibliography(bibliography: Array<{ key: string; text: string }>): void {
+  syncBibliography(bibliography: Array<{ key: string; text: string; pageNumber: number }>): void {
     this.lastBibliography = bibliography;
     this.postMessage({
       type: 'sync-bibliography',

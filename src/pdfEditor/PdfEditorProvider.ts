@@ -343,6 +343,26 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
     });
   }
 
+  public jumpToActivePage(pageNumber: number): void {
+    const panel = this.resolveActivePanel();
+    if (panel) {
+      panel.webview.postMessage({
+        type: 'jump-to-page',
+        pageNumber
+      });
+    }
+  }
+
+  public findAndJumpToCaption(query: string): void {
+    const panel = this.resolveActivePanel();
+    if (panel) {
+      panel.webview.postMessage({
+        type: 'find-and-jump-to-caption',
+        query
+      });
+    }
+  }
+
   public async captureActiveFigureScreenshot(): Promise<void> {
     const panel = this.resolveActivePanel();
     if (!panel) {

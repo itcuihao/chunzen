@@ -50,6 +50,12 @@ export function activate(context: vscode.ExtensionContext) {
     pdfProvider.syncLayoutConfigToAllViewers();
     await pdfProvider.refreshActivePageText();
   };
+  sidePanel.onJumpToPageRequested = (pageNumber) => {
+    pdfProvider.jumpToActivePage(pageNumber);
+  };
+  sidePanel.onFindAndJumpToCaptionRequested = (query) => {
+    pdfProvider.findAndJumpToCaption(query);
+  };
 
   context.subscriptions.push(
     vscode.window.registerCustomEditorProvider(

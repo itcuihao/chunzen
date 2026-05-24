@@ -1201,6 +1201,68 @@ window.addEventListener('message', event => {
       extractBibliography().catch(err => console.error('[PDF Viewer] Manual bibliography extraction error:', err));
       break;
     }
+    case 'jump-to-page': {
+      if (message.pageNumber) {
+        goToPage(message.pageNumber);
+      }
+      break;
+    }
+    case 'find-and-jump-to-caption': {
+      (async () => {
+        if (!pdfDoc || totalPages === 0 || !message.query) return;
+        let query = String(message.query).trim().toLowerCase();
+        // Normalize Chinese labels
+        query = query.replace(/^(图|插图)\s*(\d+)/i, 'fig $2');
+        query = query.replace(/^(表|表格)\s*(\d+)/i, 'table $2');
+
+        const numMatch = query.match(/\d+[a-z]?/i);
+        if (!numMatch) return;
+        const num = numMatch[0];
+        const hasLetter = /[a-z]/i.test(num);
+        const suffixPattern = hasLetter ? '\\b' : '(?!\\d)';
+        
+        let regex: RegExp;
+        if (query.startsWith('fig')) {
+          regex = new RegExp(`^\\s*(?:\\d+(?:\\.\\d+)*\\s+)?(?:fig|figure)\\b\\.?\\s*${num}${suffixPattern}`, 'i');
+        } else if (query.startsWith('table')) {
+          regex = new RegExp(`^\\s*(?:\\d+(?:\\.\\d+)*\\s+)?table\\b\\s*${num}${suffixPattern}`, 'i');
+        } else {
+          regex = new RegExp(`(?:fig|figure|table)\\b\\.?\\s*${num}${suffixPattern}`, 'i');
+        }
+
+        console.log(`[PDF Viewer] Searching for caption query: "${message.query}" -> regex: ${regex}`);
+
+        for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+          let items = pageRichContentCache.get(pageNum);
+          if (!items) {
+            try {
+              const page = await pdfDoc.getPage(pageNum);
+              items = await getPageText(page);
+              pageRichContentCache.set(pageNum, items);
+            } catch {
+              continue;
+            }
+          }
+
+          const dummyDiv = document.createElement('div');
+          const pageViewport = await pdfDoc.getPage(pageNum).then(p => p.getViewport({ scale: 1.0 }));
+          const { paragraphs } = buildTextLayer(dummyDiv, items, pageViewport, {
+            pageNumber: pageNum
+          });
+
+          for (const p of paragraphs) {
+            // DO NOT check p.skipped here, because captions can sometimes be marked as skipped for translation,
+            // but we still want to search and jump to them.
+            if (regex.test(p.text.trim())) {
+              console.log(`[PDF Viewer] Caption matched on page ${pageNum}: "${p.text}"`);
+              goToPage(pageNum);
+              return;
+            }
+          }
+        }
+      })();
+      break;
+    }
   }
 });
 
@@ -1355,8 +1417,8 @@ async function extractBibliography() {
     }
   }
 
-  const bibEntries: Array<{ key: string; text: string }> = [];
-  let activeEntry: { key: string; text: string } | null = null;
+  const bibEntries: Array<{ key: string; text: string; pageNumber: number }> = [];
+  let activeEntry: { key: string; text: string; pageNumber: number } | null = null;
   let foundReferencesHeading = false;
 
   const actualStartPage = refStartPage !== -1 ? refStartPage : Math.max(1, totalPages - 4);
@@ -1392,18 +1454,65 @@ async function extractBibliography() {
         continue;
       }
 
-      // Match citation start: e.g. [17], 17., 17 (naked number followed by space/word)
+      // Match citation start (numbered format): e.g. [17], 17., 17 (naked number followed by space/word)
       const numMatch = text.match(/^\s*\[(\d{1,4})\]\s*(.*)/) || 
                        text.match(/^\s*(\d{1,4})\.\s*(.*)/) ||
                        text.match(/^\s*(\d{1,4})\s+(.*)/);
 
       if (numMatch) {
         const key = numMatch[1];
-        activeEntry = { key, text };
+        activeEntry = { key, text, pageNumber: pageNum };
         bibEntries.push(activeEntry);
         foundReferencesHeading = true; // Auto-activate continuation on first citation start
-      } else if (activeEntry && (foundReferencesHeading || refStartPage !== -1)) {
-        activeEntry.text += ' ' + text;
+      } else {
+        // Match citation start (author-date Harvard format):
+        // Split by the start of each bibliography entry if it is merged.
+        // Even if not merged, it will find matches.
+        const refStartRegex = /\b([A-Z][a-zA-Z\u00C0-\u017F\-]+),\s+([A-Z]\.(?:\s*[A-Z]\.)*)/g;
+        const matches: Array<{ index: number; author: string; initials: string }> = [];
+        let match;
+        while ((match = refStartRegex.exec(text)) !== null) {
+          const matchIndex = match.index;
+          const prefix = text.substring(0, matchIndex).trim();
+          
+          // Co-author check: prefix ends with initials or "and"
+          const isCoAuthor = /[A-Z]\.?\s*$/i.test(prefix) || 
+                             /[A-Z]\.[A-Z]\.?\s*$/i.test(prefix) || 
+                             /\band\s*$/i.test(prefix);
+          
+          if (!isCoAuthor) {
+            matches.push({
+              index: matchIndex,
+              author: match[1],
+              initials: match[2]
+            });
+          }
+        }
+
+        if (matches.length > 0) {
+          foundReferencesHeading = true;
+          // Split the paragraph text by the entry starts
+          for (let i = 0; i < matches.length; i++) {
+            const currentMatch = matches[i];
+            const nextMatch = matches[i + 1];
+            const startIdx = currentMatch.index;
+            const endIdx = nextMatch ? nextMatch.index : text.length;
+            
+            const entryText = text.substring(startIdx, endIdx).trim();
+            const yearMatch = entryText.match(/\b(18\d{2}|19\d{2}|20\d{2})([a-z])?\b/i);
+            
+            if (yearMatch) {
+              const author = currentMatch.author.toLowerCase();
+              const year = (yearMatch[1] + (yearMatch[2] || '')).toLowerCase();
+              const key = `${author}-${year}`;
+              activeEntry = { key, text: entryText, pageNumber: pageNum };
+              bibEntries.push(activeEntry);
+            }
+          }
+        } else if (activeEntry && (foundReferencesHeading || refStartPage !== -1)) {
+          // If no new reference start matches in this paragraph, append to the active entry
+          activeEntry.text += ' ' + text;
+        }
       }
     }
   }

@@ -99,8 +99,8 @@ interface PanelState {
     pageNumber?: number;
   } | null;
   setExportProgress: (val: PanelState['exportProgress']) => void;
-  bibliography: Record<string, string>;
-  setBibliography: (bibliography: Record<string, string>) => void;
+  bibliography: Record<string, { text: string; pageNumber: number }>;
+  setBibliography: (bibliography: Record<string, { text: string; pageNumber: number }>) => void;
   activePdfUri: string | null;
   setActivePdfUri: (uri: string | null) => void;
   highlights: SelectionHighlight[];
