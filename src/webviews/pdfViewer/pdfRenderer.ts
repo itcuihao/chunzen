@@ -11,6 +11,9 @@ interface PdfDocument {
   numPages: number;
   getMetadata(): Promise<{ info?: { Title?: string } }>;
   getPage(num: number): Promise<PdfPage>;
+  getOutline(): Promise<any[] | null>;
+  getDestination(dest: string): Promise<any[] | null>;
+  getPageIndex(ref: any): Promise<number>;
 }
 
 interface PdfPage {

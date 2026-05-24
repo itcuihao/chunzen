@@ -399,6 +399,10 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
 <body>
   <div id="toolbar">
     <div class="toolbar-left">
+      <button id="btn-outline" title="显示/隐藏目录">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-menu"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>
+      </button>
+      <div style="width: 1px; height: 16px; background: var(--toolbar-border); margin: 0 6px;"></div>
       <button id="btn-prev" title="上一页">‹</button>
       <span id="page-info">
         <input id="page-input" type="number" min="1" value="1">
@@ -420,10 +424,16 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
     </div>
   </div>
 
-  <div id="pdf-container">
-    <canvas id="pdf-canvas"></canvas>
-    <div id="text-layer"></div>
-    <div id="sentence-highlight"></div>
+  <div id="main-layout">
+    <div id="outline-sidebar" class="hidden">
+      <div class="outline-header">目录导航</div>
+      <div id="outline-tree"></div>
+    </div>
+    <div id="pdf-container">
+      <canvas id="pdf-canvas"></canvas>
+      <div id="text-layer"></div>
+      <div id="sentence-highlight"></div>
+    </div>
   </div>
 
   <div id="loading-overlay">
