@@ -98,7 +98,7 @@ export interface PdfPagesTextResultMessage {
 
 export interface PdfBibliographyExtractedMessage {
   type: 'pdf-bibliography-extracted';
-  bibliography: Array<{ key: string; text: string }>;
+  bibliography: Array<{ key: string; text: string; pageNumber: number }>;
 }
 
 export type PdfViewerToExtMessage =
@@ -213,7 +213,7 @@ export interface ExportProgressMessage {
 
 export interface SyncBibliographyMessage {
   type: 'sync-bibliography';
-  bibliography: Array<{ key: string; text: string }>;
+  bibliography: Array<{ key: string; text: string; pageNumber: number }>;
 }
 
 export interface AddHighlightMessage {
@@ -381,4 +381,6 @@ export type PanelToExtMessage =
   | { type: 'clear-cache' }
   | { type: 'clear-history' }
   | { type: 'request-state' }
-  | { type: 'refresh-page-text' };
+  | { type: 'refresh-page-text' }
+  | { type: 'jump-to-page'; pageNumber: number }
+  | { type: 'find-and-jump-to-caption'; query: string };

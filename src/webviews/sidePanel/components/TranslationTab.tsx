@@ -7,10 +7,195 @@ import {
 import { postMessage } from '../vscode';
 import { SelectionHighlight } from '../../../types/models';
 
+function renderTextSegmentWithJumps(
+  text: string,
+  bibliography: Record<string, { text: string; pageNumber: number }>
+): ReactNode {
+  if (!text) return '';
+
+  const jumpRegex = /\[(\d+(?:\s*[-–,]\s*\d+)*)\]|\[((?:Figure|Fig\.|Table|图|表)\s*\d+[a-zA-Z]?)\]|\b((?:Figure|Fig\.|Table)\s*\d+[a-zA-Z]?)\b|((?:图|表)\s*\d+)|\b([A-Z][a-zA-Z\u00C0-\u017F\-]+)(?:\s+et\s+al\.|\s+等|\s+and\s+[A-Z][a-zA-Z\u00C0-\u017F\-]+)?\s*\((18\d{2}|19\d{2}|20\d{2})([a-z])?\)|(\(((?:[A-Z][a-zA-Z\u00C0-\u017F\-]+(?:\s+et\s+al\.|\s+等|\s+and\s+[A-Z][a-zA-Z\u00C0-\u017F\-]+)?(?:,\s*|，\s*)\d{4}[a-z]?(?:\s*[;；]\s*)?)+)\))/gi;
+  const parts: ReactNode[] = [];
+  let lastIndex = 0;
+  let match;
+
+  while ((match = jumpRegex.exec(text)) !== null) {
+    const matchIndex = match.index;
+    if (matchIndex > lastIndex) {
+      parts.push(text.substring(lastIndex, matchIndex));
+    }
+
+    if (match[1]) {
+      const citationKeysStr = match[1];
+      const keys: string[] = [];
+      const subParts = citationKeysStr.split(',');
+      for (const subPart of subParts) {
+        const trimmed = subPart.trim();
+        if (trimmed.includes('-') || trimmed.includes('–')) {
+          const hyphen = trimmed.includes('-') ? '-' : '–';
+          const [startStr, endStr] = trimmed.split(hyphen);
+          const start = parseInt(startStr.trim(), 10);
+          const end = parseInt(endStr.trim(), 10);
+          if (!isNaN(start) && !isNaN(end)) {
+            const low = Math.min(start, end);
+            const high = Math.max(start, end);
+            for (let i = low; i <= high; i++) {
+              keys.push(String(i));
+            }
+          }
+        } else {
+          const key = parseInt(trimmed, 10);
+          if (!isNaN(key)) {
+            keys.push(String(key));
+          }
+        }
+      }
+
+      parts.push(
+        <span key={`citation-${matchIndex}`} className="select-none text-zinc-500 dark:text-zinc-400 font-sans">
+          [
+          {keys.map((key, idx) => {
+            const hasRef = bibliography[key];
+            const className = hasRef 
+              ? "text-blue-600 dark:text-blue-400 hover:underline cursor-pointer font-mono font-bold px-0.5"
+              : "text-zinc-600 dark:text-zinc-400 font-mono px-0.5";
+            return (
+              <span key={idx}>
+                {idx > 0 && ','}
+                <span 
+                  className={className}
+                  onClick={(e) => {
+                    if (hasRef) {
+                      e.stopPropagation();
+                      postMessage({
+                        type: 'jump-to-page',
+                        pageNumber: bibliography[key].pageNumber
+                      });
+                    }
+                  }}
+                  title={hasRef ? `跳转到文献 [${key}]` : undefined}
+                >
+                  {key}
+                </span>
+              </span>
+            );
+          })}
+          ]
+        </span>
+      );
+    } else if (match[2] || match[3] || match[4]) {
+      const figQuery = (match[2] || match[3] || match[4]).trim();
+      const linkText = match[0];
+      parts.push(
+        <span 
+          key={`fig-${matchIndex}`}
+          className="text-blue-600 dark:text-blue-400 hover:underline cursor-pointer font-sans font-bold px-0.5 select-all"
+          onClick={(e) => {
+            e.stopPropagation();
+            postMessage({
+              type: 'find-and-jump-to-caption',
+              query: figQuery
+            });
+          }}
+          title={`跳转到 ${figQuery}`}
+        >
+          {linkText}
+        </span>
+      );
+    } else if (match[5]) {
+      // Narrative author-date (e.g. Wang et al. (2021))
+      const author = match[5].toLowerCase();
+      const year = (match[6] + (match[7] || '')).toLowerCase();
+      const key = `${author}-${year}`;
+      const hasRef = bibliography[key];
+      const linkText = match[0];
+      
+      parts.push(
+        <span 
+          key={`narrative-${matchIndex}`}
+          className={hasRef 
+            ? "text-blue-600 dark:text-blue-400 hover:underline cursor-pointer font-bold px-0.5" 
+            : "text-zinc-600 dark:text-zinc-400 px-0.5"}
+          onClick={(e) => {
+            if (hasRef) {
+              e.stopPropagation();
+              postMessage({
+                type: 'jump-to-page',
+                pageNumber: bibliography[key].pageNumber
+              });
+            }
+          }}
+          title={hasRef ? `跳转到文献 [${key}]` : undefined}
+        >
+          {linkText}
+        </span>
+      );
+    } else if (match[8]) {
+      // Parenthetical author-date block (e.g. (Dobie et al., 2019; Krenkel et al., 2019))
+      const innerText = match[9];
+      const items = innerText.split(/[;；]/);
+      const renderedItems: ReactNode[] = [];
+      
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const itemMatch = item.match(/\b([A-Z][a-zA-Z\u00C0-\u017F\-]+)(?:\s+et\s+al\.|\s+等|\s+and\s+[A-Z][a-zA-Z\u00C0-\u017F\-]+)?(?:,\s*|，\s*)(\d{4})([a-z])?/i);
+        
+        if (i > 0) {
+          renderedItems.push('; ');
+        }
+        
+        if (itemMatch) {
+          const author = itemMatch[1].toLowerCase();
+          const year = (itemMatch[2] + (itemMatch[3] || '')).toLowerCase();
+          const key = `${author}-${year}`;
+          const hasRef = bibliography[key];
+          const itemText = item.trim();
+          
+          renderedItems.push(
+            <span 
+              key={`parenthetical-item-${i}`}
+              className={hasRef 
+                ? "text-blue-600 dark:text-blue-400 hover:underline cursor-pointer font-bold px-0.5" 
+                : "text-zinc-600 dark:text-zinc-400 px-0.5"}
+              onClick={(e) => {
+                if (hasRef) {
+                  e.stopPropagation();
+                  postMessage({
+                    type: 'jump-to-page',
+                    pageNumber: bibliography[key].pageNumber
+                  });
+                }
+              }}
+              title={hasRef ? `跳转到文献 [${key}]` : undefined}
+            >
+              {itemText}
+            </span>
+          );
+        } else {
+          renderedItems.push(item);
+        }
+      }
+      
+      parts.push(
+        <span key={`parenthetical-block-${matchIndex}`}>
+          ({renderedItems})
+        </span>
+      );
+    }
+
+    lastIndex = jumpRegex.lastIndex;
+  }
+
+  if (lastIndex < text.length) {
+    parts.push(text.substring(lastIndex));
+  }
+
+  return parts.length > 0 ? parts : text;
+}
+
 function renderTextWithHighlightsAndCitations(
   text: string,
   paragraphId: string,
-  bibliography: Record<string, string>,
+  bibliography: Record<string, { text: string; pageNumber: number }>,
   highlights: SelectionHighlight[],
   onHighlightClick: (hl: SelectionHighlight, rect: DOMRect) => void
 ): ReactNode {
@@ -18,7 +203,7 @@ function renderTextWithHighlightsAndCitations(
 
   const paraHighlights = highlights.filter(hl => hl.paragraphId === paragraphId && text.includes(hl.text));
   if (paraHighlights.length === 0) {
-    return text;
+    return renderTextSegmentWithJumps(text, bibliography);
   }
 
   const sortedHls = [...paraHighlights].sort((a, b) => b.text.length - a.text.length);
@@ -62,7 +247,12 @@ function renderTextWithHighlightsAndCitations(
         </span>
       );
     } else {
-      resultNodes.push(part);
+      const jumpedNodes = renderTextSegmentWithJumps(part, bibliography);
+      if (Array.isArray(jumpedNodes)) {
+        resultNodes.push(...jumpedNodes);
+      } else {
+        resultNodes.push(jumpedNodes);
+      }
     }
   }
 
@@ -70,7 +260,241 @@ function renderTextWithHighlightsAndCitations(
 }
 
 
-// ── Paragraph role classification ──
+function protectTextWithPlaceholders(text: string): string {
+  if (!text) return '';
+
+  const unionRegex = /\[(\d+(?:\s*[-–,]\s*\d+)*)\]|\[((?:Figure|Fig\.|Table)\s*\d+[a-zA-Z]?)\]|\b((?:Figure|Fig\.|Table)\s*\d+[a-zA-Z]?)\b|\b([A-Z][a-zA-Z\u00C0-\u017F\-]+)(?:\s+et\s+al\.|\s+and\s+[A-Z][a-zA-Z\u00C0-\u017F\-]+)?\s*\((18\d{2}|19\d{2}|20\d{2})([a-z])?\)|(\(((?:[A-Z][a-zA-Z\u00C0-\u017F\-]+(?:\s+et\s+al\.|\s+and\s+[A-Z][a-zA-Z\u00C0-\u017F\-]+)?,\s*\d{4}[a-z]?(?:\s*;\s*|\s*,\s*)?)+)\))/gi;
+
+  let refIndex = 0;
+  let figIndex = 0;
+  let narIndex = 0;
+  let parIndex = 0;
+
+  return text.replace(unionRegex, (match, p1, p2, p3, p4, p5, p6, p7) => {
+    if (p1) return `[[CZNUM_${refIndex++}]]`;
+    if (p2 || p3) return `[[CZFIG_${figIndex++}]]`;
+    if (p4) return `[[CZNAR_${narIndex++}]]`;
+    if (p7) return `[[CZPAR_${parIndex++}]]`;
+    return match;
+  });
+}
+
+function renderTextWithPlaceholders(
+  translated: string,
+  para: AnnotatedPara,
+  bibliography: Record<string, { text: string; pageNumber: number }>,
+  highlights: SelectionHighlight[],
+  onHighlightClick: (hl: SelectionHighlight, rect: DOMRect) => void
+): ReactNode {
+  const nums: Array<{ match: string; key: string }> = [];
+  const figs: Array<{ match: string; query: string }> = [];
+  const nars: Array<{ match: string; author: string; year: string }> = [];
+  const pars: Array<{ match: string; inner: string }> = [];
+
+  const unionRegex = /\[(\d+(?:\s*[-–,]\s*\d+)*)\]|\[((?:Figure|Fig\.|Table)\s*\d+[a-zA-Z]?)\]|\b((?:Figure|Fig\.|Table)\s*\d+[a-zA-Z]?)\b|\b([A-Z][a-zA-Z\u00C0-\u017F\-]+)(?:\s+et\s+al\.|\s+and\s+[A-Z][a-zA-Z\u00C0-\u017F\-]+)?\s*\((18\d{2}|19\d{2}|20\d{2})([a-z])?\)|(\(((?:[A-Z][a-zA-Z\u00C0-\u017F\-]+(?:\s+et\s+al\.|\s+and\s+[A-Z][a-zA-Z\u00C0-\u017F\-]+)?,\s*\d{4}[a-z]?(?:\s*;\s*|\s*,\s*)?)+)\))/gi;
+
+  let match;
+  unionRegex.lastIndex = 0;
+  while ((match = unionRegex.exec(para.text)) !== null) {
+    if (match[1]) {
+      nums.push({ match: match[0], key: match[1] });
+    } else if (match[2] || match[3]) {
+      figs.push({ match: match[0], query: (match[2] || match[3]).trim() });
+    } else if (match[4]) {
+      nars.push({ match: match[0], author: match[4], year: match[5] + (match[6] || '') });
+    } else if (match[7]) {
+      pars.push({ match: match[0], inner: match[8] });
+    }
+  }
+
+  const placeholderSplitRegex = /(\[\[(?:CZNUM|CZFIG|CZNAR|CZPAR)_\d+\]\])/g;
+  const parts = translated.split(placeholderSplitRegex);
+  const resultNodes: ReactNode[] = [];
+
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
+    if (!part) continue;
+
+    const placeholderMatch = part.match(/^\[\[(CZNUM|CZFIG|CZNAR|CZPAR)_(\d+)\]\]$/);
+    if (placeholderMatch) {
+      const type = placeholderMatch[1];
+      const idx = parseInt(placeholderMatch[2], 10);
+
+      if (type === 'CZNUM') {
+        const data = nums[idx];
+        if (data) {
+          const keysStr = data.key;
+          const keys: string[] = [];
+          const subParts = keysStr.split(',');
+          for (const subPart of subParts) {
+            const trimmed = subPart.trim();
+            if (trimmed.includes('-') || trimmed.includes('–')) {
+              const hyphen = trimmed.includes('-') ? '-' : '–';
+              const [startStr, endStr] = trimmed.split(hyphen);
+              const start = parseInt(startStr.trim(), 10);
+              const end = parseInt(endStr.trim(), 10);
+              if (!isNaN(start) && !isNaN(end)) {
+                const low = Math.min(start, end);
+                const high = Math.max(start, end);
+                for (let k = low; k <= high; k++) {
+                  keys.push(String(k));
+                }
+              }
+            } else {
+              const k = parseInt(trimmed, 10);
+              if (!isNaN(k)) {
+                keys.push(String(k));
+              }
+            }
+          }
+
+          resultNodes.push(
+            <span key={`placeholder-num-${i}`} className="select-none text-zinc-500 dark:text-zinc-400 font-sans">
+              [
+              {keys.map((key, keyIdx) => {
+                const hasRef = bibliography[key];
+                const className = hasRef 
+                  ? "text-blue-600 dark:text-blue-400 hover:underline cursor-pointer font-mono font-bold px-0.5"
+                  : "text-zinc-600 dark:text-zinc-400 font-mono px-0.5";
+                return (
+                  <span key={keyIdx}>
+                    {keyIdx > 0 && ','}
+                    <span 
+                      className={className}
+                      onClick={(e) => {
+                        if (hasRef) {
+                          e.stopPropagation();
+                          postMessage({
+                            type: 'jump-to-page',
+                            pageNumber: bibliography[key].pageNumber
+                          });
+                        }
+                      }}
+                      title={hasRef ? `跳转到文献 [${key}]` : undefined}
+                    >
+                      {key}
+                    </span>
+                  </span>
+                );
+              })}
+              ]
+            </span>
+          );
+        } else {
+          resultNodes.push(part);
+        }
+      } else if (type === 'CZFIG') {
+        const data = figs[idx];
+        if (data) {
+          resultNodes.push(
+            <span 
+              key={`placeholder-fig-${i}`}
+              className="text-blue-600 dark:text-blue-400 hover:underline cursor-pointer font-sans font-bold px-0.5 select-all"
+              onClick={(e) => {
+                e.stopPropagation();
+                postMessage({
+                  type: 'find-and-jump-to-caption',
+                  query: data.query
+                });
+              }}
+              title={`跳转到 ${data.query}`}
+            >
+              {data.match}
+            </span>
+          );
+        } else {
+          resultNodes.push(part);
+        }
+      } else if (type === 'CZNAR') {
+        const data = nars[idx];
+        if (data) {
+          const key = `${data.author.toLowerCase()}-${data.year.toLowerCase()}`;
+          const hasRef = bibliography[key];
+          resultNodes.push(
+            <span 
+              key={`placeholder-nar-${i}`}
+              className={hasRef 
+                ? "text-blue-600 dark:text-blue-400 hover:underline cursor-pointer font-bold px-0.5" 
+                : "text-zinc-600 dark:text-zinc-400 px-0.5"}
+              onClick={(e) => {
+                if (hasRef) {
+                  e.stopPropagation();
+                  postMessage({
+                    type: 'jump-to-page',
+                    pageNumber: bibliography[key].pageNumber
+                  });
+                }
+              }}
+              title={hasRef ? `跳转到文献 [${key}]` : undefined}
+            >
+              {data.match}
+            </span>
+          );
+        } else {
+          resultNodes.push(part);
+        }
+      } else if (type === 'CZPAR') {
+        const data = pars[idx];
+        if (data) {
+          const items = data.inner.split(/[;；]/);
+          const renderedItems: ReactNode[] = [];
+          
+          for (let k = 0; k < items.length; k++) {
+            const item = items[k];
+            const itemMatch = item.match(/\b([A-Z][a-zA-Z\u00C0-\u017F\-]+)(?:\s+et\s+al\.|\s+等|\s+and\s+[A-Z][a-zA-Z\u00C0-\u017F\-]+)?(?:,\s*|，\s*)(\d{4})([a-z])?/i);
+            
+            if (k > 0) {
+              renderedItems.push('; ');
+            }
+            
+            if (itemMatch) {
+              const author = itemMatch[1].toLowerCase();
+              const year = (itemMatch[2] + (itemMatch[3] || '')).toLowerCase();
+              const key = `${author}-${year}`;
+              const hasRef = bibliography[key];
+              const itemText = item.trim();
+              
+              renderedItems.push(
+                <span 
+                  key={`parenthetical-item-${k}`}
+                  className={hasRef 
+                    ? "text-blue-600 dark:text-blue-400 hover:underline cursor-pointer font-bold px-0.5" 
+                    : "text-zinc-600 dark:text-zinc-400 px-0.5"}
+                  onClick={(e) => {
+                    if (hasRef) {
+                      e.stopPropagation();
+                      postMessage({
+                        type: 'jump-to-page',
+                        pageNumber: bibliography[key].pageNumber
+                      });
+                    }
+                  }}
+                  title={hasRef ? `跳转到文献 [${key}]` : undefined}
+                >
+                  {itemText}
+                </span>
+              );
+            } else {
+              renderedItems.push(item);
+            }
+          }
+          
+          resultNodes.push(
+            <span key={`placeholder-par-${i}`}>
+              ({renderedItems})
+            </span>
+          );
+        } else {
+          resultNodes.push(part);
+        }
+      }
+    } else {
+      resultNodes.push(part);
+    }
+  }
+
+  return resultNodes;
+}
 
 type ParagraphRole = 'title' | 'heading' | 'body' | 'small';
 
@@ -289,7 +713,6 @@ export const TranslationTab: FunctionComponent = () => {
   const [activeHighlightAction, setActiveHighlightAction] = useState<{ highlight: SelectionHighlight; rect: { x: number; y: number; width: number; height: number } } | null>(null);
   const [noteEditingHlId, setNoteEditingHlId] = useState<string | null>(null);
   const [noteText, setNoteText] = useState('');
-  const [selectionBibKey, setSelectionBibKey] = useState<string | null>(null);
 
   // Sync AI explanation result from global store
   useEffect(() => {
@@ -576,13 +999,6 @@ export const TranslationTab: FunctionComponent = () => {
   const [selectedText, setSelectedText] = useState('');
   const [selectedParaId, setSelectedParaId] = useState<string | null>(null);
 
-  const extractedBibKeys = useMemo(() => {
-    if (!selectedText.trim()) return [];
-    const matches = selectedText.match(/\d+/g);
-    if (!matches) return [];
-    return matches.filter(key => bibliography[key]);
-  }, [selectedText, bibliography]);
-
   const handleAddFromBubble = () => {
     if (!selectedText || !selectedParaId) return;
     const isChinese = /[\u4e00-\u9fa5]/.test(selectedText);
@@ -599,7 +1015,7 @@ export const TranslationTab: FunctionComponent = () => {
   };
 
   useEffect(() => {
-    const handleSelectionChange = () => {
+    const checkSelection = () => {
       const sel = window.getSelection();
       if (!sel || sel.isCollapsed || !sel.toString().trim()) {
         setBubbleCoords(null);
@@ -654,9 +1070,11 @@ export const TranslationTab: FunctionComponent = () => {
       }
     };
 
-    document.addEventListener('selectionchange', handleSelectionChange);
+    document.addEventListener('mouseup', checkSelection);
+    document.addEventListener('keyup', checkSelection);
     return () => {
-      document.removeEventListener('selectionchange', handleSelectionChange);
+      document.removeEventListener('mouseup', checkSelection);
+      document.removeEventListener('keyup', checkSelection);
     };
   }, [annotatedParagraphs]);
 
@@ -739,6 +1157,13 @@ export const TranslationTab: FunctionComponent = () => {
     translation: string
   ) => {
     if (!translation) return '';
+
+    // If translation has CZ placeholders, use renderTextWithPlaceholders
+    const hasPlaceholders = /\[\[CZ(NUM|FIG|CZNAR|CZPAR)_\d+\]\]/.test(translation);
+    if (hasPlaceholders) {
+      return renderTextWithPlaceholders(translation, para, bibliography, highlights, handleHighlightClick);
+    }
+
     const aligned = alignSentences(para.sentences, translation);
     if (aligned.length > 0) {
       return aligned.map((sent) => (
@@ -759,7 +1184,11 @@ export const TranslationTab: FunctionComponent = () => {
     useStore.setState({ isTranslating: true });
     const translatableParagraphs = currentPageText.paragraphs
       .filter(para => !para.skipped && para.lineMarker !== 'horizontal-rule' && !!para.text.trim())
-      .map(para => ({ id: para.id, text: para.text }));
+      .map(para => {
+        // Protect citations with placeholders before sending to translation
+        const protectedText = protectTextWithPlaceholders(para.text);
+        return { id: para.id, text: protectedText };
+      });
     postMessage({
       type: 'translate-page',
       pageNumber: currentPageText.pageNumber,
@@ -825,8 +1254,14 @@ export const TranslationTab: FunctionComponent = () => {
       <div
         key={para.id}
         data-paragraph-id={para.id}
-        onMouseEnter={() => handleParagraphHover(para.id)}
-        onMouseLeave={() => handleParagraphHover(null)}
+        onMouseEnter={(e) => {
+          if (e.buttons === 1) return; // Do not hover while selecting/dragging
+          handleParagraphHover(para.id);
+        }}
+        onMouseLeave={(e) => {
+          if (e.buttons === 1) return; // Do not hover while selecting/dragging
+          handleParagraphHover(null);
+        }}
         className={`translation-tab-paragraph relative ${activeParagraphId === para.id ? 'active' : ''}`}
       >
         {child}
@@ -1203,6 +1638,7 @@ export const TranslationTab: FunctionComponent = () => {
               left: `${bubbleCoords.x}px`,
               top: `${bubbleCoords.y}px`
             }}
+            onMouseUp={(e) => e.stopPropagation()}
           >
             {/* Action 1: Highlight */}
             <button
@@ -1242,21 +1678,6 @@ export const TranslationTab: FunctionComponent = () => {
               <Sparkles className="w-3.5 h-3.5" />
               <span>AI解释</span>
             </button>
-
-            {/* Action 4: Reference Preview */}
-            {extractedBibKeys.length > 0 && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setSelectionBibKey(extractedBibKeys[0]);
-                }}
-                title="文献引用详情"
-                className="px-3 py-1 flex items-center gap-1 text-zinc-300 hover:text-primary active:scale-95 transition-all duration-150 cursor-pointer border-0 bg-transparent font-sans"
-              >
-                <BookOpen className="w-3.5 h-3.5" />
-                <span>文献</span>
-              </button>
-            )}
 
             {/* Action 5: Save Glossary */}
             <button
@@ -1342,34 +1763,7 @@ export const TranslationTab: FunctionComponent = () => {
           </div>
         )}
 
-        {/* Selection Bibliography Preview Card */}
-        {selectionBibKey && bubbleCoords && (
-          <div
-            className="absolute z-[1020] w-64 p-3 border border-border/80 rounded-lg shadow-xl text-left select-text animate-in fade-in duration-100 font-sans"
-            style={{
-              left: `${bubbleCoords.x}px`,
-              top: `${bubbleCoords.y - 12}px`,
-              transform: 'translate(-50%, -100%)',
-              backgroundColor: 'var(--vscode-editor-background, #fbf7f0)',
-              boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.15)'
-            }}
-          >
-            <div className="flex items-start justify-between gap-2 border-b border-border/40 pb-1.5 mb-1.5">
-              <span className="text-[9px] font-bold text-primary font-mono flex items-center gap-1">
-                <BookOpen className="w-3 h-3 text-primary" /> 文献 [{selectionBibKey}]
-              </span>
-              <button 
-                onClick={() => setSelectionBibKey(null)}
-                className="text-zinc-400 hover:text-zinc-600 bg-transparent border-0 cursor-pointer p-0.5"
-              >
-                <X className="w-2.5 h-2.5" />
-              </button>
-            </div>
-            <p className="text-[10px] leading-relaxed text-foreground select-text font-serif break-words max-h-40 overflow-y-auto">
-              {bibliography[selectionBibKey] || '未在文献列表中找到该引用（可能是跨页或格式不合）'}
-            </p>
-          </div>
-        )}
+
 
         {/* AI Explanation Slide-up Drawer */}
         {aiExplanation && (

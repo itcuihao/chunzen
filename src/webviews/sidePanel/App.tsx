@@ -161,9 +161,9 @@ export const App: FunctionComponent = () => {
         break;
       }
       case 'sync-bibliography': {
-        const bibRecord: Record<string, string> = {};
+        const bibRecord: Record<string, { text: string; pageNumber: number }> = {};
         for (const item of msg.bibliography) {
-          bibRecord[item.key] = item.text;
+          bibRecord[item.key] = { text: item.text, pageNumber: item.pageNumber };
         }
         useStore.getState().setBibliography(bibRecord);
         break;
