@@ -160,8 +160,28 @@ export const App: FunctionComponent = () => {
         setIsTranslating(false);
         break;
       }
+      case 'sync-bibliography': {
+        const bibRecord: Record<string, string> = {};
+        for (const item of msg.bibliography) {
+          bibRecord[item.key] = item.text;
+        }
+        useStore.getState().setBibliography(bibRecord);
+        break;
+      }
       case 'export-progress': {
         useStore.setState({ exportProgress: msg });
+        break;
+      }
+      case 'set-active-pdf': {
+        useStore.setState({ activePdfUri: msg.pdfUri });
+        break;
+      }
+      case 'sync-highlights': {
+        useStore.setState({ highlights: msg.highlights });
+        break;
+      }
+      case 'ai-explain-result': {
+        useStore.setState({ aiExplainResult: msg });
         break;
       }
     }

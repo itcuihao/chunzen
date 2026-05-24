@@ -54,6 +54,7 @@ let currentParagraphs: Paragraph[] = [];
 let currentViewport: PdfViewport | null = null;
 let currentRichContent: RichTextContent | null = null;
 const pageTranslationsCache = new Map<number, Record<string, string>>();
+const pageRichContentCache = new Map<number, RichTextContent>();
 const readPages = new Set<number>();
 const repeatCandidateSignaturesByPage = new Map<number, Set<string>>();
 const repeatSignaturePages = new Map<string, Set<number>>();
@@ -112,6 +113,7 @@ async function loadPdfDocument() {
     hideLoading();
 
     vscode.postMessage({ type: 'ready' });
+    startBackgroundScan().catch(err => console.error('[PDF Viewer] Background scan error:', err));
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     loadingOverlay.querySelector('.loading-text')!.textContent = `加载失败: ${msg}`;
@@ -135,11 +137,28 @@ async function renderCurrentPage() {
   textLayer.style.width = viewport.width + 'px';
   textLayer.style.height = viewport.height + 'px';
 
-  const items = await getPageText(page, viewport);
+  let items = pageRichContentCache.get(currentPage);
+  if (!items) {
+    items = await getPageText(page);
+    pageRichContentCache.set(currentPage, items);
+  }
+
+  // Scale horizontal rules for the current scale
+  const renderedRichContent: RichTextContent = {
+    ...items,
+    horizontalRules: items.horizontalRules.map(r => ({
+      id: r.id,
+      x1: r.x1 * scale,
+      x2: r.x2 * scale,
+      y: r.y * scale,
+      thickness: r.thickness * scale
+    }))
+  };
+
   currentViewport = viewport;
-  currentRichContent = items;
-  const modelHints = await getLayoutHints(items, viewport);
-  const { paragraphs: newParagraphs, columnsCount } = buildTextLayer(textLayer, items, viewport, {
+  currentRichContent = renderedRichContent;
+  const modelHints = await getLayoutHints(renderedRichContent, viewport);
+  const { paragraphs: newParagraphs, columnsCount } = buildTextLayer(textLayer, renderedRichContent, viewport, {
     layoutHints: modelHints || undefined,
     pageNumber: currentPage
   });
@@ -565,8 +584,12 @@ function isLayoutConfigEqual(a: LayoutConfig, b: LayoutConfig): boolean {
 async function extractMetaFromFirstPage() {
   if (!pdfDoc) return;
   try {
-    const page = await pdfDoc.getPage(1);
-    const richContent = await getPageText(page);
+    let richContent = pageRichContentCache.get(1);
+    if (!richContent) {
+      const page = await pdfDoc.getPage(1);
+      richContent = await getPageText(page);
+      pageRichContentCache.set(1, richContent);
+    }
     const text = richContent.items.map(it => it.str).join(' ');
 
     // Normalize spacing that often occurs in PDF text layer extraction (e.g. "10. 1038 / s..." or "10 . 1038")
@@ -1135,16 +1158,20 @@ window.addEventListener('message', event => {
         const paragraphs: Array<{ id: string; text: string; page: number }> = [];
         try {
           for (const pageNum of targetPages) {
-            const page = await pdfDoc.getPage(pageNum);
-            const viewport = page.getViewport({ scale: 1.0 });
-            const items = await getPageText(page, viewport);
+            let items = pageRichContentCache.get(pageNum);
+            if (!items) {
+              const page = await pdfDoc.getPage(pageNum);
+              items = await getPageText(page);
+              pageRichContentCache.set(pageNum, items);
+            }
             
             const dummyDiv = document.createElement('div');
-            const { paragraphs: pageParagraphs } = buildTextLayer(dummyDiv, items, viewport, {
+            const pageViewport = await pdfDoc.getPage(pageNum).then(p => p.getViewport({ scale: 1.0 }));
+            const { paragraphs: pageParagraphs } = buildTextLayer(dummyDiv, items, pageViewport, {
               pageNumber: pageNum
             });
             
-            applyRepeatedNoiseSkips(pageNum, pageParagraphs, viewport.width, viewport.height);
+            applyRepeatedNoiseSkips(pageNum, pageParagraphs, pageViewport.width, pageViewport.height);
             
             for (const p of pageParagraphs) {
               if (p.skipped) continue;
@@ -1168,6 +1195,10 @@ window.addEventListener('message', event => {
           });
         }
       })();
+      break;
+    }
+    case 'request-bibliography-extract': {
+      extractBibliography().catch(err => console.error('[PDF Viewer] Manual bibliography extraction error:', err));
       break;
     }
   }
@@ -1238,6 +1269,152 @@ function renderOutlineNode(items: any[], container: HTMLElement) {
     ul.appendChild(li);
   }
   container.appendChild(ul);
+}
+
+async function startBackgroundScan() {
+  if (!pdfDoc || totalPages === 0) return;
+  console.log('[PDF Viewer] Starting background scan...');
+
+  // 1. Scan the last 15 pages first (from totalPages down to Math.max(1, totalPages - 14))
+  const endPage = totalPages;
+  const startPage = Math.max(1, totalPages - 14);
+
+  for (let pageNum = endPage; pageNum >= startPage; pageNum--) {
+    if (pageRichContentCache.has(pageNum)) continue;
+    try {
+      const page = await pdfDoc.getPage(pageNum);
+      const items = await getPageText(page);
+      pageRichContentCache.set(pageNum, items);
+      await new Promise(resolve => setTimeout(resolve, 30));
+    } catch (err) {
+      console.warn(`[PDF Viewer] Background scan failed for page ${pageNum}:`, err);
+    }
+  }
+
+  // Extract bibliography once the last 15 pages are loaded
+  await extractBibliography();
+
+  // 2. Scan the rest of the pages in the background
+  for (let pageNum = 1; pageNum < startPage; pageNum++) {
+    if (pageRichContentCache.has(pageNum)) continue;
+    try {
+      const page = await pdfDoc.getPage(pageNum);
+      const items = await getPageText(page);
+      pageRichContentCache.set(pageNum, items);
+      await new Promise(resolve => setTimeout(resolve, 50));
+    } catch (err) {
+      console.warn(`[PDF Viewer] Background scan failed for page ${pageNum}:`, err);
+    }
+  }
+
+  console.log('[PDF Viewer] Background scan completed. All pages cached.');
+}
+
+async function extractBibliography() {
+  if (!pdfDoc || totalPages === 0) return;
+
+  const startScanPage = Math.max(1, totalPages - 14);
+  let refStartPage = -1;
+
+  // Scan backwards from totalPages down to Math.max(1, totalPages - 14) to find references start page
+  for (let pageNum = totalPages; pageNum >= startScanPage; pageNum--) {
+    let items = pageRichContentCache.get(pageNum);
+    if (!items) {
+      try {
+        const page = await pdfDoc.getPage(pageNum);
+        items = await getPageText(page);
+        pageRichContentCache.set(pageNum, items);
+      } catch (err) {
+        console.warn(`[PDF Viewer] Failed to parse page ${pageNum} during bibliography start search:`, err);
+        continue;
+      }
+    }
+
+    const dummyDiv = document.createElement('div');
+    const pageViewport = await pdfDoc.getPage(pageNum).then(p => p.getViewport({ scale: 1.0 }));
+    const { paragraphs } = buildTextLayer(dummyDiv, items, pageViewport, {
+      pageNumber: pageNum
+    });
+
+    let hasHeading = false;
+    for (const p of paragraphs) {
+      if (p.skipped) continue;
+      const text = p.text.trim();
+      if (!text) continue;
+
+      if (/^(\d+(\.\d+)*\s+)?(references|bibliography|works?\s+cited|references\s+and\s+notes)\b/i.test(text) && text.length < 50) {
+        hasHeading = true;
+        break;
+      }
+    }
+
+    if (hasHeading) {
+      refStartPage = pageNum;
+      console.log(`[PDF Viewer] Detected references start page at ${pageNum}`);
+      break;
+    }
+  }
+
+  const bibEntries: Array<{ key: string; text: string }> = [];
+  let activeEntry: { key: string; text: string } | null = null;
+  let foundReferencesHeading = false;
+
+  const actualStartPage = refStartPage !== -1 ? refStartPage : Math.max(1, totalPages - 4);
+  console.log(`[PDF Viewer] Extracting bibliography starting from page ${actualStartPage}`);
+
+  for (let pageNum = actualStartPage; pageNum <= totalPages; pageNum++) {
+    let items = pageRichContentCache.get(pageNum);
+    if (!items) {
+      try {
+        const page = await pdfDoc.getPage(pageNum);
+        items = await getPageText(page);
+        pageRichContentCache.set(pageNum, items);
+      } catch (err) {
+        console.warn(`[PDF Viewer] Failed to parse page ${pageNum} for references:`, err);
+        continue;
+      }
+    }
+
+    const dummyDiv = document.createElement('div');
+    const pageViewport = await pdfDoc.getPage(pageNum).then(p => p.getViewport({ scale: 1.0 }));
+    const { paragraphs } = buildTextLayer(dummyDiv, items, pageViewport, {
+      pageNumber: pageNum
+    });
+
+    for (const p of paragraphs) {
+      if (p.skipped) continue;
+      const text = p.text.trim();
+      if (!text) continue;
+
+      // Check if this is references section heading
+      if (/^(\d+(\.\d+)*\s+)?(references|bibliography|works?\s+cited|references\s+and\s+notes)\b/i.test(text) && text.length < 50) {
+        foundReferencesHeading = true;
+        continue;
+      }
+
+      // Match citation start: e.g. [17], 17., 17 (naked number followed by space/word)
+      const numMatch = text.match(/^\s*\[(\d{1,4})\]\s*(.*)/) || 
+                       text.match(/^\s*(\d{1,4})\.\s*(.*)/) ||
+                       text.match(/^\s*(\d{1,4})\s+(.*)/);
+
+      if (numMatch) {
+        const key = numMatch[1];
+        activeEntry = { key, text };
+        bibEntries.push(activeEntry);
+        foundReferencesHeading = true; // Auto-activate continuation on first citation start
+      } else if (activeEntry && (foundReferencesHeading || refStartPage !== -1)) {
+        activeEntry.text += ' ' + text;
+      }
+    }
+  }
+
+  if (bibEntries.length > 0) {
+    console.log(`[PDF Viewer] Successfully extracted ${bibEntries.length} bibliography entries.`);
+    vscode.postMessage({
+      type: 'pdf-bibliography-extracted',
+      bibliography: bibEntries
+    });
+  }
 }
 
 loadPdfDocument();

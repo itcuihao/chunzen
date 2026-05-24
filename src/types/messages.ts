@@ -1,6 +1,6 @@
 // All message types for webview ↔ extension host communication
 
-import { GlossaryEntry, JournalInfo, TranslationHistoryEntry } from './models';
+import { GlossaryEntry, JournalInfo, TranslationHistoryEntry, SelectionHighlight } from './models';
 import { EngineConfig, GeneralSettings, JournalSource, LayoutConfig } from './config';
 
 // ── PDF Viewer → Extension ──
@@ -96,6 +96,11 @@ export interface PdfPagesTextResultMessage {
   paragraphs: Array<{ id: string; text: string; page: number }>;
 }
 
+export interface PdfBibliographyExtractedMessage {
+  type: 'pdf-bibliography-extracted';
+  bibliography: Array<{ key: string; text: string }>;
+}
+
 export type PdfViewerToExtMessage =
   | ReadyMessage
   | SentenceHoverMessage
@@ -108,7 +113,8 @@ export type PdfViewerToExtMessage =
   | FigureScreenshotErrorMessage
   | PageImageCapturedMessage
   | PdfHoverMessage
-  | PdfPagesTextResultMessage;
+  | PdfPagesTextResultMessage
+  | PdfBibliographyExtractedMessage;
 
 // ── Extension → Side Panel ──
 
@@ -205,6 +211,56 @@ export interface ExportProgressMessage {
   pageNumber?: number;
 }
 
+export interface SyncBibliographyMessage {
+  type: 'sync-bibliography';
+  bibliography: Array<{ key: string; text: string }>;
+}
+
+export interface AddHighlightMessage {
+  type: 'add-highlight';
+  id?: string;
+  pdfUri: string;
+  pageNumber: number;
+  paragraphId: string;
+  text: string;
+  color: 'yellow' | 'green' | 'blue' | 'purple';
+  note?: string;
+}
+
+export interface DeleteHighlightMessage {
+  type: 'delete-highlight';
+  id: string;
+}
+
+export interface UpdateHighlightNoteMessage {
+  type: 'update-highlight-note';
+  id: string;
+  note: string;
+}
+
+export interface SyncHighlightsMessage {
+  type: 'sync-highlights';
+  pdfUri: string;
+  highlights: SelectionHighlight[];
+}
+
+export interface SetActivePdfMessage {
+  type: 'set-active-pdf';
+  pdfUri: string;
+}
+
+export interface AiExplainMessage {
+  type: 'ai-explain';
+  text: string;
+}
+
+export interface AiExplainResultMessage {
+  type: 'ai-explain-result';
+  text: string;
+  explanation?: string;
+  error?: string;
+}
+
 export type ExtToPanelMessage =
   | TranslateResultMessage
   | TranslateErrorMessage
@@ -218,6 +274,10 @@ export type ExtToPanelMessage =
   | SyncPageTranslationMessage
   | PdfHoverMessage
   | ExportProgressMessage
+  | SyncBibliographyMessage
+  | SyncHighlightsMessage
+  | SetActivePdfMessage
+  | AiExplainResultMessage
   | { type: 'cache-size-sync'; size: number }
   | { type: 'loading'; message: string }
   | { type: 'error'; message: string }
@@ -314,6 +374,10 @@ export type PanelToExtMessage =
   | TranslatePageMessage
   | PanelHoverMessage
   | ExportDocMessage
+  | AddHighlightMessage
+  | DeleteHighlightMessage
+  | UpdateHighlightNoteMessage
+  | AiExplainMessage
   | { type: 'clear-cache' }
   | { type: 'clear-history' }
   | { type: 'request-state' }
