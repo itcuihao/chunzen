@@ -90,6 +90,23 @@ async function loadPdfDocument() {
       if (meta?.info?.Title) pdfTitleEl.textContent = meta.info.Title;
     } catch { /* ignore */ }
 
+    // Fetch and render PDF bookmarks outline
+    try {
+      const outline = await pdfDoc.getOutline();
+      const outlineBtn = document.getElementById('btn-outline');
+      if (outline && outline.length > 0) {
+        const outlineTreeEl = document.getElementById('outline-tree')!;
+        outlineTreeEl.innerHTML = '';
+        renderOutlineNode(outline, outlineTreeEl);
+        outlineBtn?.classList.remove('hidden');
+      } else {
+        outlineBtn?.classList.add('hidden');
+      }
+    } catch (err) {
+      console.warn('[PDF Viewer] Failed to load outline:', err);
+      document.getElementById('btn-outline')?.classList.add('hidden');
+    }
+
     await renderCurrentPage();
     await extractMetaFromFirstPage();
     hideLoading();
@@ -647,6 +664,9 @@ textLayer.addEventListener('mouseleave', () => {
 });
 
 // Toolbar
+document.getElementById('btn-outline')?.addEventListener('click', () => {
+  document.getElementById('outline-sidebar')?.classList.toggle('hidden');
+});
 document.getElementById('btn-prev')?.addEventListener('click', () => goToPage(currentPage - 1));
 document.getElementById('btn-next')?.addEventListener('click', () => goToPage(currentPage + 1));
 document.getElementById('btn-zoom-in')?.addEventListener('click', () => setZoom(scale + 0.15));
@@ -1179,6 +1199,45 @@ function parsePageRange(rangeStr: string, maxPages: number): number[] {
     }
   }
   return Array.from(pages).sort((a, b) => a - b);
+}
+
+function renderOutlineNode(items: any[], container: HTMLElement) {
+  const ul = document.createElement('ul');
+  for (const item of items) {
+    const li = document.createElement('li');
+    
+    const link = document.createElement('a');
+    link.className = 'outline-link';
+    link.textContent = item.title;
+    link.title = item.title;
+    
+    link.addEventListener('click', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      try {
+        let dest = item.dest;
+        if (typeof dest === 'string') {
+          dest = await pdfDoc!.getDestination(dest);
+        }
+        if (Array.isArray(dest)) {
+          const pageRef = dest[0];
+          const pageIndex = await pdfDoc!.getPageIndex(pageRef);
+          goToPage(pageIndex + 1);
+        }
+      } catch (err) {
+        console.error('[PDF Viewer] Failed to navigate to bookmark:', err);
+      }
+    });
+    
+    li.appendChild(link);
+    
+    if (item.items && item.items.length > 0) {
+      renderOutlineNode(item.items, li);
+    }
+    
+    ul.appendChild(li);
+  }
+  container.appendChild(ul);
 }
 
 loadPdfDocument();
