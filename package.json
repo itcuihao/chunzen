@@ -6,7 +6,7 @@
   "publisher": "chunzen",
   "repository": {
     "type": "git",
-    "url": "https://gitea.awsl.icu/itcuihao/chunzen.git"
+    "url": "https://github.com/itcuihao/chunzen.git"
   },
   "engines": {
     "vscode": "^1.85.0"
@@ -217,7 +217,7 @@
     "compile": "webpack",
     "watch": "webpack --watch",
     "package": "webpack --mode production --devtool hidden-source-map",
-    "vsix": "npm run package && node ./node_modules/@vscode/vsce/out/main.js package --allow-missing-repository --baseContentUrl \"https://gitea.awsl.icu/itcuihao/chunzen/src/branch/main\" --baseImagesUrl \"https://gitea.awsl.icu/itcuihao/chunzen/raw/branch/main\"",
+    "vsix": "npm run package && npx @vscode/vsce package --allow-missing-repository",
     "deploy": "npm run vsix && code --uninstall-extension chunzen.chunzen; code --install-extension chunzen-0.1.0.vsix && echo '✅ 安装完成，请在VSCode执行 Reload Window'",
     "compile-tests": "tsc -p . --outDir out",
     "lint": "eslint src --ext ts"
