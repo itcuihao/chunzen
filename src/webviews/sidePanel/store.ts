@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { TranslationHistoryEntry, JournalInfo, GlossaryEntry } from '../../types/models';
+import { TranslationHistoryEntry, JournalInfo, GlossaryEntry, SelectionHighlight } from '../../types/models';
 import { LayoutConfig } from '../../types/config';
 export type TabId = 'translation' | 'journal' | 'glossary' | 'settings';
 
@@ -99,6 +99,14 @@ interface PanelState {
     pageNumber?: number;
   } | null;
   setExportProgress: (val: PanelState['exportProgress']) => void;
+  bibliography: Record<string, string>;
+  setBibliography: (bibliography: Record<string, string>) => void;
+  activePdfUri: string | null;
+  setActivePdfUri: (uri: string | null) => void;
+  highlights: SelectionHighlight[];
+  setHighlights: (highlights: SelectionHighlight[]) => void;
+  aiExplainResult: { text: string; explanation?: string; error?: string } | null;
+  setAiExplainResult: (result: PanelState['aiExplainResult']) => void;
 }
 
 export const useStore = create<PanelState>((set) => ({
@@ -171,5 +179,13 @@ export const useStore = create<PanelState>((set) => ({
   layoutMode: 'original',
   setLayoutMode: (layoutMode) => set({ layoutMode }),
   exportProgress: null,
-  setExportProgress: (exportProgress) => set({ exportProgress })
+  setExportProgress: (exportProgress) => set({ exportProgress }),
+  bibliography: {},
+  setBibliography: (bibliography) => set({ bibliography }),
+  activePdfUri: null,
+  setActivePdfUri: (activePdfUri) => set({ activePdfUri }),
+  highlights: [],
+  setHighlights: (highlights) => set({ highlights }),
+  aiExplainResult: null,
+  setAiExplainResult: (aiExplainResult) => set({ aiExplainResult })
 }));

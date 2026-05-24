@@ -1,7 +1,74 @@
-import { FunctionComponent, useState, useEffect, useMemo } from 'react';
+import { FunctionComponent, useState, useEffect, useMemo, ReactNode } from 'react';
 import { useStore } from '../store';
-import { Languages, FileCheck, RefreshCw, Compass } from 'lucide-react';
+import { 
+  Languages, FileCheck, RefreshCw, Compass, Plus, ArrowUpRight, Copy,
+  Highlighter, MessageSquareText, Sparkles, BookOpen, Trash2, X
+} from 'lucide-react';
 import { postMessage } from '../vscode';
+import { SelectionHighlight } from '../../../types/models';
+
+function renderTextWithHighlightsAndCitations(
+  text: string,
+  paragraphId: string,
+  bibliography: Record<string, string>,
+  highlights: SelectionHighlight[],
+  onHighlightClick: (hl: SelectionHighlight, rect: DOMRect) => void
+): ReactNode {
+  if (!text) return '';
+
+  const paraHighlights = highlights.filter(hl => hl.paragraphId === paragraphId && text.includes(hl.text));
+  if (paraHighlights.length === 0) {
+    return text;
+  }
+
+  const sortedHls = [...paraHighlights].sort((a, b) => b.text.length - a.text.length);
+  const escapeRegExp = (str: string) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp('(' + sortedHls.map(h => escapeRegExp(h.text)).join('|') + ')', 'g');
+
+  const parts = text.split(pattern);
+  const resultNodes: ReactNode[] = [];
+
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
+    if (!part) continue;
+
+    const matchedHl = sortedHls.find(h => h.text === part);
+    if (matchedHl) {
+      const colorsMap = {
+        yellow: 'bg-amber-100 dark:bg-amber-950/40 border-b-2 border-amber-400/80 text-foreground',
+        green: 'bg-emerald-100 dark:bg-emerald-950/40 border-b-2 border-emerald-400/80 text-foreground',
+        blue: 'bg-sky-100 dark:bg-sky-950/40 border-b-2 border-sky-400/80 text-foreground',
+        purple: 'bg-purple-100 dark:bg-purple-950/40 border-b-2 border-purple-400/80 text-foreground'
+      };
+      const colorClass = colorsMap[matchedHl.color] || colorsMap.yellow;
+
+      resultNodes.push(
+        <span
+          key={`hl-${matchedHl.id}-${i}`}
+          className={`${colorClass} cursor-pointer hover:opacity-90 transition-all px-0.5 rounded-sm relative inline group/hl`}
+          onClick={(e) => {
+            e.stopPropagation();
+            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+            onHighlightClick(matchedHl, rect);
+          }}
+          title={matchedHl.note ? `批注: ${matchedHl.note}` : '点击查看/修改高亮'}
+        >
+          {part}
+          {matchedHl.note && (
+            <span className="inline-flex items-center ml-0.5 select-none text-[9px] bg-amber-500/20 border border-amber-500/40 text-amber-600 rounded px-0.5 font-sans leading-none transform scale-90 origin-left">
+              ✍️
+            </span>
+          )}
+        </span>
+      );
+    } else {
+      resultNodes.push(part);
+    }
+  }
+
+  return resultNodes.length > 0 ? resultNodes : text;
+}
+
 
 // ── Paragraph role classification ──
 
@@ -202,10 +269,287 @@ export const TranslationTab: FunctionComponent = () => {
   const error = useStore((state) => state.translationError);
   const currentPageText = useStore((state) => state.currentPageText);
   const activeParagraphId = useStore((state) => state.activeParagraphId);
+  const bibliography = useStore((state) => state.bibliography);
 
   const layoutMode = useStore((state) => state.layoutMode);
   const setLayoutMode = useStore((state) => state.setLayoutMode);
   const hoverHighlightStyle = useStore((state) => state.layoutConfig?.hoverHighlightStyle ?? 'overlay');
+
+  const highlights = useStore((state) => state.highlights);
+  const activePdfUri = useStore((state) => state.activePdfUri);
+  const aiExplainResult = useStore((state) => state.aiExplainResult);
+
+  const [addingGlossaryParaId, setAddingGlossaryParaId] = useState<string | null>(null);
+  const [glossarySource, setGlossarySource] = useState('');
+  const [glossaryTarget, setGlossaryTarget] = useState('');
+  const [glossaryCategory, setGlossaryCategory] = useState('学术词汇');
+
+  // Local state for highlights, notes, and AI explanation
+  const [aiExplanation, setAiExplanation] = useState<{ text: string; result?: string; error?: string; loading: boolean } | null>(null);
+  const [activeHighlightAction, setActiveHighlightAction] = useState<{ highlight: SelectionHighlight; rect: { x: number; y: number; width: number; height: number } } | null>(null);
+  const [noteEditingHlId, setNoteEditingHlId] = useState<string | null>(null);
+  const [noteText, setNoteText] = useState('');
+  const [selectionBibKey, setSelectionBibKey] = useState<string | null>(null);
+
+  // Sync AI explanation result from global store
+  useEffect(() => {
+    if (aiExplainResult) {
+      if (aiExplanation && aiExplanation.text === aiExplainResult.text) {
+        setAiExplanation({
+          text: aiExplainResult.text,
+          result: aiExplainResult.explanation,
+          error: aiExplainResult.error,
+          loading: false
+        });
+      }
+    }
+  }, [aiExplainResult]);
+
+  const handleAddHighlight = (color: 'yellow' | 'green' | 'blue' | 'purple') => {
+    if (!selectedText || !selectedParaId || !activePdfUri || !currentPageText) return;
+    postMessage({
+      type: 'add-highlight',
+      pdfUri: activePdfUri,
+      pageNumber: currentPageText.pageNumber,
+      paragraphId: selectedParaId,
+      text: selectedText,
+      color,
+      note: ''
+    });
+    setBubbleCoords(null);
+    window.getSelection()?.removeAllRanges();
+  };
+
+  const handleAddNoteFromBubble = () => {
+    if (!selectedText || !selectedParaId || !activePdfUri || !currentPageText) return;
+    const generatedId = Math.random().toString(36).substring(2, 9);
+    postMessage({
+      type: 'add-highlight',
+      id: generatedId,
+      pdfUri: activePdfUri,
+      pageNumber: currentPageText.pageNumber,
+      paragraphId: selectedParaId,
+      text: selectedText,
+      color: 'yellow',
+      note: ''
+    });
+    setNoteEditingHlId(generatedId);
+    setNoteText('');
+    setAddingGlossaryParaId(null);
+    setBubbleCoords(null);
+    window.getSelection()?.removeAllRanges();
+  };
+
+  const handleAiExplainFromBubble = () => {
+    if (!selectedText) return;
+    setAiExplanation({
+      text: selectedText,
+      loading: true
+    });
+    postMessage({
+      type: 'ai-explain',
+      text: selectedText
+    });
+    setBubbleCoords(null);
+    window.getSelection()?.removeAllRanges();
+  };
+
+  const handleDeleteHighlight = (id: string) => {
+    postMessage({
+      type: 'delete-highlight',
+      id
+    });
+    setActiveHighlightAction(null);
+  };
+
+  const handleChangeHighlightColor = (id: string, color: SelectionHighlight['color']) => {
+    const hl = highlights.find(h => h.id === id);
+    if (!hl) return;
+    postMessage({
+      type: 'add-highlight',
+      id: hl.id,
+      pdfUri: hl.pdfUri,
+      pageNumber: hl.pageNumber,
+      paragraphId: hl.paragraphId,
+      text: hl.text,
+      color,
+      note: hl.note
+    });
+    setActiveHighlightAction(null);
+  };
+
+  const handleHighlightClick = (hl: SelectionHighlight, rect: DOMRect) => {
+    const container = document.querySelector('article');
+    if (!container) return;
+    const containerRect = container.getBoundingClientRect();
+    setActiveHighlightAction({
+      highlight: hl,
+      rect: {
+        x: rect.left - containerRect.left + rect.width / 2,
+        y: rect.top - containerRect.top,
+        width: rect.width,
+        height: rect.height
+      }
+    });
+  };
+
+  const handleOpenAddGlossary = (para: AnnotatedPara) => {
+    const selection = window.getSelection()?.toString().trim() || '';
+    let sourceVal = '';
+    let targetVal = '';
+
+    if (selection) {
+      const isChinese = /[\u4e00-\u9fa5]/.test(selection);
+      if (isChinese) {
+        targetVal = selection;
+      } else {
+        sourceVal = selection;
+      }
+    }
+
+    setGlossarySource(sourceVal);
+    setGlossaryTarget(targetVal);
+    setAddingGlossaryParaId(para.id);
+  };
+
+  const renderInlineGlossaryForm = (para: AnnotatedPara) => {
+    if (addingGlossaryParaId !== para.id) return null;
+
+    const handleSave = () => {
+      if (!glossarySource.trim() || !glossaryTarget.trim()) {
+        return;
+      }
+      postMessage({
+        type: 'add-term',
+        source: glossarySource.trim(),
+        target: glossaryTarget.trim(),
+        category: glossaryCategory.trim()
+      });
+      setAddingGlossaryParaId(null);
+      setGlossarySource('');
+      setGlossaryTarget('');
+    };
+
+    return (
+      <div 
+        className="mt-3 p-3 rounded-lg border border-primary/20 bg-primary/5 text-left select-text animate-in slide-in-from-top-2 duration-200 cursor-default"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="text-[10px] font-bold text-primary mb-2 flex items-center gap-1">
+          <span>录入术语库</span>
+          <span className="text-secondary-foreground/50 font-normal">(提示: 双击选词后点击 + 可自动填充)</span>
+        </div>
+        <div className="grid grid-cols-2 gap-2 mb-2">
+          <div>
+            <label className="block text-[8px] font-semibold text-secondary-foreground mb-0.5">英文原文</label>
+            <input
+              type="text"
+              value={glossarySource}
+              onChange={(e) => setGlossarySource(e.target.value)}
+              placeholder="e.g. lncRNA"
+              className="w-full px-2 py-1 text-xs rounded border border-border bg-editor-bg text-foreground focus:outline-none focus:border-primary select-text"
+            />
+          </div>
+          <div>
+            <label className="block text-[8px] font-semibold text-secondary-foreground mb-0.5">汉语译文</label>
+            <input
+              type="text"
+              value={glossaryTarget}
+              onChange={(e) => setGlossaryTarget(e.target.value)}
+              placeholder="e.g. 长链非编码RNA"
+              className="w-full px-2 py-1 text-xs rounded border border-border bg-editor-bg text-foreground focus:outline-none focus:border-primary select-text"
+            />
+          </div>
+        </div>
+        <div className="flex gap-2 items-center justify-between mt-1">
+          <div className="flex-1 max-w-[120px]">
+            <input
+              type="text"
+              value={glossaryCategory}
+              onChange={(e) => setGlossaryCategory(e.target.value)}
+              placeholder="类别 (默认: 学术词汇)"
+              className="w-full px-2 py-1 text-[10px] rounded border border-border bg-editor-bg text-foreground focus:outline-none focus:border-primary select-text"
+            />
+          </div>
+          <div className="flex gap-1.5">
+            <button
+              onClick={() => setAddingGlossaryParaId(null)}
+              className="px-2.5 py-1 text-[10px] font-semibold rounded border border-border hover:bg-secondary/40 active:scale-95 transition-all duration-150 cursor-pointer"
+            >
+              取消
+            </button>
+            <button
+              onClick={handleSave}
+              className="px-2.5 py-1 text-[10px] font-bold rounded bg-primary text-primary-foreground hover:bg-primary/95 active:scale-95 transition-all duration-150 cursor-pointer"
+            >
+              确定
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderInlineNoteForm = (paraId: string) => {
+    const hlBeingEdited = highlights.find(h => h.paragraphId === paraId && h.id === noteEditingHlId);
+    if (!hlBeingEdited) return null;
+
+    const handleSaveNote = () => {
+      postMessage({
+        type: 'add-highlight',
+        id: hlBeingEdited.id,
+        pdfUri: hlBeingEdited.pdfUri,
+        pageNumber: hlBeingEdited.pageNumber,
+        paragraphId: hlBeingEdited.paragraphId,
+        text: hlBeingEdited.text,
+        color: hlBeingEdited.color,
+        note: noteText.trim()
+      });
+      setNoteEditingHlId(null);
+      setNoteText('');
+    };
+
+    return (
+      <div 
+        className="mt-3 p-3 rounded-lg border border-primary/20 bg-primary/5 text-left select-text animate-in slide-in-from-top-2 duration-200 cursor-default"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="text-[10px] font-bold text-primary mb-2 flex items-center justify-between">
+          <span>撰写想法 / 批注</span>
+          <button 
+            onClick={() => setNoteEditingHlId(null)}
+            className="text-[10px] text-zinc-400 hover:text-zinc-600 bg-transparent border-0 cursor-pointer"
+          >
+            关闭
+          </button>
+        </div>
+        <textarea
+          value={noteText}
+          onChange={(e) => setNoteText(e.target.value)}
+          placeholder="输入您的想法或笔记..."
+          rows={3}
+          className="w-full p-2 text-xs rounded border border-border bg-editor-bg text-foreground focus:outline-none focus:border-primary select-text mb-2 resize-none"
+        />
+        <div className="flex gap-1.5 justify-end">
+          <button
+            onClick={() => {
+              setNoteEditingHlId(null);
+              setNoteText('');
+            }}
+            className="px-2.5 py-1 text-[10px] font-semibold rounded border border-border hover:bg-secondary/40 active:scale-95 transition-all duration-150 cursor-pointer"
+          >
+            取消
+          </button>
+          <button
+            onClick={handleSaveNote}
+            className="px-2.5 py-1 text-[10px] font-bold rounded bg-primary text-primary-foreground hover:bg-primary/95 active:scale-95 transition-all duration-150 cursor-pointer"
+          >
+            保存想法
+          </button>
+        </div>
+      </div>
+    );
+  };
 
   // Auto-translate on page turn if remembered mode is translation or bilingual
   useEffect(() => {
@@ -226,6 +570,95 @@ export const TranslationTab: FunctionComponent = () => {
       role: roles[i],
     }));
   }, [currentPageText?.paragraphs]);
+
+
+  const [bubbleCoords, setBubbleCoords] = useState<{ x: number; y: number } | null>(null);
+  const [selectedText, setSelectedText] = useState('');
+  const [selectedParaId, setSelectedParaId] = useState<string | null>(null);
+
+  const extractedBibKeys = useMemo(() => {
+    if (!selectedText.trim()) return [];
+    const matches = selectedText.match(/\d+/g);
+    if (!matches) return [];
+    return matches.filter(key => bibliography[key]);
+  }, [selectedText, bibliography]);
+
+  const handleAddFromBubble = () => {
+    if (!selectedText || !selectedParaId) return;
+    const isChinese = /[\u4e00-\u9fa5]/.test(selectedText);
+    if (isChinese) {
+      setGlossaryTarget(selectedText);
+      setGlossarySource('');
+    } else {
+      setGlossarySource(selectedText);
+      setGlossaryTarget('');
+    }
+    setAddingGlossaryParaId(selectedParaId);
+    setBubbleCoords(null);
+    window.getSelection()?.removeAllRanges();
+  };
+
+  useEffect(() => {
+    const handleSelectionChange = () => {
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || !sel.toString().trim()) {
+        setBubbleCoords(null);
+        setSelectedText('');
+        return;
+      }
+
+      // Check if selecting inside input/textarea
+      const activeEl = document.activeElement;
+      if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
+        setBubbleCoords(null);
+        return;
+      }
+
+      // Find the anchor node's parent paragraph to know which paragraph is selected
+      let node: Node | null = sel.anchorNode;
+      let paraId: string | null = null;
+      while (node) {
+        if (node instanceof HTMLElement && node.dataset.paragraphId) {
+          paraId = node.dataset.paragraphId;
+          break;
+        }
+        node = node.parentNode;
+      }
+
+      const text = sel.toString().trim();
+      if (!text) {
+        setBubbleCoords(null);
+        return;
+      }
+
+      try {
+        const range = sel.getRangeAt(0);
+        const rect = range.getBoundingClientRect();
+        const articleEl = document.querySelector('article');
+        if (articleEl && paraId) {
+          const articleRect = articleEl.getBoundingClientRect();
+          const relativeX = rect.left - articleRect.left + rect.width / 2;
+          const clampedX = Math.max(50, Math.min(articleRect.width - 50, relativeX));
+          
+          setBubbleCoords({
+            x: clampedX,
+            y: rect.top - articleRect.top - 36
+          });
+          setSelectedText(text);
+          setSelectedParaId(paraId);
+        } else {
+          setBubbleCoords(null);
+        }
+      } catch (err) {
+        setBubbleCoords(null);
+      }
+    };
+
+    document.addEventListener('selectionchange', handleSelectionChange);
+    return () => {
+      document.removeEventListener('selectionchange', handleSelectionChange);
+    };
+  }, [annotatedParagraphs]);
 
   // Scroll active paragraph into view
   useEffect(() => {
@@ -294,11 +727,11 @@ export const TranslationTab: FunctionComponent = () => {
           data-sentence-id={sent.id}
           className="translation-tab-sentence"
         >
-          {sent.text}{' '}
+          {renderTextWithHighlightsAndCitations(sent.text, para.id, bibliography, highlights, handleHighlightClick)}{' '}
         </span>
       ));
     }
-    return para.text;
+    return renderTextWithHighlightsAndCitations(para.text, para.id, bibliography, highlights, handleHighlightClick);
   };
 
   const renderChineseParagraph = (
@@ -314,11 +747,11 @@ export const TranslationTab: FunctionComponent = () => {
           data-sentence-id={sent.id || undefined}
           className="translation-tab-sentence"
         >
-          {sent.text}
+          {renderTextWithHighlightsAndCitations(sent.text, para.id, bibliography, highlights, handleHighlightClick)}
         </span>
       ));
     }
-    return translation;
+    return renderTextWithHighlightsAndCitations(translation, para.id, bibliography, highlights, handleHighlightClick);
   };
 
   const handleTranslatePage = () => {
@@ -363,10 +796,11 @@ export const TranslationTab: FunctionComponent = () => {
 
   const renderTableRow = (id: string, text: string, className: string) => {
     const cells = splitTableCells(text);
+    const paraId = id.split('-')[0];
     if (cells.length <= 1) {
       return (
         <p key={id} className={className}>
-          {text}
+          {renderTextWithHighlightsAndCitations(text, paraId, bibliography, highlights, handleHighlightClick)}
         </p>
       );
     }
@@ -379,24 +813,30 @@ export const TranslationTab: FunctionComponent = () => {
       >
         {cells.map((cell, idx) => (
           <span key={`${id}-${idx}`} className="block whitespace-pre-wrap break-words">
-            {cell}
+            {renderTextWithHighlightsAndCitations(cell, paraId, bibliography, highlights, handleHighlightClick)}
           </span>
         ))}
       </div>
     );
   };
 
-  const wrapHoverableParagraph = (para: AnnotatedPara, child: JSX.Element) => (
-    <div
-      key={para.id}
-      data-paragraph-id={para.id}
-      onMouseEnter={() => handleParagraphHover(para.id)}
-      onMouseLeave={() => handleParagraphHover(null)}
-      className={`translation-tab-paragraph ${activeParagraphId === para.id ? 'active' : ''}`}
-    >
-      {child}
-    </div>
-  );
+  const wrapHoverableParagraph = (para: AnnotatedPara, child: JSX.Element) => {
+    return (
+      <div
+        key={para.id}
+        data-paragraph-id={para.id}
+        onMouseEnter={() => handleParagraphHover(para.id)}
+        onMouseLeave={() => handleParagraphHover(null)}
+        className={`translation-tab-paragraph relative ${activeParagraphId === para.id ? 'active' : ''}`}
+      >
+        {child}
+        {/* Inline glossary addition form */}
+        {renderInlineGlossaryForm(para)}
+        {/* Inline note/thought form */}
+        {renderInlineNoteForm(para.id)}
+      </div>
+    );
+  };
 
   const renderOriginalParagraphNode = (para: AnnotatedPara, prevPara?: AnnotatedPara) => {
     if (para.lineMarker === 'horizontal-rule') {
@@ -418,7 +858,7 @@ export const TranslationTab: FunctionComponent = () => {
     if (para.blockType === 'table') {
       return wrapHoverableParagraph(para, renderTableRow(`${para.id}-en`, para.text, className));
     }
-    return wrapHoverableParagraph(para, <p className={className}>{para.text}</p>);
+    return wrapHoverableParagraph(para, <p className={className}>{renderEnglishParagraph(para)}</p>);
   };
 
   const renderTranslatedParagraphNode = (para: AnnotatedPara, prevPara?: AnnotatedPara) => {
@@ -754,6 +1194,243 @@ export const TranslationTab: FunctionComponent = () => {
           <span>DOCUMENT TRANSLATION SERVICE</span>
           <span>PAGE {currentPageText?.pageNumber || 1}</span>
         </div>
+
+        {/* Selection Bubble (WeChat Read Capsule Menu) */}
+        {bubbleCoords && (
+          <div
+            className="absolute z-[1000] flex items-center bg-zinc-950 text-zinc-100 rounded-full shadow-xl text-[10px] font-bold cursor-pointer transition-all duration-150 transform -translate-x-1/2 scale-100 hover:scale-[1.02] select-none border border-zinc-800 divide-x divide-zinc-800/80 p-0.5"
+            style={{
+              left: `${bubbleCoords.x}px`,
+              top: `${bubbleCoords.y}px`
+            }}
+          >
+            {/* Action 1: Highlight */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleAddHighlight('yellow');
+              }}
+              title="划线高亮"
+              className="px-3 py-1 flex items-center gap-1 text-zinc-300 hover:text-primary active:scale-95 transition-all duration-150 cursor-pointer border-0 bg-transparent font-sans"
+            >
+              <Highlighter className="w-3.5 h-3.5" />
+              <span>划线</span>
+            </button>
+
+            {/* Action 2: Add Note */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleAddNoteFromBubble();
+              }}
+              title="撰写想法与批注"
+              className="px-3 py-1 flex items-center gap-1 text-zinc-300 hover:text-primary active:scale-95 transition-all duration-150 cursor-pointer border-0 bg-transparent font-sans"
+            >
+              <MessageSquareText className="w-3.5 h-3.5" />
+              <span>写想法</span>
+            </button>
+
+            {/* Action 3: AI Explain */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleAiExplainFromBubble();
+              }}
+              title="AI 学术词汇解释"
+              className="px-3 py-1 flex items-center gap-1 text-zinc-300 hover:text-primary active:scale-95 transition-all duration-150 cursor-pointer border-0 bg-transparent font-sans"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>AI解释</span>
+            </button>
+
+            {/* Action 4: Reference Preview */}
+            {extractedBibKeys.length > 0 && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectionBibKey(extractedBibKeys[0]);
+                }}
+                title="文献引用详情"
+                className="px-3 py-1 flex items-center gap-1 text-zinc-300 hover:text-primary active:scale-95 transition-all duration-150 cursor-pointer border-0 bg-transparent font-sans"
+              >
+                <BookOpen className="w-3.5 h-3.5" />
+                <span>文献</span>
+              </button>
+            )}
+
+            {/* Action 5: Save Glossary */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleAddFromBubble();
+              }}
+              title="添加到学术术语库"
+              className="px-3 py-1 flex items-center gap-1 text-zinc-300 hover:text-primary active:scale-95 transition-all duration-150 cursor-pointer border-0 bg-transparent font-sans"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>记术语</span>
+            </button>
+
+            {/* Action 6: Copy Text */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                navigator.clipboard.writeText(selectedText);
+                setBubbleCoords(null);
+                window.getSelection()?.removeAllRanges();
+              }}
+              title="复制所选文字"
+              className="px-3 py-1 flex items-center gap-1 text-zinc-300 hover:text-primary active:scale-95 transition-all duration-150 cursor-pointer border-0 bg-transparent font-sans"
+            >
+              <Copy className="w-3.5 h-3.5" />
+              <span>复制</span>
+            </button>
+          </div>
+        )}
+
+        {/* Highlight Action Picker (Color, Note, Delete) */}
+        {activeHighlightAction && (
+          <div
+            className="absolute z-[1010] flex flex-col bg-zinc-950 text-zinc-100 rounded-lg shadow-xl text-[10px] font-bold p-2 border border-zinc-800 select-none animate-in fade-in duration-100 font-sans"
+            style={{
+              left: `${activeHighlightAction.rect.x}px`,
+              top: `${activeHighlightAction.rect.y}px`,
+              transform: 'translate(-50%, -100%)',
+              marginTop: '-10px'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex gap-2 justify-center mb-1.5 pb-1.5 border-b border-zinc-800/80">
+              {(['yellow', 'green', 'blue', 'purple'] as const).map(color => (
+                <button
+                  key={color}
+                  onClick={() => handleChangeHighlightColor(activeHighlightAction.highlight.id, color)}
+                  className={`w-3.5 h-3.5 rounded-full border transition-all cursor-pointer ${
+                    color === 'yellow' ? 'bg-amber-400 border-amber-500' :
+                    color === 'green' ? 'bg-emerald-400 border-emerald-500' :
+                    color === 'blue' ? 'bg-sky-400 border-sky-500' :
+                    'bg-purple-400 border-purple-500'
+                  } ${activeHighlightAction.highlight.color === color ? 'scale-125 ring-2 ring-zinc-100' : 'hover:scale-110'}`}
+                />
+              ))}
+            </div>
+            <div className="flex gap-1.5 items-center">
+              <button
+                onClick={() => {
+                  setNoteEditingHlId(activeHighlightAction.highlight.id);
+                  setNoteText(activeHighlightAction.highlight.note || '');
+                  setActiveHighlightAction(null);
+                }}
+                className="px-2 py-1 bg-zinc-800 hover:bg-zinc-700 rounded text-zinc-200 cursor-pointer flex items-center gap-1 border-0"
+              >
+                <MessageSquareText className="w-2.5 h-2.5" />
+                <span>想法</span>
+              </button>
+              <button
+                onClick={() => handleDeleteHighlight(activeHighlightAction.highlight.id)}
+                className="px-2 py-1 bg-red-950/80 hover:bg-red-900 border border-red-800/40 rounded text-red-200 cursor-pointer flex items-center justify-center"
+              >
+                <Trash2 className="w-2.5 h-2.5" />
+              </button>
+              <button
+                onClick={() => setActiveHighlightAction(null)}
+                className="px-1.5 py-1 bg-zinc-900 hover:bg-zinc-800 rounded text-zinc-400 cursor-pointer border-0 flex items-center justify-center"
+              >
+                <X className="w-2.5 h-2.5" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Selection Bibliography Preview Card */}
+        {selectionBibKey && bubbleCoords && (
+          <div
+            className="absolute z-[1020] w-64 p-3 border border-border/80 rounded-lg shadow-xl text-left select-text animate-in fade-in duration-100 font-sans"
+            style={{
+              left: `${bubbleCoords.x}px`,
+              top: `${bubbleCoords.y - 12}px`,
+              transform: 'translate(-50%, -100%)',
+              backgroundColor: 'var(--vscode-editor-background, #fbf7f0)',
+              boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.15)'
+            }}
+          >
+            <div className="flex items-start justify-between gap-2 border-b border-border/40 pb-1.5 mb-1.5">
+              <span className="text-[9px] font-bold text-primary font-mono flex items-center gap-1">
+                <BookOpen className="w-3 h-3 text-primary" /> 文献 [{selectionBibKey}]
+              </span>
+              <button 
+                onClick={() => setSelectionBibKey(null)}
+                className="text-zinc-400 hover:text-zinc-600 bg-transparent border-0 cursor-pointer p-0.5"
+              >
+                <X className="w-2.5 h-2.5" />
+              </button>
+            </div>
+            <p className="text-[10px] leading-relaxed text-foreground select-text font-serif break-words max-h-40 overflow-y-auto">
+              {bibliography[selectionBibKey] || '未在文献列表中找到该引用（可能是跨页或格式不合）'}
+            </p>
+          </div>
+        )}
+
+        {/* AI Explanation Slide-up Drawer */}
+        {aiExplanation && (
+          <div className="fixed bottom-0 left-0 right-0 z-[1030] bg-zinc-950 text-zinc-100 border-t border-zinc-800 shadow-2xl p-4 animate-in slide-in-from-bottom duration-300 rounded-t-xl select-text">
+            <div className="flex items-center justify-between border-b border-zinc-800 pb-2 mb-2">
+              <span className="text-xs font-bold text-primary flex items-center gap-1.5 font-sans">
+                <Sparkles className="w-3.5 h-3.5 text-primary animate-pulse" /> 春蝉 AI 学术释义
+              </span>
+              <button
+                onClick={() => setAiExplanation(null)}
+                className="text-zinc-400 hover:text-zinc-100 bg-transparent border-0 cursor-pointer p-1"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            
+            <div className="max-h-40 overflow-y-auto mb-3">
+              <p className="text-[10px] text-zinc-400 italic mb-2 font-serif border-l-2 border-zinc-800 pl-2">
+                原文: "{aiExplanation.text}"
+              </p>
+              {aiExplanation.loading ? (
+                <div className="flex items-center gap-2 py-4 justify-center">
+                  <div className="w-4 h-4 rounded-full border border-primary/20 border-t-primary animate-spin"></div>
+                  <span className="text-xs text-zinc-400 font-sans animate-pulse">AI 正在深度分析中...</span>
+                </div>
+              ) : aiExplanation.error ? (
+                <div className="text-red-400 text-xs py-2 font-mono">{aiExplanation.error}</div>
+              ) : (
+                <div className="text-[11.5px] leading-relaxed font-serif whitespace-pre-wrap">
+                  {aiExplanation.result}
+                </div>
+              )}
+            </div>
+
+            {!aiExplanation.loading && !aiExplanation.error && (
+              <div className="flex gap-2 justify-end border-t border-zinc-900 pt-2">
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(aiExplanation.result || '');
+                  }}
+                  className="px-2.5 py-1 text-[10px] bg-zinc-800 hover:bg-zinc-700 rounded text-zinc-300 cursor-pointer border-0 font-sans"
+                >
+                  复制释义
+                </button>
+                <button
+                  onClick={() => {
+                    const text = aiExplanation.text;
+                    const explanation = aiExplanation.result || '';
+                    setGlossarySource(text);
+                    setGlossaryTarget(explanation.slice(0, 50));
+                    setAddingGlossaryParaId(selectedParaId || '');
+                    setAiExplanation(null);
+                  }}
+                  className="px-2.5 py-1 text-[10px] bg-primary text-primary-foreground hover:bg-primary/95 rounded cursor-pointer font-bold border-0 font-sans"
+                >
+                  记术语
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </article>
     </div>
   );

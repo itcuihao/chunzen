@@ -53,3 +53,14 @@ export interface TranslationHistoryEntry {
   engine: string;
   timestamp: number;
 }
+
+export interface SelectionHighlight {
+  id: string;
+  pdfUri: string;
+  pageNumber: number;
+  paragraphId: string;
+  text: string;
+  color: 'yellow' | 'green' | 'blue' | 'purple';
+  note?: string;
+  createdAt: number;
+}

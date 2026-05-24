@@ -1096,11 +1096,26 @@ function isSidebarTocEntry(
   return true;
 }
 
-function isReferenceStart(str: string): boolean {
+function isReferenceStart(str: string, inReferencesSection: boolean = false): boolean {
   const text = str.trim();
-  if (/^\[\d+\]/.test(text)) return true;
-  if (/^\[\d+[,;]/.test(text)) return true;
-  if (/^\d{1,3}\.\s/.test(text) && text.length > 10) return true;
+  if (/^\[\d{1,4}\]/.test(text)) return true;
+  if (/^\[\d{1,4}[,;]/.test(text)) return true;
+  if (/^\d{1,4}\.\s/.test(text)) {
+    if (inReferencesSection || text.length > 10) return true;
+  }
+  // Standalone dot-numbers like "17." (which may be a separate segment)
+  if (/^\d{1,4}\.$/.test(text)) {
+    return true;
+  }
+  // Standalone bracketed numbers like "[17]"
+  if (/^\[\d{1,4}\]$/.test(text)) return true;
+  
+  // Naked numbers in references section
+  if (inReferencesSection) {
+    if (/^\d{1,4}$/.test(text)) return true;
+    if (/^\d{1,4}\s+\S+/.test(text)) return true;
+  }
+
   if (/^[A-Z][a-z]+\s+[A-Z]/.test(text) && /\b(19|20)\d{2}\b/.test(text)) return true;
   return false;
 }
@@ -1185,7 +1200,7 @@ function detectStructuralBlocks(
     if (!text) { i++; continue; }
 
     // Reference section gate
-    if (isHeadingSegment(seg) && /^(references|bibliography|works?\s+cited)/i.test(text)) {
+    if ((isHeadingSegment(seg) || text.length < 30) && /^(\d+(\.\d+)*\s+)?(references|bibliography|works?\s+cited|references\s+and\s+notes)\b/i.test(text)) {
       blocks.push({ type: 'heading', segments: [seg] });
       pastReferencesHeading = true;
       i++;
@@ -1200,7 +1215,7 @@ function detectStructuralBlocks(
         if (refSegs.length > 0 && cur.flowBand !== refSegs[refSegs.length - 1].flowBand) break;
         if (isHeadingSegment(cur)) break;
         if (isFigureCaptionSegment(cur)) break;
-        if (refSegs.length === 0 || isReferenceStart(cur.str) || isContinuationOfReference(cur, refSegs[refSegs.length - 1])) {
+        if (refSegs.length === 0 || isReferenceStart(cur.str, pastReferencesHeading) || isContinuationOfReference(cur, refSegs[refSegs.length - 1])) {
           refSegs.push(cur);
           i++;
         } else {
@@ -1425,7 +1440,7 @@ function segmentBlockIntoParas(
       let refColumnIndex: number | undefined = undefined;
 
       for (const seg of segs) {
-        if (isReferenceStart(seg.str) && refBuf.trim()) {
+        if (isReferenceStart(seg.str, true) && refBuf.trim()) {
           flushPara(refBuf, refItems, refSection, refColumnIndex);
           refBuf = '';
           refItems = [];

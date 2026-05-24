@@ -6,6 +6,7 @@ import { TranslationService } from '../services/translationService';
 import { GlossaryService } from '../services/glossaryService';
 import { HistoryService } from '../services/historyService';
 import { ConfigService } from '../services/configService';
+import { HighlightService } from '../services/highlightService';
 import { LayoutConfig } from '../types/config';
 
 export class SidePanelProvider {
@@ -16,6 +17,7 @@ export class SidePanelProvider {
   private glossaryService: GlossaryService;
   private historyService: HistoryService;
   private configService: ConfigService;
+  private highlightService: HighlightService;
   private layoutTerminal: vscode.Terminal | undefined;
 
   public onTranslatePageRequested?: (pageNumber: number, paragraphs: Array<{ id: string; text: string }>) => Promise<void>;
@@ -37,6 +39,8 @@ export class SidePanelProvider {
     translations?: Array<{ id: string; translatedText: string }>;
   } | null = null;
   private lastJournalInfo: JournalInfo | null = null;
+  private lastBibliography?: Array<{ key: string; text: string }>;
+  private activePdfUri?: string;
 
   constructor(
     context: vscode.ExtensionContext,
@@ -50,12 +54,35 @@ export class SidePanelProvider {
     this.glossaryService = glossaryService;
     this.historyService = historyService;
     this.configService = configService;
+    this.highlightService = new HighlightService(context);
 
     vscode.window.onDidCloseTerminal((terminal) => {
       if (this.layoutTerminal === terminal) {
         this.layoutTerminal = undefined;
       }
     }, undefined, this.context.subscriptions);
+  }
+
+  setActivePdf(uri: vscode.Uri): void {
+    const uriStr = uri.toString();
+    if (this.activePdfUri !== uriStr) {
+      this.activePdfUri = uriStr;
+      this.postMessage({
+        type: 'set-active-pdf',
+        pdfUri: uriStr
+      });
+      this.syncHighlights();
+    }
+  }
+
+  syncHighlights(): void {
+    if (this.activePdfUri) {
+      this.postMessage({
+        type: 'sync-highlights',
+        pdfUri: this.activePdfUri,
+        highlights: this.highlightService.getForPdf(this.activePdfUri)
+      });
+    }
   }
 
   show(): void {
@@ -159,6 +186,42 @@ export class SidePanelProvider {
           case 'refresh-page-text':
             await this.onRefreshPageTextRequested?.();
             break;
+          case 'add-highlight':
+            this.highlightService.add({
+              id: msg.id,
+              pdfUri: msg.pdfUri,
+              pageNumber: msg.pageNumber,
+              paragraphId: msg.paragraphId,
+              text: msg.text,
+              color: msg.color,
+              note: msg.note
+            });
+            this.syncHighlights();
+            break;
+          case 'delete-highlight':
+            this.highlightService.delete(msg.id);
+            this.syncHighlights();
+            break;
+          case 'update-highlight-note':
+            this.highlightService.updateNote(msg.id, msg.note);
+            this.syncHighlights();
+            break;
+          case 'ai-explain':
+            try {
+              const explanation = await this.handleAiExplain(msg.text);
+              this.postMessage({
+                type: 'ai-explain-result',
+                text: msg.text,
+                explanation
+              });
+            } catch (err) {
+              this.postMessage({
+                type: 'ai-explain-result',
+                text: msg.text,
+                error: err instanceof Error ? err.message : String(err)
+              });
+            }
+            break;
           case 'panel-hover':
             console.log('[Extension] SidePanelProvider received panel-hover from side panel webview with id:', msg.id);
             await this.onPanelHoverRequested?.(msg.id);
@@ -237,6 +300,15 @@ export class SidePanelProvider {
     });
   }
 
+  syncBibliography(bibliography: Array<{ key: string; text: string }>): void {
+    this.lastBibliography = bibliography;
+    this.postMessage({
+      type: 'sync-bibliography',
+      bibliography
+    });
+  }
+
+
   showLoading(message: string): void {
     this.postMessage({ type: 'loading', message });
   }
@@ -276,6 +348,19 @@ export class SidePanelProvider {
         columnsCount: this.lastPageText.columnsCount,
         translations: this.lastPageText.translations
       });
+    }
+    if (this.lastBibliography) {
+      this.postMessage({
+        type: 'sync-bibliography',
+        bibliography: this.lastBibliography
+      });
+    }
+    if (this.activePdfUri) {
+      this.postMessage({
+        type: 'set-active-pdf',
+        pdfUri: this.activePdfUri
+      });
+      this.syncHighlights();
     }
   }
 
@@ -509,6 +594,73 @@ export class SidePanelProvider {
       language: 'markdown'
     });
     await vscode.window.showTextDocument(doc);
+  }
+
+  private async handleAiExplain(text: string): Promise<string> {
+    const config = this.configService.getTranslationConfig();
+    const apiKey = config.openai.apiKey;
+    const baseUrl = config.openai.baseUrl;
+    const model = config.openai.model;
+
+    if (!apiKey) {
+      try {
+        const transResult = await this.translationService.translate(text);
+        return `💡 [提示] 请在设置中配置 **OpenAI 兼容接口**，以获得大模型驱动的深度学术释义。以下为机器翻译结果：\n\n${transResult.text}`;
+      } catch (err) {
+        throw new Error('未配置 OpenAI 接口，且机器翻译不可用: ' + (err instanceof Error ? err.message : String(err)));
+      }
+    }
+
+    const systemPrompt = "你是一个资深的学术论文导师。请用中文简明扼要地解释用户提供的学术词汇、术语或句子，指出其在论文中的含义、背景以及常见的学术用途。要求回答清晰、专业、直白，字数控制在150字以内。";
+    const url = baseUrl.replace(/\/$/, '') + '/chat/completions';
+
+    try {
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: text }
+          ],
+          temperature: 0.3,
+          max_tokens: 1024
+        }),
+        signal: AbortSignal.timeout(30000)
+      });
+
+      if (!resp.ok) {
+        const errText = await resp.text();
+        throw new Error(`请求失败 ${resp.status}: ${errText.slice(0, 200)}`);
+      }
+
+      const data = (await resp.json()) as {
+        choices?: Array<{ message?: { content?: string } }>;
+        error?: { message: string };
+      };
+
+      if (data.error) {
+        throw new Error(`接口错误: ${data.error.message}`);
+      }
+
+      const content = data.choices?.[0]?.message?.content;
+      if (!content) {
+        throw new Error('返回了空的结果');
+      }
+
+      return content.trim();
+    } catch (err) {
+      try {
+        const transResult = await this.translationService.translate(text);
+        return `⚠️ [API 错误: ${err instanceof Error ? err.message : String(err)}]\n\n已自动为您降级到机器翻译：\n\n${transResult.text}`;
+      } catch (transErr) {
+        throw err;
+      }
+    }
   }
 
   private getHtml(webview: vscode.Webview): string {

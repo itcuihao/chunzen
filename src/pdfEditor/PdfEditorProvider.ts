@@ -62,10 +62,12 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
     this.webviews.set(key, webviewPanel);
     this.panelUris.set(webviewPanel, uri);
     this.activeWebviewPanel = webviewPanel;
+    this.sidePanel.setActivePdf(uri);
 
     webviewPanel.onDidChangeViewState(e => {
       if (e.webviewPanel.active) {
         this.activeWebviewPanel = webviewPanel;
+        this.sidePanel.setActivePdf(uri);
       }
     });
 
@@ -132,6 +134,10 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
 
           case 'pdf-pages-text-result':
             this.sidePanel.handlePdfPagesTextResult(msg.paragraphs);
+            break;
+
+          case 'pdf-bibliography-extracted':
+            this.sidePanel.syncBibliography(msg.bibliography);
             break;
         }
       },
