@@ -965,15 +965,16 @@ function findTableLikeClusters(paragraphs: Paragraph[], viewport: PdfViewport): 
     const p = paragraphs[i];
     if (p.skipped || !p.text.trim()) continue;
     if (p.y > viewport.height * 0.72) continue;
-    const lower = p.text.toLowerCase();
+    const cleanText = p.text.replace(/<[^>]+>/g, '');
+    const lower = cleanText.toLowerCase();
     const headerCue =
-      /^table\s*\d*/i.test(p.text) ||
+      /^table\s*\d*/i.test(cleanText) ||
       lower.includes('name and genome location') ||
       lower.includes('alias in circbase') ||
       lower.includes('gene symbol') ||
       lower.includes('reference');
     const rowCue =
-      /\[[0-9,\-–]+\]/.test(p.text) ||
+      /\[[0-9,\-–]+\]/.test(cleanText) ||
       lower.includes('chr') ||
       lower.includes('circ');
     const wideEnough = p.width >= viewport.width * 0.42;
@@ -1026,11 +1027,12 @@ function injectTableImageFallback(paragraphs: Paragraph[], viewport: PdfViewport
     const minY = Math.min(...paras.map(p => p.y));
     const maxY = Math.max(...paras.map(p => p.y + p.height));
     const cues = paras.reduce((sum, p) => {
-      const lower = p.text.toLowerCase();
+      const cleanText = p.text.replace(/<[^>]+>/g, '');
+      const lower = cleanText.toLowerCase();
       let s = 0;
-      if (/^table\s*\d*/i.test(p.text)) s += 4;
+      if (/^table\s*\d*/i.test(cleanText)) s += 4;
       if (lower.includes('alias in circbase') || lower.includes('gene symbol')) s += 3;
-      if (/\[[0-9,\-–]+\]/.test(p.text)) s += 1;
+      if (/\[[0-9,\-–]+\]/.test(cleanText)) s += 1;
       return sum + s;
     }, 0);
     const score = cues + paras.length * 0.4 - minY * 0.002 - (maxY - minY) * 0.001;
@@ -1215,50 +1217,80 @@ window.addEventListener('message', event => {
         query = query.replace(/^(图|插图)\s*(\d+)/i, 'fig $2');
         query = query.replace(/^(表|表格)\s*(\d+)/i, 'table $2');
 
-        const numMatch = query.match(/\d+[a-z]?/i);
+        const numMatch = query.match(/(?:s\d+|\d+)(?:\s*[a-z])?/i);
         if (!numMatch) return;
-        const num = numMatch[0];
-        const hasLetter = /[a-z]/i.test(num);
-        const suffixPattern = hasLetter ? '\\b' : '(?!\\d)';
+        const num = numMatch[0].replace(/\s+/g, ''); // e.g. "2f" or "s2d"
+        const endsWithLetter = /[a-z]$/i.test(num);
         
-        let regex: RegExp;
-        if (query.startsWith('fig')) {
-          regex = new RegExp(`^\\s*(?:\\d+(?:\\.\\d+)*\\s+)?(?:fig|figure)\\b\\.?\\s*${num}${suffixPattern}`, 'i');
-        } else if (query.startsWith('table')) {
-          regex = new RegExp(`^\\s*(?:\\d+(?:\\.\\d+)*\\s+)?table\\b\\s*${num}${suffixPattern}`, 'i');
-        } else {
-          regex = new RegExp(`(?:fig|figure|table)\\b\\.?\\s*${num}${suffixPattern}`, 'i');
-        }
+        const buildRegex = (n: string) => {
+          const endsWithL = /[a-z]$/i.test(n);
+          const suff = endsWithL ? '\\b' : '(?!\\d)';
+          if (query.startsWith('fig')) {
+            return new RegExp(`^\\s*(?:\\d+(?:\\.\\d+)*\\s+)?(?:fig|figure)\\b\\.?\\s*${n}${suff}`, 'i');
+          } else if (query.startsWith('table')) {
+            return new RegExp(`^\\s*(?:\\d+(?:\\.\\d+)*\\s+)?table\\b\\s*${n}${suff}`, 'i');
+          } else {
+            return new RegExp(`(?:fig|figure|table)\\b\\.?\\s*${n}${suff}`, 'i');
+          }
+        };
 
-        console.log(`[PDF Viewer] Searching for caption query: "${message.query}" -> regex: ${regex}`);
-
-        for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+        const getPageParagraphs = async (pageNum: number) => {
           let items = pageRichContentCache.get(pageNum);
           if (!items) {
             try {
-              const page = await pdfDoc.getPage(pageNum);
+              const page = await pdfDoc!.getPage(pageNum);
               items = await getPageText(page);
               pageRichContentCache.set(pageNum, items);
             } catch {
-              continue;
+              return [];
             }
           }
-
           const dummyDiv = document.createElement('div');
-          const pageViewport = await pdfDoc.getPage(pageNum).then(p => p.getViewport({ scale: 1.0 }));
+          const pageViewport = await pdfDoc!.getPage(pageNum).then(p => p.getViewport({ scale: 1.0 }));
           const { paragraphs } = buildTextLayer(dummyDiv, items, pageViewport, {
             pageNumber: pageNum
           });
+          return paragraphs;
+        };
 
+        let regex = buildRegex(num);
+        console.log(`[PDF Viewer] Searching for caption query: "${message.query}" -> regex: ${regex}`);
+
+        let matchedPage = -1;
+        // Search 1: with letter
+        for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+          const paragraphs = await getPageParagraphs(pageNum);
           for (const p of paragraphs) {
-            // DO NOT check p.skipped here, because captions can sometimes be marked as skipped for translation,
-            // but we still want to search and jump to them.
-            if (regex.test(p.text.trim())) {
-              console.log(`[PDF Viewer] Caption matched on page ${pageNum}: "${p.text}"`);
-              goToPage(pageNum);
-              return;
+            const cleanText = p.text.replace(/<[^>]+>/g, '').trim();
+            if (regex.test(cleanText)) {
+              matchedPage = pageNum;
+              break;
             }
           }
+          if (matchedPage !== -1) break;
+        }
+
+        // Search 2: fallback to base number (without letter)
+        if (matchedPage === -1 && endsWithLetter) {
+          const baseNum = num.slice(0, -1);
+          const fallbackRegex = buildRegex(baseNum);
+          console.log(`[PDF Viewer] Fallback search with base number: "${baseNum}" -> regex: ${fallbackRegex}`);
+          for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+            const paragraphs = await getPageParagraphs(pageNum);
+            for (const p of paragraphs) {
+              const cleanText = p.text.replace(/<[^>]+>/g, '').trim();
+              if (fallbackRegex.test(cleanText)) {
+                matchedPage = pageNum;
+                break;
+              }
+            }
+            if (matchedPage !== -1) break;
+          }
+        }
+
+        if (matchedPage !== -1) {
+          console.log(`[PDF Viewer] Caption matched on page ${matchedPage}`);
+          goToPage(matchedPage);
         }
       })();
       break;
@@ -1401,10 +1433,10 @@ async function extractBibliography() {
     let hasHeading = false;
     for (const p of paragraphs) {
       if (p.skipped) continue;
-      const text = p.text.trim();
-      if (!text) continue;
+      const cleanText = p.text.replace(/<[^>]+>/g, '').trim();
+      if (!cleanText) continue;
 
-      if (/^(\d+(\.\d+)*\s+)?(references|bibliography|works?\s+cited|references\s+and\s+notes)\b/i.test(text) && text.length < 50) {
+      if (/^(\d+(\.\d+)*\s+)?(references|bibliography|works?\s+cited|references\s+and\s+notes)\b/i.test(cleanText) && cleanText.length < 50) {
         hasHeading = true;
         break;
       }
@@ -1445,23 +1477,23 @@ async function extractBibliography() {
 
     for (const p of paragraphs) {
       if (p.skipped) continue;
-      const text = p.text.trim();
-      if (!text) continue;
+      const cleanText = p.text.replace(/<[^>]+>/g, '').trim();
+      if (!cleanText) continue;
 
       // Check if this is references section heading
-      if (/^(\d+(\.\d+)*\s+)?(references|bibliography|works?\s+cited|references\s+and\s+notes)\b/i.test(text) && text.length < 50) {
+      if (/^(\d+(\.\d+)*\s+)?(references|bibliography|works?\s+cited|references\s+and\s+notes)\b/i.test(cleanText) && cleanText.length < 50) {
         foundReferencesHeading = true;
         continue;
       }
 
       // Match citation start (numbered format): e.g. [17], 17., 17 (naked number followed by space/word)
-      const numMatch = text.match(/^\s*\[(\d{1,4})\]\s*(.*)/) || 
-                       text.match(/^\s*(\d{1,4})\.\s*(.*)/) ||
-                       text.match(/^\s*(\d{1,4})\s+(.*)/);
+      const numMatch = cleanText.match(/^\s*\[(\d{1,4})\]\s*(.*)/) || 
+                       cleanText.match(/^\s*(\d{1,4})\.\s*(.*)/) ||
+                       cleanText.match(/^\s*(\d{1,4})\s+(.*)/);
 
       if (numMatch) {
         const key = numMatch[1];
-        activeEntry = { key, text, pageNumber: pageNum };
+        activeEntry = { key, text: cleanText, pageNumber: pageNum };
         bibEntries.push(activeEntry);
         foundReferencesHeading = true; // Auto-activate continuation on first citation start
       } else {
@@ -1471,9 +1503,9 @@ async function extractBibliography() {
         const refStartRegex = /\b([A-Z][a-zA-Z\u00C0-\u017F\-]+),\s+([A-Z]\.(?:\s*[A-Z]\.)*)/g;
         const matches: Array<{ index: number; author: string; initials: string }> = [];
         let match;
-        while ((match = refStartRegex.exec(text)) !== null) {
+        while ((match = refStartRegex.exec(cleanText)) !== null) {
           const matchIndex = match.index;
-          const prefix = text.substring(0, matchIndex).trim();
+          const prefix = cleanText.substring(0, matchIndex).trim();
           
           // Co-author check: prefix ends with initials or "and"
           const isCoAuthor = /[A-Z]\.?\s*$/i.test(prefix) || 
@@ -1496,9 +1528,9 @@ async function extractBibliography() {
             const currentMatch = matches[i];
             const nextMatch = matches[i + 1];
             const startIdx = currentMatch.index;
-            const endIdx = nextMatch ? nextMatch.index : text.length;
+            const endIdx = nextMatch ? nextMatch.index : cleanText.length;
             
-            const entryText = text.substring(startIdx, endIdx).trim();
+            const entryText = cleanText.substring(startIdx, endIdx).trim();
             const yearMatch = entryText.match(/\b(18\d{2}|19\d{2}|20\d{2})([a-z])?\b/i);
             
             if (yearMatch) {
@@ -1511,7 +1543,7 @@ async function extractBibliography() {
           }
         } else if (activeEntry && (foundReferencesHeading || refStartPage !== -1)) {
           // If no new reference start matches in this paragraph, append to the active entry
-          activeEntry.text += ' ' + text;
+          activeEntry.text += ' ' + cleanText;
         }
       }
     }

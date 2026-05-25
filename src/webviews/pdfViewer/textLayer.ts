@@ -11,6 +11,18 @@ let _bodyFont = '';
 let _fontCharCountMap = new Map<string, number>();
 let _totalFontChars = 0;
 
+function isRotated(transform: number[]): boolean {
+  if (!transform || transform.length < 4) return false;
+  const scaleX = Math.abs(transform[0]);
+  const skewY = Math.abs(transform[1]);
+  const skewX = Math.abs(transform[2]);
+  const scaleY = Math.abs(transform[3]);
+  if (skewY > scaleX * 1.5 && skewX > scaleY * 1.5) {
+    return true;
+  }
+  return false;
+}
+
 export interface Sentence {
   id: string;
   text: string;
@@ -125,6 +137,7 @@ export function buildTextLayer(
   options?: {
     layoutHints?: LayoutHints;
     pageNumber?: number;
+    commonObjs?: any;
   }
 ): {
   sentences: Map<string, Sentence>;
@@ -133,6 +146,16 @@ export function buildTextLayer(
   columnsCount: number;
 } {
   container.innerHTML = '';
+
+  let styles: Record<string, any> = {};
+  let commonObjs: any = null;
+  if (richContent && !Array.isArray(richContent)) {
+    styles = richContent.styles || {};
+    commonObjs = richContent.commonObjs;
+  }
+  if (options && options.commonObjs) {
+    commonObjs = options.commonObjs;
+  }
 
   let items: TextItem[];
   let paragraphBoundaries: ParagraphBoundary[] = [];
@@ -159,6 +182,7 @@ export function buildTextLayer(
   const fontCharCount = new Map<string, number>();
   for (const item of items) {
     if (!item.str || !item.str.trim() || !item.fontName) continue;
+    if (isRotated(item.transform)) continue;
     const tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
     if (!tx || isNaN(tx[4]) || isNaN(tx[5])) continue;
     if (tx[5] < headerY || tx[5] > footerY) continue;
@@ -191,6 +215,7 @@ export function buildTextLayer(
 
   for (const item of items) {
     if (!item.str || !item.str.trim()) continue;
+    if (isRotated(item.transform)) continue;
     const tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
     if (!tx || isNaN(tx[4]) || isNaN(tx[5])) continue;
 
@@ -491,14 +516,14 @@ export function buildTextLayer(
       for (const splitIndex of sortedSplitIndices) {
         const part = line.slice(start, splitIndex + 1);
         if (part.length > 0) {
-          const partSeg = createSegment(part, lineY >= firstBodyY - 5 ? estimateColumnIndex(part, effectiveGutters, pageWidth) : 0);
+          const partSeg = createSegment(part, lineY >= firstBodyY - 5 ? estimateColumnIndex(part, effectiveGutters, pageWidth) : 0, styles, commonObjs);
           segments.push(partSeg);
         }
         start = splitIndex + 1;
       }
       const tail = line.slice(start);
       if (tail.length > 0) {
-        const tailSeg = createSegment(tail, lineY >= firstBodyY - 5 ? estimateColumnIndex(tail, effectiveGutters, pageWidth) : 0);
+        const tailSeg = createSegment(tail, lineY >= firstBodyY - 5 ? estimateColumnIndex(tail, effectiveGutters, pageWidth) : 0, styles, commonObjs);
         segments.push(tailSeg);
       }
     } else {
@@ -531,7 +556,7 @@ export function buildTextLayer(
           colIndex = estimateColumnIndex(line, effectiveGutters, pageWidth);
         }
       }
-      segments.push(createSegment(line, colIndex));
+      segments.push(createSegment(line, colIndex, styles, commonObjs));
     }
   }
 
@@ -720,7 +745,7 @@ export function buildTextLayer(
 
       if (block.type === 'structured') {
         // Structured block is always a single paragraph/heading
-        const allText = filteredLines.map(line => line.map(it => it.str).join(' ').trim()).join(' ').replace(/\s+/g, ' ').trim();
+        const allText = filteredLines.map(line => composeFormattedLineText(line, styles, commonObjs)).join(' ').replace(/\s+/g, ' ').trim();
         const allItems = filteredLines.flat();
         if (allText) {
           const blockType = mapRoleToBlockType(block.role);
@@ -746,17 +771,18 @@ export function buildTextLayer(
         }
       } else {
         // Gap block: group lines into paragraphs when Y gap is large
-        let paraItems: ColLayoutItem[] = [];
+        let paraLines: ColLayoutItem[][] = [];
         let prevLineY: number | null = null;
         
         const flushGapPara = () => {
-          if (paraItems.length === 0) return;
-          const text = paraItems.map(it => it.str).join(' ').replace(/\s+/g, ' ').trim();
+          if (paraLines.length === 0) return;
+          const text = paraLines.map(line => composeFormattedLineText(line, styles, commonObjs)).join(' ').replace(/\s+/g, ' ').trim();
+          const items = paraLines.flat();
           if (text) {
             const para: LogicalParagraph = {
               id: `p-${nextParaId++}`,
               text,
-              items: [...paraItems],
+              items,
               section: 'left',
               blockType: 'unknown'
             };
@@ -773,7 +799,7 @@ export function buildTextLayer(
             );
             mergedLogicalParas.push(para);
           }
-          paraItems = [];
+          paraLines = [];
         };
 
         for (const line of filteredLines) {
@@ -782,7 +808,7 @@ export function buildTextLayer(
           if (prevLineY !== null && Math.abs(lineY - prevLineY) > lineH * 1.6) {
             flushGapPara();
           }
-          paraItems.push(...line);
+          paraLines.push(line);
           prevLineY = lineY;
         }
         flushGapPara();
@@ -1031,7 +1057,7 @@ export function buildTextLayer(
 
 function isHeadingSegment(seg: LineSegment): boolean {
   if (seg.items.length === 0) return false;
-  const text = seg.str.trim();
+  const text = seg.str.replace(/<[^>]+>/g, '').trim();
   if (!text) return false;
 
   // 长度限制：heading 不应超过 120 字符
@@ -1061,7 +1087,7 @@ function isHeadingSegment(seg: LineSegment): boolean {
 }
 
 function isFigureCaptionSegment(seg: LineSegment): boolean {
-  const text = seg.str.trim();
+  const text = seg.str.replace(/<[^>]+>/g, '').trim();
   return /^(Figure|Fig\.?|Table)\s+\d/i.test(text);
 }
 
@@ -1071,7 +1097,7 @@ function isSidebarTocHeading(
   pageWidth: number
 ): boolean {
   if (seg.columnIndex < 0) return false;
-  const text = seg.str.trim();
+  const text = seg.str.replace(/<[^>]+>/g, '').trim();
   if (!/^(sections?|contents?)$/i.test(text)) return false;
 
   const colWidth = columnMargins.get(seg.columnIndex)?.width ?? pageWidth;
@@ -1085,7 +1111,7 @@ function isSidebarTocEntry(
   pageWidth: number
 ): boolean {
   if (seg.columnIndex !== tocColumnIndex) return false;
-  const text = seg.str.trim();
+  const text = seg.str.replace(/<[^>]+>/g, '').trim();
   if (!text) return false;
   if (/^(figure|fig\.?|table)\s+\d/i.test(text)) return false;
 
@@ -1097,23 +1123,38 @@ function isSidebarTocEntry(
 }
 
 function isReferenceStart(str: string, inReferencesSection: boolean = false): boolean {
-  const text = str.trim();
+  const text = str.replace(/<[^>]+>/g, '').trim();
   if (/^\[\d{1,4}\]/.test(text)) return true;
   if (/^\[\d{1,4}[,;]/.test(text)) return true;
-  if (/^\d{1,4}\.\s/.test(text)) {
-    if (inReferencesSection || text.length > 10) return true;
+  
+  const dotNumMatch = text.match(/^(\d{1,4})\.\s/);
+  if (dotNumMatch) {
+    const num = parseInt(dotNumMatch[1], 10);
+    const isYear = num >= 1800 && num <= 2100;
+    if (!isYear) {
+      if (inReferencesSection || text.length > 10) return true;
+    }
   }
+
   // Standalone dot-numbers like "17." (which may be a separate segment)
-  if (/^\d{1,4}\.$/.test(text)) {
-    return true;
+  const standaloneDotNumMatch = text.match(/^(\d{1,4})\.$/);
+  if (standaloneDotNumMatch) {
+    const num = parseInt(standaloneDotNumMatch[1], 10);
+    const isYear = num >= 1800 && num <= 2100;
+    if (!isYear) return true;
   }
+
   // Standalone bracketed numbers like "[17]"
   if (/^\[\d{1,4}\]$/.test(text)) return true;
   
   // Naked numbers in references section
   if (inReferencesSection) {
-    if (/^\d{1,4}$/.test(text)) return true;
-    if (/^\d{1,4}\s+\S+/.test(text)) return true;
+    const nakedMatch = text.match(/^(\d{1,4})(?:\s+(.*))?$/);
+    if (nakedMatch) {
+      const num = parseInt(nakedMatch[1], 10);
+      const isYear = num >= 1800 && num <= 2100;
+      if (!isYear) return true;
+    }
   }
 
   if (/^[A-Z][a-z]+\s+[A-Z]/.test(text) && /\b(19|20)\d{2}\b/.test(text)) return true;
@@ -1675,7 +1716,7 @@ function isBoldFont(fontName: string): boolean {
   return false;
 }
 
-function createSegment(lineItems: ColLayoutItem[], colIndex: number): LineSegment {
+function createSegment(lineItems: ColLayoutItem[], colIndex: number, styles?: Record<string, any>, commonObjs?: any): LineSegment {
   const xs = lineItems.map(it => it.x);
   const ys = lineItems.map(it => it.y);
   const xMaxs = lineItems.map(it => it.x + it.width);
@@ -1684,7 +1725,7 @@ function createSegment(lineItems: ColLayoutItem[], colIndex: number): LineSegmen
   const y = Math.min(...ys);
   const width = Math.max(...xMaxs) - x;
   const height = Math.max(...yMaxs) - y;
-  const str = composeLineText(lineItems);
+  const str = styles ? composeFormattedLineText(lineItems, styles, commonObjs) : composeLineText(lineItems);
 
   return {
     items: lineItems,
@@ -1868,6 +1909,125 @@ function orderSegmentBand(
     }
   }
   return ordered;
+}
+
+function isItalic(fontName: string, styles: Record<string, any>, commonObjs?: any): boolean {
+  if (!fontName) return false;
+  
+  // Strategy 1: Check styles returned from getTextContent
+  const style = styles[fontName];
+  if (style && style.fontFamily) {
+    const family = style.fontFamily.toLowerCase();
+    if (family.includes('italic') || family.includes('oblique') || family.includes('obli') || family.includes('ital')) {
+      return true;
+    }
+  }
+  
+  // Strategy 2: Check commonObjs if available and resolved
+  if (commonObjs && typeof commonObjs.has === 'function' && commonObjs.has(fontName)) {
+    try {
+      const obj = commonObjs.get(fontName);
+      if (obj) {
+        if (obj.italic) return true;
+        if (obj.name) {
+          const name = obj.name.toLowerCase();
+          if (name.includes('italic') || name.includes('oblique') || name.includes('obli') || name.includes('ital')) {
+            return true;
+          }
+        }
+      }
+    } catch {
+      // Ignore unresolved errors
+    }
+  }
+  
+  return false;
+}
+
+function composeFormattedLineText(items: ColLayoutItem[], styles: Record<string, any>, commonObjs?: any): string {
+  if (items.length === 0) return '';
+  if (items.length === 1) {
+    const it = items[0];
+    const italic = isItalic(it.fontName, styles, commonObjs);
+    let txt = it.str.trim();
+    if (italic) txt = `<i>${txt}</i>`;
+    return txt;
+  }
+
+  // Calculate baseline to identify superscripts/subscripts
+  let totalLen = 0;
+  let heightSum = 0;
+  for (const it of items) {
+    if (it.str.trim()) {
+      heightSum += it.height * it.str.length;
+      totalLen += it.str.length;
+    }
+  }
+  const baseHeight = totalLen > 0 ? heightSum / totalLen : 10;
+
+  let ySum = 0;
+  let yCount = 0;
+  for (const it of items) {
+    if (it.str.trim() && it.height >= baseHeight * 0.85) {
+      ySum += it.y * it.str.length;
+      yCount += it.str.length;
+    }
+  }
+  const baseY = yCount > 0 ? ySum / yCount : items[0].y;
+
+  const getFormattedItemText = (it: ColLayoutItem) => {
+    const italic = isItalic(it.fontName, styles, commonObjs);
+    const isSup = it.height < baseHeight * 0.88 && it.y < baseY - 1.2;
+    const isSub = it.height < baseHeight * 0.88 && it.y > baseY + 1.2;
+    
+    let text = it.str;
+    if (italic) {
+      text = `<i>${text}</i>`;
+    }
+    if (isSup) {
+      text = `<sup>${text}</sup>`;
+    } else if (isSub) {
+      text = `<sub>${text}</sub>`;
+    }
+    return { text, isSup, isSub };
+  };
+
+  const formatted0 = getFormattedItemText(items[0]);
+  let text = formatted0.text;
+  let prevIsSup = formatted0.isSup;
+  let prevIsSub = formatted0.isSub;
+
+  for (let i = 1; i < items.length; i++) {
+    const prev = items[i - 1];
+    const cur = items[i];
+    const prevText = prev.str;
+    const curText = cur.str;
+    const gap = cur.x - (prev.x + prev.width);
+    const gapThreshold = Math.max(cur.height * 0.2, 1.5);
+    
+    const formattedCur = getFormattedItemText(cur);
+    const curIsSup = formattedCur.isSup;
+    const curIsSub = formattedCur.isSub;
+
+    const attachNoSpace =
+      gap <= gapThreshold ||
+      /^[,.;:!?%)\]}]/.test(curText) ||
+      /[(\[{]$/.test(prevText) ||
+      (curIsSup && !prevIsSup) ||
+      (curIsSub && !prevIsSub) ||
+      (!curIsSup && prevIsSup) ||
+      (!curIsSub && prevIsSub);
+
+    if (attachNoSpace) {
+      text += formattedCur.text;
+    } else {
+      text += ` ${formattedCur.text}`;
+    }
+    
+    prevIsSup = curIsSup;
+    prevIsSub = curIsSub;
+  }
+  return text.trim();
 }
 
 function composeLineText(items: ColLayoutItem[]): string {
@@ -2190,32 +2350,56 @@ function shouldStartNewBodyParagraph(
   return false;
 }
 
+function getPlainTextIndexToHtmlIndexMap(html: string): number[] {
+  const map: number[] = [];
+  let inTag = false;
+  for (let i = 0; i < html.length; i++) {
+    const char = html[i];
+    if (char === '<') {
+      inTag = true;
+    }
+    if (!inTag) {
+      map.push(i);
+    }
+    if (char === '>') {
+      inTag = false;
+    }
+  }
+  return map;
+}
+
 function computeItemOffsets(text: string, items: ColLayoutItem[]): Array<{ start: number; end: number }> {
+  const map = getPlainTextIndexToHtmlIndexMap(text);
+  const plainText = text.replace(/<[^>]+>/g, '');
   const offsets: Array<{ start: number; end: number }> = [];
   let currentIndex = 0;
 
   for (const item of items) {
     const str = item.str;
     if (!str) {
-      offsets.push({ start: currentIndex, end: currentIndex });
+      const htmlIdx = currentIndex < map.length ? map[currentIndex] : text.length;
+      offsets.push({ start: htmlIdx, end: htmlIdx });
       continue;
     }
 
-    let start = text.indexOf(str, currentIndex);
+    let start = plainText.indexOf(str, currentIndex);
     if (start === -1) {
-      // Fallback 1: case-insensitive search
-      const lowerText = text.toLowerCase();
+      const lowerText = plainText.toLowerCase();
       const lowerStr = str.toLowerCase();
       start = lowerText.indexOf(lowerStr, currentIndex);
     }
 
     if (start === -1) {
-      // Fallback 2: align at the current index
       start = currentIndex;
     }
 
     const end = start + str.length;
-    offsets.push({ start, end });
+    
+    const htmlStart = start < map.length ? map[start] : text.length;
+    const lastCharIdx = end - 1;
+    const htmlEnd = lastCharIdx < map.length ? map[lastCharIdx] + 1 : text.length;
+    
+    offsets.push({ start: htmlStart, end: htmlEnd });
     currentIndex = end;
   }
 

@@ -24,6 +24,7 @@ interface PdfPage {
   }): Promise<TextContent>;
   getOperatorList(): Promise<OperatorList>;
   render(config: { canvasContext: CanvasRenderingContext2D; viewport: PdfViewport }): RenderTask;
+  commonObjs?: any;
 }
 
 export interface PdfViewport {
@@ -97,6 +98,8 @@ export interface RichTextContent {
   hasStructure: boolean;
   /** Horizontal separator rules detected from vector paths */
   horizontalRules: HorizontalRule[];
+  styles?: Record<string, { fontFamily: string; ascent: number; descent: number }>;
+  commonObjs?: any;
 }
 
 export type { PdfDocument, PdfPage };
@@ -227,7 +230,14 @@ export async function getPageText(page: PdfPage, viewport?: PdfViewport): Promis
     `horizontalRules=${horizontalRules.length}`
   );
 
-  return { items, paragraphBoundaries: dedupedBoundaries, hasStructure, horizontalRules };
+  return {
+    items,
+    paragraphBoundaries: dedupedBoundaries,
+    hasStructure,
+    horizontalRules,
+    styles: (rawContent as any).styles || {},
+    commonObjs: page.commonObjs
+  };
 }
 
 function dedupBoundaries(boundaries: ParagraphBoundary[]): ParagraphBoundary[] {
