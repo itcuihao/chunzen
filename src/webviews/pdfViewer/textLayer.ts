@@ -1122,7 +1122,7 @@ function isSidebarTocEntry(
   return true;
 }
 
-function isReferenceStart(str: string, inReferencesSection: boolean = false): boolean {
+function isReferenceStart(str: string, inReferencesSection: boolean = false, isHanging?: boolean): boolean {
   const text = str.replace(/<[^>]+>/g, '').trim();
   if (/^\[\d{1,4}\]/.test(text)) return true;
   if (/^\[\d{1,4}[,;]/.test(text)) return true;
@@ -1157,7 +1157,22 @@ function isReferenceStart(str: string, inReferencesSection: boolean = false): bo
     }
   }
 
-  if (/^[A-Z][a-z]+\s+[A-Z]/.test(text) && /\b(19|20)\d{2}\b/.test(text)) return true;
+  // Author-date style check
+  const hasAuthorPattern = /^[A-Z][a-zA-Z\u00C0-\u017F\-]+,?\s+[A-Z]\b/.test(text);
+  if (hasAuthorPattern) {
+    if (inReferencesSection) {
+      if (isHanging === true) {
+        return true;
+      } else if (isHanging === false) {
+        return false;
+      } else {
+        return /\b(19|20)\d{2}\b/.test(text);
+      }
+    } else {
+      return /\b(19|20)\d{2}\b/.test(text);
+    }
+  }
+
   return false;
 }
 
@@ -1256,7 +1271,11 @@ function detectStructuralBlocks(
         if (refSegs.length > 0 && cur.flowBand !== refSegs[refSegs.length - 1].flowBand) break;
         if (isHeadingSegment(cur)) break;
         if (isFigureCaptionSegment(cur)) break;
-        if (refSegs.length === 0 || isReferenceStart(cur.str, pastReferencesHeading) || isContinuationOfReference(cur, refSegs[refSegs.length - 1])) {
+
+        const colLeft = columnMargins.get(cur.columnIndex)?.left ?? 0;
+        const isHanging = colLeft > 0 ? (Math.abs(cur.x - colLeft) < 4) : undefined;
+
+        if (refSegs.length === 0 || isReferenceStart(cur.str, pastReferencesHeading, isHanging) || isContinuationOfReference(cur, refSegs[refSegs.length - 1], columnMargins)) {
           refSegs.push(cur);
           i++;
         } else {
@@ -1389,9 +1408,11 @@ function detectStructuralBlocks(
     for (const seg of segments) {
       if (!seg.str.trim()) continue;
       totalNonEmpty++;
-      if (isReferenceStart(seg.str)) refStartCount++;
+      const colLeft = columnMargins.get(seg.columnIndex)?.left ?? 0;
+      const isHanging = colLeft > 0 ? (Math.abs(seg.x - colLeft) < 4) : undefined;
+      if (isReferenceStart(seg.str, true, isHanging)) refStartCount++;
     }
-    if (refStartCount >= 3 && totalNonEmpty > 0 && refStartCount / totalNonEmpty > 0.15) {
+    if (refStartCount >= 3 && totalNonEmpty > 0 && refStartCount / totalNonEmpty > 0.08) {
       for (const block of blocks) {
         if (block.type === 'body' || block.type === 'unknown') {
           block.type = 'reference';
@@ -1403,8 +1424,15 @@ function detectStructuralBlocks(
   return blocks;
 }
 
-function isContinuationOfReference(cur: LineSegment, prev: LineSegment): boolean {
-  if (isReferenceStart(cur.str)) return true;
+function isContinuationOfReference(cur: LineSegment, prev: LineSegment, columnMargins?: Map<number, { left: number; width: number }>): boolean {
+  let isHanging: boolean | undefined = undefined;
+  if (columnMargins) {
+    const colLeft = columnMargins.get(cur.columnIndex)?.left ?? 0;
+    if (colLeft > 0) {
+      isHanging = Math.abs(cur.x - colLeft) < 4;
+    }
+  }
+  if (isReferenceStart(cur.str, false, isHanging)) return true;
   if (cur.flowBand !== prev.flowBand) return false;
   if (cur.columnIndex !== prev.columnIndex) return false;
   const yGap = Math.abs(cur.y - prev.y);
@@ -1480,8 +1508,12 @@ function segmentBlockIntoParas(
       let refSection: 'header' | 'left' | 'right' | 'footer' | 'full' = 'left';
       let refColumnIndex: number | undefined = undefined;
 
+      const colLeft = columnMargins.get(segs[0]?.columnIndex >= 0 ? segs[0].columnIndex : 0)?.left ?? 0;
+
       for (const seg of segs) {
-        if (isReferenceStart(seg.str, true) && refBuf.trim()) {
+        const segColLeft = columnMargins.get(seg.columnIndex >= 0 ? seg.columnIndex : 0)?.left ?? colLeft;
+        const isHanging = segColLeft > 0 ? (Math.abs(seg.x - segColLeft) < 4) : undefined;
+        if (isReferenceStart(seg.str, true, isHanging) && refBuf.trim()) {
           flushPara(refBuf, refItems, refSection, refColumnIndex);
           refBuf = '';
           refItems = [];

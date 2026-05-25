@@ -170,9 +170,9 @@ html, body {
 
 /* ── PDF 容器 ── */
 #pdf-container {
-  position: absolute;
-  top: 44px;
-  left: 0; right: 0; bottom: 0;
+  position: relative;
+  flex: 1;
+  height: 100%;
   overflow: auto;
   display: flex;
   justify-content: center;
@@ -407,3 +407,78 @@ html body.theme-light {
   --overlay-text: #2c2724;
   --loading-overlay-bg: rgba(250, 247, 240, 0.85);
 }
+
+/* ── Main Layout & Collapsible Outline Sidebar ── */
+#main-layout {
+  position: absolute;
+  top: 44px;
+  left: 0; right: 0; bottom: 0;
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+#outline-sidebar {
+  width: 210px;
+  border-right: 1px solid var(--toolbar-border);
+  background: var(--toolbar-bg);
+  color: var(--text);
+  overflow-y: auto;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+.outline-header {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 10px 12px;
+  color: var(--text-muted);
+  border-bottom: 1px dashed var(--toolbar-border);
+  flex-shrink: 0;
+}
+
+#outline-tree {
+  flex-grow: 1;
+  padding: 8px 6px;
+  overflow-y: auto;
+}
+
+#outline-tree ul {
+  list-style: none;
+  padding-left: 12px;
+  margin: 0;
+}
+
+#outline-tree > ul {
+  padding-left: 0;
+}
+
+#outline-tree li {
+  margin: 2px 0;
+  position: relative;
+}
+
+.outline-link {
+  display: block;
+  font-size: 11.5px;
+  color: var(--text);
+  text-decoration: none;
+  padding: 4px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  transition: background 0.15s, color 0.15s;
+}
+
+.outline-link:hover {
+  background: var(--btn-hover);
+  color: var(--accent);
+}
+
