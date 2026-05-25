@@ -1,9 +1,17 @@
-# 春蝉 ChunZen — 学术论文沉浸式阅读
+<p align="center">
+  <img src="https://raw.githubusercontent.com/itcuihao/chunzen/main/media/icon.png" width="128" alt="春蝉 ChunZen Logo" />
+</p>
 
-在 VSCode 中沉浸式阅读学术 PDF，支持**鼠标悬停实时翻译**、**期刊信息查询**、**术语表管理**，让文献阅读更高效。
+<h1 align="center">春蝉 ChunZen</h1>
 
-![Version](https://img.shields.io/badge/version-0.1.0-blue)
-![VSCode](https://img.shields.io/badge/VSCode-≥1.85.0-blue)
+<p align="center">
+  <strong>在 VSCode 中沉浸式阅读学术 PDF，支持鼠标悬停实时翻译、期刊信息查询、术语表管理，让文献阅读更高效。</strong>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/version-0.1.0-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/VSCode-≥1.85.0-blue" alt="VSCode" />
+</p>
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/itcuihao/chunzen/main/media/summary.png" alt="春蝉预览" />
