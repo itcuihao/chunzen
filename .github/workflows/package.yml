@@ -29,6 +29,13 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
+      - name: Generate Build Info
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          GIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+          BUILD_DATE=$(date -u +"%Y-%m-%d %H:%M")
+          echo "export const BUILD_INFO = { version: '${VERSION}', hash: '${GIT_HASH}', date: '${BUILD_DATE}' };" > src/build-info.ts
+
       - name: Package VSIX
         run: npm run vsix
 
