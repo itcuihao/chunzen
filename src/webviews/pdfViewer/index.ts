@@ -70,6 +70,17 @@ const pdfTitleEl = document.getElementById('pdf-title')!;
 const canvas = document.getElementById('pdf-canvas') as HTMLCanvasElement;
 const textLayer = document.getElementById('text-layer')!;
 
+// Floating HUD refs
+const hudEl = document.getElementById('floating-hud')!;
+const hudBtnPrev = document.getElementById('hud-btn-prev')!;
+const hudBtnNext = document.getElementById('hud-btn-next')!;
+const hudPageInput = document.getElementById('hud-page-input') as HTMLInputElement;
+const hudPageTotal = document.getElementById('hud-page-total')!;
+const hudBtnZoomOut = document.getElementById('hud-btn-zoom-out')!;
+const hudZoomLevel = document.getElementById('hud-zoom-level')!;
+const hudBtnZoomIn = document.getElementById('hud-btn-zoom-in')!;
+const hudBtnFit = document.getElementById('hud-btn-fit')!;
+
 // Canvas wrapper
 const wrapper = document.createElement('div');
 wrapper.id = 'canvas-wrapper';
@@ -84,7 +95,9 @@ async function loadPdfDocument() {
     initPdfJs((window as unknown as Record<string, string>).PDFJS_WORKER);
     pdfDoc = await loadPdf((window as unknown as Record<string, string>).PDF_SRC);
     totalPages = pdfDoc.numPages;
-    pageTotalEl.textContent = `/ ${totalPages}`;
+    const totalPagesText = `/ ${totalPages}`;
+    pageTotalEl.textContent = totalPagesText;
+    hudPageTotal.textContent = totalPagesText;
 
     try {
       const meta = await pdfDoc.getMetadata();
@@ -686,7 +699,7 @@ textLayer.addEventListener('mouseleave', () => {
   vscode.postMessage({ type: 'pdf-hover' });
 });
 
-// Toolbar
+// Toolbar Event Listeners
 document.getElementById('btn-outline')?.addEventListener('click', () => {
   document.getElementById('outline-sidebar')?.classList.toggle('hidden');
 });
@@ -703,25 +716,190 @@ document.getElementById('btn-capture')?.addEventListener('click', () => {
 });
 pageInputEl.addEventListener('change', e => goToPage(parseInt((e.target as HTMLInputElement).value, 10)));
 
-document.addEventListener('keydown', e => {
-  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') goToPage(currentPage + 1);
-  else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') goToPage(currentPage - 1);
-  else if (e.key === '+' || e.key === '=') setZoom(scale + 0.15);
-  else if (e.key === '-') setZoom(scale - 0.15);
+// Floating HUD Event Listeners
+hudBtnPrev.addEventListener('click', () => goToPage(currentPage - 1));
+hudBtnNext.addEventListener('click', () => goToPage(currentPage + 1));
+hudBtnZoomIn.addEventListener('click', () => setZoom(scale + 0.15));
+hudBtnZoomOut.addEventListener('click', () => setZoom(scale - 0.15));
+hudBtnFit.addEventListener('click', fitWidth);
+hudPageInput.addEventListener('change', e => goToPage(parseInt((e.target as HTMLInputElement).value, 10)));
+
+// Floating HUD Idle Auto-Hide
+let hudTimer: number | null = null;
+let isMouseInHud = false;
+
+function showHud() {
+  hudEl.classList.remove('hud-hidden');
+  resetHudTimer();
+}
+
+function hideHud() {
+  hudEl.classList.add('hud-hidden');
+}
+
+function resetHudTimer() {
+  if (hudTimer) {
+    clearTimeout(hudTimer);
+    hudTimer = null;
+  }
+  hudTimer = window.setTimeout(() => {
+    if (!isMouseInHud) {
+      hideHud();
+    } else {
+      resetHudTimer();
+    }
+  }, 2500);
+}
+
+document.addEventListener('mousemove', showHud);
+hudEl.addEventListener('mouseenter', () => {
+  isMouseInHud = true;
+  if (hudTimer) {
+    clearTimeout(hudTimer);
+    hudTimer = null;
+  }
+});
+hudEl.addEventListener('mouseleave', () => {
+  isMouseInHud = false;
+  resetHudTimer();
 });
 
-async function goToPage(n: number) {
+// Initially hide HUD after startup
+setTimeout(hideHud, 1000);
+
+// Keydown Navigation Event Listener
+document.addEventListener('keydown', e => {
+  const activeEl = document.activeElement;
+  if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || (activeEl as HTMLElement).isContentEditable)) {
+    return;
+  }
+
+  const isAtBottom = container.scrollTop + container.clientHeight >= container.scrollHeight - 5;
+  const isAtTop = container.scrollTop <= 5;
+
+  if (e.key === 'PageDown') {
+    goToPage(currentPage + 1, 'top');
+    e.preventDefault();
+  } else if (e.key === 'PageUp') {
+    goToPage(currentPage - 1, 'bottom');
+    e.preventDefault();
+  } else if (e.key === 'ArrowDown') {
+    if (isAtBottom) {
+      goToPage(currentPage + 1, 'top');
+      e.preventDefault();
+    }
+  } else if (e.key === 'ArrowUp') {
+    if (isAtTop) {
+      goToPage(currentPage - 1, 'bottom');
+      e.preventDefault();
+    }
+  } else if (e.key === 'Space') {
+    if (e.shiftKey) {
+      if (isAtTop) {
+        goToPage(currentPage - 1, 'bottom');
+        e.preventDefault();
+      }
+    } else {
+      if (isAtBottom) {
+        goToPage(currentPage + 1, 'top');
+        e.preventDefault();
+      }
+    }
+  } else if (e.key === 'ArrowRight') {
+    const isAtRight = container.scrollLeft + container.clientWidth >= container.scrollWidth - 5;
+    if (isAtRight) {
+      goToPage(currentPage + 1, 'top');
+      e.preventDefault();
+    }
+  } else if (e.key === 'ArrowLeft') {
+    const isAtLeft = container.scrollLeft <= 5;
+    if (isAtLeft) {
+      goToPage(currentPage - 1, 'bottom');
+      e.preventDefault();
+    }
+  } else if (e.key === '+' || e.key === '=') {
+    setZoom(scale + 0.15);
+  } else if (e.key === '-') {
+    setZoom(scale - 0.15);
+  }
+});
+
+// Mouse Wheel Navigation at Boundaries (with Cooldown)
+let lastWheelPageTurnTime = 0;
+let accumulatedWheelDelta = 0;
+
+container.addEventListener('wheel', (e) => {
+  const isAtBottom = container.scrollTop + container.clientHeight >= container.scrollHeight - 5;
+  const isAtTop = container.scrollTop <= 5;
+
+  const now = Date.now();
+  const cooldown = 800; // 800ms cooldown
+
+  if (e.deltaY > 0) { // Scroll down
+    if (isAtBottom) {
+      if (now - lastWheelPageTurnTime < cooldown) {
+        e.preventDefault();
+        return;
+      }
+      accumulatedWheelDelta += e.deltaY;
+      if (accumulatedWheelDelta >= 120) {
+        accumulatedWheelDelta = 0;
+        lastWheelPageTurnTime = now;
+        goToPage(currentPage + 1, 'top');
+        e.preventDefault();
+      }
+    } else {
+      accumulatedWheelDelta = 0;
+    }
+  } else if (e.deltaY < 0) { // Scroll up
+    if (isAtTop) {
+      if (now - lastWheelPageTurnTime < cooldown) {
+        e.preventDefault();
+        return;
+      }
+      accumulatedWheelDelta += e.deltaY;
+      if (accumulatedWheelDelta <= -120) {
+        accumulatedWheelDelta = 0;
+        lastWheelPageTurnTime = now;
+        goToPage(currentPage - 1, 'bottom');
+        e.preventDefault();
+      }
+    } else {
+      accumulatedWheelDelta = 0;
+    }
+  }
+}, { passive: false });
+
+async function goToPage(n: number, scrollPosition?: 'top' | 'bottom' | 'keep') {
   if (!pdfDoc) return;
+  const oldPage = currentPage;
   n = Math.max(1, Math.min(totalPages, n));
+  if (oldPage === n) return;
   currentPage = n;
   pageInputEl.value = String(n);
+  hudPageInput.value = String(n);
   await renderCurrentPage();
   if (n === 1) await extractMetaFromFirstPage();
+
+  // Handle scroll positioning on page transition
+  if (scrollPosition === 'top') {
+    container.scrollTop = 0;
+  } else if (scrollPosition === 'bottom') {
+    container.scrollTop = container.scrollHeight;
+  } else if (!scrollPosition) {
+    if (n > oldPage) {
+      container.scrollTop = 0;
+    } else if (n < oldPage) {
+      container.scrollTop = container.scrollHeight;
+    }
+  }
 }
 
 async function setZoom(newScale: number) {
   scale = Math.max(0.5, Math.min(3.0, newScale));
-  zoomLevelEl.textContent = Math.round(scale * 100) + '%';
+  const zoomPct = Math.round(scale * 100) + '%';
+  zoomLevelEl.textContent = zoomPct;
+  hudZoomLevel.textContent = zoomPct;
   await renderCurrentPage();
 }
 

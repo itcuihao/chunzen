@@ -460,6 +460,20 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
       <div id="text-layer"></div>
       <div id="sentence-highlight"></div>
     </div>
+    <!-- Floating HUD Controls -->
+    <div id="floating-hud" class="floating-hud">
+      <button id="hud-btn-prev" title="上一页">‹</button>
+      <span id="hud-page-info">
+        <input id="hud-page-input" type="number" min="1" value="1">
+        <span id="hud-page-total">/ ?</span>
+      </span>
+      <button id="hud-btn-next" title="下一页">›</button>
+      <div class="hud-divider"></div>
+      <button id="hud-btn-zoom-out" title="缩小">−</button>
+      <span id="hud-zoom-level">100%</span>
+      <button id="hud-btn-zoom-in" title="放大">+</button>
+      <button id="hud-btn-fit" title="适合宽度">⊡</button>
+    </div>
   </div>
 
   <div id="loading-overlay">
