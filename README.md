@@ -75,6 +75,11 @@
 
 1. 在项目的 **Releases** 页面下载最新打包的 `chunzen-*.vsix` 插件文件。
 2. 打开 VS Code，进入扩展视图（`Cmd+Shift+X` 或 `Ctrl+Shift+X`），点击右上角的 `...` 更多操作菜单，选择 **从 VSIX 安装... (Install from VSIX...)**，导入下载好的 `.vsix` 文件完成安装。
+
+   <p align="center">
+     <img src="https://raw.githubusercontent.com/itcuihao/chunzen/main/media/install.png" alt="从 VSIX 安装插件" />
+   </p>
+
 3. 用 VS Code 打开任意 `.pdf` 文件，春蝉会自动接管渲染。
 4. 在侧边栏 **设置** 中配置翻译引擎的 API Key，将鼠标悬停在英文句子上即可看到翻译结果。
 
