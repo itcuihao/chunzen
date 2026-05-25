@@ -21,6 +21,9 @@
   --overlay-bg: #32291d;
   --overlay-text: #ffffff;
   --loading-overlay-bg: rgba(36, 30, 21, 0.85);
+  --hud-bg: rgba(28, 24, 17, 0.85);
+  --hud-border: rgba(69, 57, 41, 0.4);
+  --hud-shadow: rgba(0, 0, 0, 0.45);
 }
 
 body.vscode-dark {
@@ -41,6 +44,9 @@ body.vscode-dark {
   --overlay-bg: #32291d;
   --overlay-text: #ffffff;
   --loading-overlay-bg: rgba(36, 30, 21, 0.85);
+  --hud-bg: rgba(28, 24, 17, 0.85);
+  --hud-border: rgba(69, 57, 41, 0.4);
+  --hud-shadow: rgba(0, 0, 0, 0.45);
 }
 
 body.vscode-light {
@@ -61,6 +67,9 @@ body.vscode-light {
   --overlay-bg: #f3ede2;
   --overlay-text: #2c2724;
   --loading-overlay-bg: rgba(250, 247, 240, 0.85);
+  --hud-bg: rgba(243, 237, 226, 0.85);
+  --hud-border: rgba(232, 223, 208, 0.7);
+  --hud-shadow: rgba(44, 39, 36, 0.12);
 }
 
 html, body {
@@ -386,6 +395,9 @@ html body.theme-dark {
   --overlay-bg: #32291d;
   --overlay-text: #ffffff;
   --loading-overlay-bg: rgba(36, 30, 21, 0.85);
+  --hud-bg: rgba(28, 24, 17, 0.85);
+  --hud-border: rgba(69, 57, 41, 0.4);
+  --hud-shadow: rgba(0, 0, 0, 0.45);
 }
 
 html body.theme-light {
@@ -406,6 +418,9 @@ html body.theme-light {
   --overlay-bg: #f3ede2;
   --overlay-text: #2c2724;
   --loading-overlay-bg: rgba(250, 247, 240, 0.85);
+  --hud-bg: rgba(243, 237, 226, 0.85);
+  --hud-border: rgba(232, 223, 208, 0.7);
+  --hud-shadow: rgba(44, 39, 36, 0.12);
 }
 
 /* ── Main Layout & Collapsible Outline Sidebar ── */
@@ -481,4 +496,105 @@ html body.theme-light {
   background: var(--btn-hover);
   color: var(--accent);
 }
+
+/* ── 底部悬浮 HUD ── */
+.floating-hud {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(0);
+  background: var(--hud-bg, rgba(28, 24, 17, 0.85));
+  backdrop-filter: blur(12px) saturate(120%);
+  -webkit-backdrop-filter: blur(12px) saturate(120%);
+  border: 1px solid var(--hud-border, rgba(69, 57, 41, 0.4));
+  border-radius: 20px;
+  padding: 6px 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 8px 30px var(--hud-shadow, rgba(0, 0, 0, 0.45));
+  z-index: 95;
+  opacity: 1;
+  pointer-events: auto;
+  transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.floating-hud.hud-hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%) translateY(8px);
+}
+
+.floating-hud button {
+  background: transparent;
+  border: none;
+  color: var(--text);
+  border-radius: 12px;
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s, transform 0.1s;
+}
+
+.floating-hud button:hover {
+  background: var(--btn-hover);
+  color: var(--accent);
+}
+
+.floating-hud button:active {
+  background: var(--btn-active);
+  transform: scale(0.92);
+}
+
+.floating-hud #hud-page-info {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.floating-hud #hud-page-input {
+  width: 38px;
+  background: var(--btn-bg);
+  border: 1px solid var(--toolbar-border);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 2px 4px;
+  font-size: 11px;
+  text-align: center;
+  outline: none;
+  -moz-appearance: textfield;
+}
+
+.floating-hud #hud-page-input::-webkit-outer-spin-button,
+.floating-hud #hud-page-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+}
+
+.floating-hud #hud-page-input:focus {
+  border-color: var(--accent);
+}
+
+.floating-hud #hud-zoom-level {
+  font-size: 11px;
+  color: var(--text-muted);
+  min-width: 36px;
+  text-align: center;
+  font-weight: 500;
+}
+
+.floating-hud .hud-divider {
+  width: 1px;
+  height: 14px;
+  background: var(--toolbar-border);
+  margin: 0 4px;
+}
+
 
