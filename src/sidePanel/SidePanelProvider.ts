@@ -106,7 +106,8 @@ export class SidePanelProvider {
       }
     );
 
-    this.panel.iconPath = vscode.Uri.joinPath(this.context.extensionUri, 'media', 'icon.png');
+    const iconUri = vscode.Uri.joinPath(this.context.extensionUri, 'media', 'icon.png');
+    this.panel.iconPath = { light: iconUri, dark: iconUri };
     this.panel.webview.html = this.getHtml(this.panel.webview);
 
     this.panel.webview.onDidReceiveMessage(
