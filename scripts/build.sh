@@ -39,8 +39,8 @@ vsce
   .createVSIX({
     useYarn: false,
     allowMissingRepository: true,
-    baseContentUrl: 'https://gitea.awsl.icu/itcuihao/chunzen/src/branch/main',
-    baseImagesUrl: 'https://gitea.awsl.icu/itcuihao/chunzen/raw/branch/main'
+    baseContentUrl: 'https://github.com/itcuihao/chunzen/tree/main',
+    baseImagesUrl: 'https://raw.githubusercontent.com/itcuihao/chunzen/refs/heads/main'
   })
   .then(() => console.log('packaged'))
   .catch(e => {
