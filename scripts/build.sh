@@ -40,7 +40,7 @@ vsce
     useYarn: false,
     allowMissingRepository: true,
     baseContentUrl: 'https://github.com/itcuihao/chunzen/tree/main',
-    baseImagesUrl: 'https://raw.githubusercontent.com/itcuihao/chunzen/refs/heads/main'
+    baseImagesUrl: 'https://raw.githubusercontent.com/itcuihao/chunzen/main'
   })
   .then(() => console.log('packaged'))
   .catch(e => {
