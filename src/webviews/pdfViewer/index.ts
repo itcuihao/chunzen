@@ -1486,6 +1486,10 @@ async function extractBibliography() {
         continue;
       }
 
+      if (refStartPage !== -1 && !foundReferencesHeading && pageNum === refStartPage) {
+        continue;
+      }
+
       // Match citation start (numbered format): e.g. [17], 17., 17 (naked number followed by space/word)
       const numMatch = cleanText.match(/^\s*\[(\d{1,4})\]\s*(.*)/) || 
                        cleanText.match(/^\s*(\d{1,4})\.\s*(.*)/) ||
