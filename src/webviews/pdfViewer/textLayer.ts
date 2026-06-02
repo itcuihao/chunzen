@@ -128,6 +128,79 @@ interface RightEdgeNoiseZone {
   yMax: number;
 }
 
+const CIRCLED_NUM_MAP: Record<string, string> = {
+  '①': '(1)', '②': '(2)', '③': '(3)', '④': '(4)', '⑤': '(5)',
+  '⑥': '(6)', '⑦': '(7)', '⑧': '(8)', '⑨': '(9)', '⑩': '(10)',
+  '⑪': '(11)', '⑫': '(12)', '⑬': '(13)', '⑭': '(14)', '⑮': '(15)',
+  '⑯': '(16)', '⑰': '(17)', '⑱': '(18)', '⑲': '(19)', '⑳': '(20)',
+  '⑴': '(1)', '⑵': '(2)', '⑶': '(3)', '⑷': '(4)', '⑸': '(5)',
+  '⑹': '(6)', '⑺': '(7)', '⑻': '(8)', '⑼': '(9)', '⑽': '(10)',
+  '⑾': '(11)', '⑿': '(12)', '⒀': '(13)', '⒁': '(14)', '⒂': '(15)',
+  '⒃': '(16)', '⒄': '(17)', '⒅': '(18)', '⒆': '(19)', '⒇': '(20)',
+  '⒈': '1.', '⒉': '2.', '⒊': '3.', '⒋': '4.', '⒌': '5.',
+  '⒍': '6.', '⒎': '7.', '⒏': '8.', '⒐': '9.', '⒑': '10.',
+  '⒒': '11.', '⒓': '12.', '⒔': '13.', '⒕': '14.', '⒖': '15.',
+  '⒗': '16.', '⒘': '17.', '⒙': '18.', '⒚': '19.', '⒛': '20.',
+  '❶': '(1)', '❷': '(2)', '❸': '(3)', '❹': '(4)', '❺': '(5)',
+  '❻': '(6)', '❼': '(7)', '❽': '(8)', '❾': '(9)', '❿': '(10)',
+  '➀': '(1)', '➁': '(2)', '➂': '(3)', '➃': '(4)', '➄': '(5)',
+  '➅': '(6)', '➆': '(7)', '➇': '(8)', '➈': '(9)', '➉': '(10)',
+  '➊': '(1)', '➋': '(2)', '➌': '(3)', '➍': '(4)', '➎': '(5)',
+  '➏': '(6)', '➐': '(7)', '➑': '(8)', '➒': '(9)', '➓': '(10)',
+  '⓵': '(1)', '⓶': '(2)', '⓷': '(3)', '⓸': '(4)', '⓹': '(5)',
+  '⓺': '(6)', '⓻': '(7)', '⓼': '(8)', '⓽': '(9)', '⓾': '(10)',
+  '㉑': '(21)', '㉒': '(22)', '㉓': '(23)', '㉔': '(24)', '㉕': '(25)',
+  '㉖': '(26)', '㉗': '(27)', '㉘': '(28)', '㉙': '(29)', '㉚': '(30)',
+  '㉛': '(31)', '㉜': '(32)', '㉝': '(33)', '㉞': '(34)', '㉟': '(35)',
+  '㊱': '(36)', '㊲': '(37)', '㊳': '(38)', '㊴': '(39)', '㊵': '(40)',
+};
+
+const ROMAN_NUM_MAP: Record<string, string> = {
+  'Ⅰ': 'I', 'Ⅱ': 'II', 'Ⅲ': 'III', 'Ⅳ': 'IV', 'Ⅴ': 'V',
+  'Ⅵ': 'VI', 'Ⅶ': 'VII', 'Ⅷ': 'VIII', 'Ⅸ': 'IX', 'Ⅹ': 'X',
+  'Ⅺ': 'XI', 'Ⅻ': 'XII', 'Ⅼ': 'L', 'Ⅽ': 'C', 'Ⅾ': 'D', 'Ⅿ': 'M',
+  'ⅰ': 'i', 'ⅱ': 'ii', 'ⅲ': 'iii', 'ⅳ': 'iv', 'ⅴ': 'v',
+  'ⅵ': 'vi', 'ⅶ': 'vii', 'ⅷ': 'viii', 'ⅸ': 'ix', 'ⅹ': 'x',
+  'ⅺ': 'xi', 'ⅻ': 'xii', 'ⅼ': 'l', 'ⅽ': 'c', 'ⅾ': 'd', 'ⅿ': 'm',
+};
+
+const BULLET_MAP: Record<string, string> = {
+  '\uf0b7': '•',
+  '\uf02d': '•',
+  '\u2219': '•',
+  '\u25cf': '•',
+  '\u25e6': '•',
+  '\u25aa': '•',
+  '\u25a0': '•',
+  '\u25cb': '•',
+  '\u25a1': '•',
+  '\u25c6': '•',
+  '\u25c7': '•',
+  '\u27a4': '•',
+  '\u2023': '•',
+  '\u2043': '•',
+};
+
+const CIRCLED_NUM_REGEX = new RegExp('[' + Object.keys(CIRCLED_NUM_MAP).join('') + ']', 'g');
+const BULLET_REGEX = new RegExp('[' + Object.keys(BULLET_MAP).join('') + ']', 'g');
+
+export function normalizeText(str: string): string {
+  if (!str) return '';
+  str = str.replace(/[\uFF10-\uFF19]/g, (m) => String.fromCharCode(m.charCodeAt(0) - 0xFEE0));
+  str = str.replace(/[\u2160-\u217F]/g, (m) => ROMAN_NUM_MAP[m] || m);
+  str = str.replace(CIRCLED_NUM_REGEX, (m) => CIRCLED_NUM_MAP[m] || m);
+  // Normalize circled/parenthesized letters:
+  // Circled Capital Letters U+24B6 - U+24CF (Ⓐ - Ⓩ) -> (A) - (Z)
+  str = str.replace(/[\u24B6-\u24CF]/g, (m) => `(${String.fromCharCode(m.charCodeAt(0) - 0x24B6 + 65)})`);
+  // Circled Small Letters U+24D0 - U+24E9 (ⓐ - ⓩ) -> (a) - (z)
+  str = str.replace(/[\u24D0-\u24E9]/g, (m) => `(${String.fromCharCode(m.charCodeAt(0) - 0x24D0 + 97)})`);
+  // Parenthesized Small Letters U+249C - U+24B5 (⒜ - ⒵) -> (a) - (z)
+  str = str.replace(/[\u249C-\u24B5]/g, (m) => `(${String.fromCharCode(m.charCodeAt(0) - 0x249C + 97)})`);
+  str = str.replace(BULLET_REGEX, (m) => BULLET_MAP[m] || m);
+  str = str.replace(/^(\s*)[·⋅](\s+)/, '$1•$2');
+  return str;
+}
+
 // ── Main entry ──
 
 export function buildTextLayer(
@@ -169,6 +242,13 @@ export function buildTextLayer(
     paragraphBoundaries = richContent.paragraphBoundaries;
     hasStructure = richContent.hasStructure;
     horizontalRules = richContent.horizontalRules || [];
+  }
+
+  // Pre-normalize all text items in-place to restore symbols (bullets, roman/circled/full-width numerals)
+  for (const item of items) {
+    if (item.str) {
+      item.str = normalizeText(item.str);
+    }
   }
 
   // 1. Transform to layout coordinates and filter math/headers
