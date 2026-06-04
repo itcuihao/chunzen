@@ -1,7 +1,7 @@
 {
   "name": "chunzen",
   "displayName": "春蝉 — 学术论文沉浸式阅读",
-  "description": "春蝉 — 在 VSCode 中沉浸式阅读学术 PDF，支持实时翻译、期刊信息查询（IF、中科院分区）",
+  "description": "春蝉 — 在 VSCode 中沉浸式阅读学术 PDF，支持划词翻译、双语对照翻译、期刊信息查询（IF、中科院分区）",
   "version": "0.1.0",
   "publisher": "chunzen",
   "repository": {
@@ -12,6 +12,8 @@
     "vscode": "^1.85.0"
   },
   "categories": [
+    "Education",
+    "Visualization",
     "Other"
   ],
   "keywords": [
@@ -19,8 +21,14 @@
     "academic",
     "translation",
     "research",
+    "paper",
+    "translation-helper",
     "论文"
   ],
+  "homepage": "https://github.com/itcuihao/chunzen#readme",
+  "bugs": {
+    "url": "https://github.com/itcuihao/chunzen/issues"
+  },
   "activationEvents": [],
   "main": "./dist/extension.js",
   "icon": "media/icon.png",

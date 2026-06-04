@@ -12,3 +12,15 @@ implementation_plan.md
 scripts/**
 !scripts/layout_endpoint.py
 !scripts/start_layout_endpoint.sh
+out/**
+scratch/**
+test/**
+CLAUDE.md
+README.html
+test-page7.mjs
+postcss.config.js
+tailwind.config.js
+media/summary.png
+media/install.png
+media/wechat-qrcode.png
+media/alipay-qrcode.png
