@@ -19,7 +19,7 @@ export class MineruService {
       const subPdfDoc = await PDFDocument.create();
       const pagesToCopy = Array.from({ length: Math.min(pageCount, maxPages) }, (_, i) => i);
       const copiedPages = await subPdfDoc.copyPages(pdfDoc, pagesToCopy);
-      copiedPages.forEach((page) => subPdfDoc.addPage(page));
+      copiedPages.forEach((page: any) => subPdfDoc.addPage(page));
 
       const subPdfBytes = await subPdfDoc.save();
       const tempDir = os.tmpdir();
@@ -72,8 +72,8 @@ export class MineruService {
     let isSliced = false;
 
     if (!isUrl) {
-      onProgress('parsing', 7, '自动优化解析范围 (免费版截取前 5 页)...');
-      targetUploadPath = await this.slicePdf(pdfPath, 5);
+      onProgress('parsing', 7, '自动优化解析范围 (免费版截取前 20 页)...');
+      targetUploadPath = await this.slicePdf(pdfPath, 20);
       isSliced = targetUploadPath !== pdfPath;
     }
 
