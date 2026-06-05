@@ -20,6 +20,7 @@ export interface GeneralSettings {
   journalEnabled?: boolean;
   journalSource?: JournalSource;
   layout?: LayoutConfig;
+  mineru?: MineruConfig;
 }
 
 export interface LayoutConfig {
@@ -28,4 +29,10 @@ export interface LayoutConfig {
   timeoutMs: number;
   hoverHighlightStyle: 'overlay' | 'bar';
   theme: 'auto' | 'dark' | 'light';
+}
+
+export interface MineruConfig {
+  enable: boolean;
+  apiType: 'agent' | 'standard';
+  token: string;
 }

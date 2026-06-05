@@ -1,4 +1,4 @@
-import { FunctionComponent, useState, useEffect, useMemo, ReactNode } from 'react';
+import { FunctionComponent, useState, useEffect, useMemo, ReactNode, useRef } from 'react';
 import { useStore } from '../store';
 import { 
   Languages, FileCheck, RefreshCw, Compass, Plus, ArrowUpRight, Copy,
@@ -6,6 +6,176 @@ import {
 } from 'lucide-react';
 import { postMessage } from '../vscode';
 import { SelectionHighlight } from '../../../types/models';
+// @ts-ignore
+import { marked } from 'marked';
+import katex from 'katex';
+
+function renderMathInText(text: string): string {
+  let processed = text;
+  
+  // Protect display math $$ ... $$
+  processed = processed.replace(/\$\$(.+?)\$\$/gs, (match, equation) => {
+    try {
+      return katex.renderToString(equation.trim(), { displayMode: true, throwOnError: false });
+    } catch (e) {
+      return match;
+    }
+  });
+
+  // Protect inline math $ ... $
+  processed = processed.replace(/\$([^$\n]+?)\$/g, (match, equation) => {
+    try {
+      return katex.renderToString(equation.trim(), { displayMode: false, throwOnError: false });
+    } catch (e) {
+      return match;
+    }
+  });
+
+  return processed;
+}
+
+function protectMathAndCitations(text: string): {
+  protectedText: string;
+  maths: string[];
+  citations: string[];
+} {
+  const maths: string[] = [];
+  const citations: string[] = [];
+  
+  let protectedText = text.replace(/\$\$(.+?)\$\$/gs, (match) => {
+    maths.push(match);
+    return `[[CZDISPLAYMATH_${maths.length - 1}]]`;
+  });
+
+  protectedText = protectedText.replace(/\$([^$\n]+?)\$/g, (match) => {
+    maths.push(match);
+    return `[[CZINLINEMATH_${maths.length - 1}]]`;
+  });
+
+  protectedText = protectedText.replace(/\[\d+(?:\s*[-–,]\s*\d+)*\]/g, (match) => {
+    citations.push(match);
+    return `[[CZCITATION_${citations.length - 1}]]`;
+  });
+
+  return { protectedText, maths, citations };
+}
+
+function restoreMathAndCitations(
+  translatedText: string,
+  maths: string[],
+  citations: string[]
+): string {
+  let restored = translatedText;
+
+  restored = restored.replace(/\[\[CZDISPLAYMATH_(\d+)\]\]/g, (match, idxStr) => {
+    const idx = parseInt(idxStr, 10);
+    return maths[idx] !== undefined ? maths[idx] : match;
+  });
+
+  restored = restored.replace(/\[\[CZINLINEMATH_(\d+)\]\]/g, (match, idxStr) => {
+    const idx = parseInt(idxStr, 10);
+    return maths[idx] !== undefined ? maths[idx] : match;
+  });
+
+  restored = restored.replace(/\[\[CZCITATION_(\d+)\]\]/g, (match, idxStr) => {
+    const idx = parseInt(idxStr, 10);
+    return citations[idx] !== undefined ? citations[idx] : match;
+  });
+
+  return restored;
+}
+
+function restoreMathAndCitationsFallback(
+  translatedText: string,
+  originalText: string
+): string {
+  const { maths, citations } = protectMathAndCitations(originalText);
+  return restoreMathAndCitations(translatedText, maths, citations);
+}
+
+function applyHighlightsToMineruText(
+  text: string,
+  paragraphId: string,
+  highlights: SelectionHighlight[]
+): string {
+  const paraHighlights = highlights.filter(hl => hl.paragraphId === paragraphId && text.includes(hl.text));
+  if (paraHighlights.length === 0) return text;
+
+  const sorted = [...paraHighlights].sort((a, b) => b.text.length - a.text.length);
+  let result = text;
+
+  for (const hl of sorted) {
+    const escapedText = hl.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(escapedText, 'g');
+    
+    const colorsMap = {
+      yellow: 'bg-amber-100 dark:bg-amber-950/40 border-b-2 border-amber-400/80 text-foreground',
+      green: 'bg-emerald-100 dark:bg-emerald-950/40 border-b-2 border-emerald-400/80 text-foreground',
+      blue: 'bg-sky-100 dark:bg-sky-950/40 border-b-2 border-sky-400/80 text-foreground',
+      purple: 'bg-purple-100 dark:bg-purple-950/40 border-b-2 border-purple-400/80 text-foreground'
+    };
+    const colorClass = colorsMap[hl.color] || colorsMap.yellow;
+    const noteBadge = hl.note ? '<span class="inline-flex items-center ml-0.5 select-none text-[9px] bg-amber-500/20 border border-amber-500/40 text-amber-600 rounded px-0.5 font-sans leading-none transform scale-90 origin-left">✍️</span>' : '';
+
+    result = result.replace(regex, `<span class="${colorClass} cursor-pointer hover:opacity-90 transition-all px-0.5 rounded-sm relative inline" data-highlight-id="${hl.id}" title="${hl.note ? `批注: ${hl.note}` : '点击查看/修改高亮'}">${hl.text}${noteBadge}</span>`);
+  }
+  return result;
+}
+
+function applyJumpLinksToMineruText(
+  text: string,
+  bibliography: Record<string, { text: string; pageNumber: number }>
+): string {
+  if (!text) return '';
+  const preprocessed = preprocessLinks(text);
+
+  const jumpRegex = /\[(\d+(?:\s*[-–,]\s*\d+)*)\]|\[((?:Figure|Fig\.|Table|图|表)\s*(?:S\d+|s\d+|\d+)(?:\s*[a-zA-Z])?)\]|\b((?:Figure|Fig\.|Table)\s*(?:S\d+|s\d+|\d+)(?:\s*[a-zA-Z])?)\b|((?:图|表)\s*(?:S\d+|s\d+|\d+)(?:\s*[a-zA-Z])?)/gi;
+
+  return preprocessed.replace(jumpRegex, (match, p1, p2, p3, p4) => {
+    if (p1) {
+      const keysStr = p1;
+      const keys: string[] = [];
+      const subParts = keysStr.split(',');
+      for (const subPart of subParts) {
+        const trimmed = subPart.trim();
+        if (trimmed.includes('-') || trimmed.includes('–')) {
+          const hyphen = trimmed.includes('-') ? '-' : '–';
+          const [startStr, endStr] = trimmed.split(hyphen);
+          const start = parseInt(startStr.trim(), 10);
+          const end = parseInt(endStr.trim(), 10);
+          if (!isNaN(start) && !isNaN(end)) {
+            const low = Math.min(start, end);
+            const high = Math.max(start, end);
+            for (let i = low; i <= high; i++) {
+              keys.push(String(i));
+            }
+          }
+        } else {
+          const key = parseInt(trimmed, 10);
+          if (!isNaN(key)) {
+            keys.push(String(key));
+          }
+        }
+      }
+
+      let rendered = '[';
+      keys.forEach((key, idx) => {
+        const hasRef = bibliography[key];
+        if (idx > 0) rendered += ',';
+        if (hasRef) {
+          rendered += `<span class="text-blue-600 dark:text-blue-400 hover:underline cursor-pointer font-mono font-bold px-0.5" data-jump-citation="${key}" title="跳转到文献 [${key}]">${key}</span>`;
+        } else {
+          rendered += `<span class="text-zinc-600 dark:text-zinc-400 font-mono px-0.5">${key}</span>`;
+        }
+      });
+      rendered += ']';
+      return rendered;
+    } else {
+      const query = (p2 || p3 || p4).trim();
+      return `<span class="text-blue-600 dark:text-blue-400 hover:underline cursor-pointer font-sans font-bold px-0.5" data-jump-caption="${query}" title="跳转到 ${query}">${match}</span>`;
+    }
+  });
+}
 
 function mapHtmlToPlain(html: string): { plainText: string; mapIdx: number[] } {
   let plain = '';
@@ -1071,6 +1241,13 @@ function groupParagraphsIntoBlocks(paragraphs: AnnotatedPara[], columnsCount: nu
   return blocks;
 }
 
+interface MineruPara {
+  id: string;
+  text: string;
+  role: 'title' | 'heading' | 'body' | 'small' | 'table';
+  originalText: string;
+}
+
 // ── Component ──
 
 export const TranslationTab: FunctionComponent = () => {
@@ -1087,6 +1264,56 @@ export const TranslationTab: FunctionComponent = () => {
   const highlights = useStore((state) => state.highlights);
   const activePdfUri = useStore((state) => state.activePdfUri);
   const aiExplainResult = useStore((state) => state.aiExplainResult);
+
+  const mineruConfig = useStore((state) => state.mineruConfig);
+  const mineruStatus = useStore((state) => state.mineruStatus);
+  const mineruProgress = useStore((state) => state.mineruProgress);
+  const mineruMarkdown = useStore((state) => state.mineruMarkdown);
+  const mineruError = useStore((state) => state.mineruError);
+
+  const [mineruViewActive, setMineruViewActive] = useState(true);
+
+  useEffect(() => {
+    if (mineruStatus === 'done' && mineruMarkdown) {
+      setMineruViewActive(true);
+    }
+  }, [mineruStatus, !!mineruMarkdown]);
+
+  const mineruPages = useMemo(() => {
+    if (!mineruMarkdown) return [];
+    // Split by horizontal rules, page break comments, or page markers
+    return mineruMarkdown.split(/\n\s*(?:---|---|---|---|---|---|---|---|---|\*\*\*|<!--\s*page\s*(?:=\s*)?\d+\s*-->)\s*\n/i);
+  }, [mineruMarkdown]);
+
+  const mineruParas = useMemo(() => {
+    if (!currentPageText || mineruPages.length === 0) return [];
+    const pageMd = mineruPages[currentPageText.pageNumber - 1] || '';
+    if (!pageMd.trim()) return [];
+
+    const rawParas = pageMd.split(/\n\s*\n+/);
+    const parsed: MineruPara[] = [];
+    let paraIndex = 0;
+
+    for (const rawText of rawParas) {
+      const trimmed = rawText.trim();
+      if (!trimmed) continue;
+
+      let role: MineruPara['role'] = 'body';
+      if (trimmed.startsWith('#')) {
+        role = 'heading';
+      } else if (trimmed.startsWith('|')) {
+        role = 'table';
+      }
+
+      parsed.push({
+        id: `mineru-para-${currentPageText.pageNumber}-${paraIndex++}`,
+        text: trimmed,
+        role,
+        originalText: trimmed
+      });
+    }
+    return parsed;
+  }, [mineruPages, currentPageText?.pageNumber]);
 
   const [addingGlossaryParaId, setAddingGlossaryParaId] = useState<string | null>(null);
   const [glossarySource, setGlossarySource] = useState('');
@@ -1359,16 +1586,23 @@ export const TranslationTab: FunctionComponent = () => {
     );
   };
 
+  const isMineruActiveView = mineruConfig.enable && mineruStatus === 'done' && mineruMarkdown && mineruViewActive && mineruParas.length > 0;
+
+  const hasMineruTranslations = useMemo(() => {
+    if (mineruParas.length === 0) return false;
+    return mineruParas.some(p => !!currentPageText?.translations?.[p.id]);
+  }, [mineruParas, currentPageText?.translations]);
+
+  const hasTranslations = !!(currentPageText?.translations && Object.keys(currentPageText.translations).length > 0);
+  const pageHasTranslations = isMineruActiveView ? hasMineruTranslations : hasTranslations;
+
   // Auto-translate on page turn if remembered mode is translation or bilingual
   useEffect(() => {
     if (!currentPageText) return;
-    const hasTrans = !!(currentPageText.translations && Object.keys(currentPageText.translations).length > 0);
-    if ((layoutMode === 'translation' || layoutMode === 'bilingual') && !hasTrans && !loading) {
+    if ((layoutMode === 'translation' || layoutMode === 'bilingual') && !pageHasTranslations && !loading) {
       handleTranslatePage();
     }
-  }, [currentPageText?.pageNumber, layoutMode]);
-
-  const hasTranslations = !!(currentPageText?.translations && Object.keys(currentPageText.translations).length > 0);
+  }, [currentPageText?.pageNumber, layoutMode, pageHasTranslations]);
 
   const annotatedParagraphs: AnnotatedPara[] = useMemo(() => {
     if (!currentPageText?.paragraphs) return [];
@@ -1567,13 +1801,21 @@ export const TranslationTab: FunctionComponent = () => {
   const handleTranslatePage = () => {
     if (!currentPageText) return;
     useStore.setState({ isTranslating: true });
-    const translatableParagraphs = currentPageText.paragraphs
-      .filter(para => !para.skipped && para.lineMarker !== 'horizontal-rule' && !!para.text.trim())
-      .map(para => {
-        // Protect citations with placeholders before sending to translation
-        const protectedText = protectTextWithPlaceholders(para.text);
-        return { id: para.id, text: protectedText };
-      });
+
+    const isMineruActive = mineruConfig.enable && mineruStatus === 'done' && mineruMarkdown && mineruViewActive && mineruParas.length > 0;
+
+    const translatableParagraphs = isMineruActive
+      ? mineruParas.map(para => {
+          const { protectedText } = protectMathAndCitations(para.text);
+          return { id: para.id, text: protectedText };
+        })
+      : currentPageText.paragraphs
+          .filter(para => !para.skipped && para.lineMarker !== 'horizontal-rule' && !!para.text.trim())
+          .map(para => {
+            const protectedText = protectTextWithPlaceholders(para.text);
+            return { id: para.id, text: protectedText };
+          });
+
     postMessage({
       type: 'translate-page',
       pageNumber: currentPageText.pageNumber,
@@ -1585,6 +1827,23 @@ export const TranslationTab: FunctionComponent = () => {
     postMessage({
       type: 'refresh-page-text'
     });
+  };
+
+  const handleMineruToggle = () => {
+    if (mineruStatus === 'parsing') {
+      return;
+    }
+    if (mineruStatus === 'done') {
+      setMineruViewActive(!mineruViewActive);
+    } else {
+      if (activePdfUri) {
+        postMessage({
+          type: 'trigger-mineru-parse',
+          pdfUri: activePdfUri
+        });
+        useStore.setState({ mineruStatus: 'parsing', mineruProgress: 0 });
+      }
+    }
   };
 
   const paraClass = (
@@ -1874,7 +2133,115 @@ export const TranslationTab: FunctionComponent = () => {
       </div>
     );
   };
+  const handleArticleClick = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    
+    // Handle highlight clicks
+    const hlSpan = target.closest('[data-highlight-id]');
+    if (hlSpan) {
+      const hlId = hlSpan.getAttribute('data-highlight-id');
+      const hl = highlights.find(h => h.id === hlId);
+      if (hl) {
+        e.stopPropagation();
+        const rect = hlSpan.getBoundingClientRect();
+        handleHighlightClick(hl, rect);
+        return;
+      }
+    }
+    
+    // Handle citation jumps
+    const citationSpan = target.closest('[data-jump-citation]');
+    if (citationSpan) {
+      const key = citationSpan.getAttribute('data-jump-citation')!;
+      const hasRef = bibliography[key];
+      if (hasRef) {
+        e.stopPropagation();
+        window.getSelection()?.removeAllRanges();
+        postMessage({
+          type: 'jump-to-page',
+          pageNumber: bibliography[key].pageNumber
+        });
+        return;
+      }
+    }
+    
+    // Handle figure jumps
+    const captionSpan = target.closest('[data-jump-caption]');
+    if (captionSpan) {
+      const query = captionSpan.getAttribute('data-jump-caption')!;
+      e.stopPropagation();
+      window.getSelection()?.removeAllRanges();
+      postMessage({
+        type: 'find-and-jump-to-caption',
+        query
+      });
+      return;
+    }
+  };
 
+  const renderMineruContent = (text: string, paraId: string) => {
+    let processed = applyHighlightsToMineruText(text, paraId, highlights);
+    processed = applyJumpLinksToMineruText(processed, bibliography);
+    processed = renderMathInText(processed);
+    const html = marked.parse(processed, { async: false }) as string;
+    return (
+      <div 
+        dangerouslySetInnerHTML={{ __html: html }} 
+        className="mineru-markdown-content text-left"
+      />
+    );
+  };
+
+  const renderOriginalMineruNode = (para: MineruPara) => {
+    return wrapHoverableParagraph(
+      { id: para.id, text: para.originalText, role: para.role === 'table' ? 'small' : para.role } as any,
+      renderMineruContent(para.originalText, para.id)
+    );
+  };
+
+  const renderTranslatedMineruNode = (para: MineruPara) => {
+    const translationRaw = currentPageText!.translations?.[para.id] || '';
+    const textToRender = translationRaw
+      ? restoreMathAndCitationsFallback(translationRaw, para.originalText)
+      : para.originalText;
+    return wrapHoverableParagraph(
+      { id: para.id, text: para.originalText, role: para.role === 'table' ? 'small' : para.role } as any,
+      renderMineruContent(textToRender, para.id)
+    );
+  };
+
+  const renderBilingualMineruNode = (para: MineruPara) => {
+    const translationRaw = currentPageText!.translations?.[para.id] || '';
+    const textToRender = translationRaw
+      ? restoreMathAndCitationsFallback(translationRaw, para.originalText)
+      : '';
+
+    return wrapHoverableParagraph(
+      { id: para.id, text: para.originalText, role: para.role === 'table' ? 'small' : para.role } as any,
+      <div className="mb-4 pb-3 border-b border-border/20 last:border-0 text-left">
+        <div className="mb-1.5 italic text-secondary-foreground font-serif">
+          {renderMineruContent(para.originalText, para.id)}
+        </div>
+        {textToRender && (
+          <div className="mt-1 border-l-2 border-primary/20 pl-3 text-foreground font-sans">
+            {renderMineruContent(textToRender, para.id)}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderMineruLayout = () => {
+    return (
+      <div className="select-text selection:bg-accent/30 break-words text-foreground animate-in fade-in duration-300 flex flex-col gap-3 text-left">
+        {mineruParas.map((para) => {
+          if (layoutMode === 'original') return renderOriginalMineruNode(para);
+          if (layoutMode === 'translation') return renderTranslatedMineruNode(para);
+          return renderBilingualMineruNode(para);
+        })}
+      </div>
+    );
+  };
   return (
     <div className="flex flex-col gap-4 animate-in fade-in duration-200">
       {/* Layout Mode Switcher & Refresh Button */}
@@ -1911,6 +2278,35 @@ export const TranslationTab: FunctionComponent = () => {
             双语对照
           </button>
         </div>
+        {activePdfUri && (
+          <label 
+            onClick={handleMineruToggle}
+            className={`flex items-center gap-1.5 text-[10px] font-bold cursor-pointer select-none bg-secondary/25 border border-border/40 rounded-lg px-2.5 py-1.5 hover:bg-secondary/40 active:scale-95 transition-all duration-150 flex-shrink-0 ${
+              mineruStatus === 'done' ? 'text-primary' : 'text-secondary-foreground/60'
+            }`}
+          >
+            <input 
+              type="checkbox"
+              checked={mineruStatus === 'done' ? mineruViewActive : (mineruStatus === 'parsing')}
+              disabled={mineruStatus === 'parsing'}
+              readOnly
+              className="w-3 h-3 accent-primary cursor-pointer disabled:cursor-not-allowed"
+            />
+            {mineruStatus === 'parsing' ? (
+              <RefreshCw className="w-3 h-3 text-primary animate-spin" />
+            ) : (
+              <Sparkles className={`w-3 h-3 ${mineruStatus === 'done' ? 'text-primary animate-pulse' : 'text-secondary-foreground/60'}`} />
+            )}
+            <span>
+              {mineruStatus === 'parsing' && `AI排版解析中...`}
+              {mineruStatus === 'failed' && `使用AI排版 (重试)`}
+              {mineruStatus === 'idle' && `使用AI排版`}
+              {mineruStatus === 'done' && (
+                layoutMode === 'original' ? '只展示 MinerU 原文' : 'AI 排版重构'
+              )}
+            </span>
+          </label>
+        )}
         <button
           onClick={handleRefreshText}
           title="重新提取当前页原文"
@@ -1919,11 +2315,54 @@ export const TranslationTab: FunctionComponent = () => {
           <RefreshCw className="w-3.5 h-3.5" />
         </button>
       </div>
+      {/* MinerU Parsing Progress Bar */}
+      {mineruStatus === 'parsing' && (
+        <div className="bg-primary/5 border border-primary/20 rounded-lg p-2.5 flex flex-col gap-1.5 animate-in slide-in-from-top duration-200">
+          <div className="flex justify-between items-center text-[10px] font-bold text-primary">
+            <span className="flex items-center gap-1">
+              <Sparkles className="w-3 h-3 text-primary animate-pulse" />
+              AI 正在重新排版公式与表格...
+            </span>
+            <span>{mineruProgress}%</span>
+          </div>
+          <div className="w-full bg-secondary h-1 rounded-full overflow-hidden">
+            <div 
+              className="bg-primary h-full transition-all duration-300 rounded-full" 
+              style={{ width: `${mineruProgress}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* MinerU Parsing Failure Warning */}
+      {mineruStatus === 'failed' && (
+        <div className="bg-error/5 border border-error/20 rounded-lg p-2.5 flex flex-col gap-1.5 text-[10px] text-error font-semibold animate-in slide-in-from-top duration-200">
+          <div className="flex items-center justify-between">
+            <span className="flex items-center gap-1">
+              ⚠️ AI 排版重构失败，已自动使用标准排版
+            </span>
+            <button 
+              onClick={() => useStore.setState({ mineruStatus: 'idle', mineruError: null })}
+              className="text-[9px] underline hover:text-error-hover bg-transparent border-0 cursor-pointer"
+            >
+              忽略
+            </button>
+          </div>
+          {mineruError && (
+            <div className="text-[9px] opacity-90 font-mono break-all border-t border-error/15 pt-1.5 leading-relaxed">
+              <strong>错误原由:</strong> {mineruError}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* The Academic PDF Paper Sheet */}
-      <article className={`relative bg-editor-bg border border-border/80 shadow-md rounded-md p-6 min-h-[300px] flex flex-col justify-between transition-all duration-300 ${
-        hoverHighlightStyle === 'bar' ? 'hover-highlight-bar' : 'hover-highlight-overlay'
-      }`}>
+      <article 
+        onClick={handleArticleClick}
+        className={`relative bg-editor-bg border border-border/80 shadow-md rounded-md p-6 min-h-[300px] flex flex-col justify-between transition-all duration-300 ${
+          hoverHighlightStyle === 'bar' ? 'hover-highlight-bar' : 'hover-highlight-overlay'
+        }`}
+      >
 
         {/* Page Header */}
         <div className="flex justify-between items-center border-b border-border/40 pb-2 mb-4">
@@ -1933,11 +2372,13 @@ export const TranslationTab: FunctionComponent = () => {
             {layoutMode === 'bilingual' && 'CHUNZEN ACADEMIC READER // BILINGUAL VIEW'}
             {currentPageText && ` (PAGE ${currentPageText.pageNumber})`}
           </span>
-          {hasTranslations && layoutMode !== 'original' && (
-            <span className="inline-flex items-center gap-1 text-[8px] font-bold px-1.5 py-0.5 bg-primary/10 border border-primary/20 text-primary rounded">
-              TRANSLATED
-            </span>
-          )}
+          <div className="flex items-center gap-2">
+            {pageHasTranslations && layoutMode !== 'original' && (
+              <span className="inline-flex items-center gap-1 text-[8px] font-bold px-1.5 py-0.5 bg-primary/10 border border-primary/20 text-primary rounded">
+                TRANSLATED
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Main Document Content */}
@@ -1966,37 +2407,60 @@ export const TranslationTab: FunctionComponent = () => {
               {error}
             </div>
           ) : currentPageText ? (
-            layoutMode === 'original' ? (
-              annotatedParagraphs.length > 0 ? (
-                renderOriginalBlockLayout()
-              ) : (
-                <div className="flex-1 flex flex-col items-center justify-center text-center py-10 opacity-70">
-                  <FileCheck className="w-12 h-12 mb-3 text-secondary-foreground/40 stroke-[1.2]" />
-                  <h3 className="font-zhSerif text-sm font-bold text-foreground mb-1">未检测到原文文本</h3>
-                  <p className="text-[11px] text-secondary-foreground/60 max-w-[200px] leading-relaxed">
-                    当前页面未能成功提取到文本段落。
+            isMineruActiveView ? (
+              layoutMode === 'original' ? (
+                renderMineruLayout()
+              ) : !pageHasTranslations ? (
+                <div className="flex-1 flex flex-col items-center justify-center text-center py-12 px-4 animate-in fade-in duration-300">
+                  <Languages className="w-12 h-12 mb-4 text-primary/70 stroke-[1.2]" />
+                  <h3 className="font-zhSerif text-base font-bold text-foreground mb-2">整页学术翻译 (AI 排版)</h3>
+                  <p className="text-xs text-secondary-foreground/70 max-w-[240px] leading-relaxed mb-6">
+                    已通过 MinerU 提取第 {currentPageText.pageNumber} 页的高精度公式与表格，点击下方按钮开始翻译当前整页内容。
                   </p>
+                  <button
+                    onClick={handleTranslatePage}
+                    className="px-5 py-2 text-xs font-bold bg-primary text-primary-foreground hover:bg-primary/95 active:scale-[0.98] rounded-lg shadow-md cursor-pointer transition-all duration-150 inline-flex items-center gap-2"
+                  >
+                    <Languages className="w-3.5 h-3.5" />
+                    翻译当前页
+                  </button>
                 </div>
+              ) : (
+                renderMineruLayout()
               )
-            ) : !hasTranslations ? (
-              <div className="flex-1 flex flex-col items-center justify-center text-center py-12 px-4 animate-in fade-in duration-300">
-                <Languages className="w-12 h-12 mb-4 text-primary/70 stroke-[1.2]" />
-                <h3 className="font-zhSerif text-base font-bold text-foreground mb-2">整页学术翻译</h3>
-                <p className="text-xs text-secondary-foreground/70 max-w-[240px] leading-relaxed mb-6">
-                  已提取第 {currentPageText.pageNumber} 页的排版原文，点击下方按钮开始翻译当前整页内容。
-                </p>
-                <button
-                  onClick={handleTranslatePage}
-                  className="px-5 py-2 text-xs font-bold bg-primary text-primary-foreground hover:bg-primary/95 active:scale-[0.98] rounded-lg shadow-md cursor-pointer transition-all duration-150 inline-flex items-center gap-2"
-                >
-                  <Languages className="w-3.5 h-3.5" />
-                  翻译当前页
-                </button>
-              </div>
-            ) : layoutMode === 'translation' ? (
-              renderTranslationBlockLayout()
             ) : (
-              renderBilingualBlockLayout()
+              layoutMode === 'original' ? (
+                annotatedParagraphs.length > 0 ? (
+                  renderOriginalBlockLayout()
+                ) : (
+                  <div className="flex-1 flex flex-col items-center justify-center text-center py-10 opacity-70">
+                    <FileCheck className="w-12 h-12 mb-3 text-secondary-foreground/40 stroke-[1.2]" />
+                    <h3 className="font-zhSerif text-sm font-bold text-foreground mb-1">未检测到原文文本</h3>
+                    <p className="text-[11px] text-secondary-foreground/60 max-w-[200px] leading-relaxed">
+                      当前页面未能成功提取到文本段落。
+                    </p>
+                  </div>
+                )
+              ) : !pageHasTranslations ? (
+                <div className="flex-1 flex flex-col items-center justify-center text-center py-12 px-4 animate-in fade-in duration-300">
+                  <Languages className="w-12 h-12 mb-4 text-primary/70 stroke-[1.2]" />
+                  <h3 className="font-zhSerif text-base font-bold text-foreground mb-2">整页学术翻译</h3>
+                  <p className="text-xs text-secondary-foreground/70 max-w-[240px] leading-relaxed mb-6">
+                    已提取第 {currentPageText.pageNumber} 页的排版原文，点击下方按钮开始翻译当前整页内容。
+                  </p>
+                  <button
+                    onClick={handleTranslatePage}
+                    className="px-5 py-2 text-xs font-bold bg-primary text-primary-foreground hover:bg-primary/95 active:scale-[0.98] rounded-lg shadow-md cursor-pointer transition-all duration-150 inline-flex items-center gap-2"
+                  >
+                    <Languages className="w-3.5 h-3.5" />
+                    翻译当前页
+                  </button>
+                </div>
+              ) : layoutMode === 'translation' ? (
+                renderTranslationBlockLayout()
+              ) : (
+                renderBilingualBlockLayout()
+              )
             )
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center text-center py-10 opacity-70">

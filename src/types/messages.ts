@@ -1,7 +1,7 @@
 // All message types for webview ↔ extension host communication
 
 import { GlossaryEntry, JournalInfo, TranslationHistoryEntry, SelectionHighlight } from './models';
-import { EngineConfig, GeneralSettings, JournalSource, LayoutConfig } from './config';
+import { EngineConfig, GeneralSettings, JournalSource, LayoutConfig, MineruConfig } from './config';
 
 // ── PDF Viewer → Extension ──
 
@@ -147,6 +147,7 @@ export interface InitStateMessage {
   cacheMaxSize: number;
   cacheSize?: number;
   layoutConfig: LayoutConfig;
+  mineruConfig?: MineruConfig;
   engineConfigs: Record<string, Record<string, string>>;
 }
 
@@ -278,6 +279,8 @@ export type ExtToPanelMessage =
   | SyncHighlightsMessage
   | SetActivePdfMessage
   | AiExplainResultMessage
+  | { type: 'mineru-status'; status: 'idle' | 'parsing' | 'done' | 'failed'; progress?: number; message?: string; error?: string }
+  | { type: 'mineru-complete'; markdown: string }
   | { type: 'cache-size-sync'; size: number }
   | { type: 'loading'; message: string }
   | { type: 'error'; message: string }
@@ -383,4 +386,5 @@ export type PanelToExtMessage =
   | { type: 'request-state' }
   | { type: 'refresh-page-text' }
   | { type: 'jump-to-page'; pageNumber: number }
-  | { type: 'find-and-jump-to-caption'; query: string };
+  | { type: 'find-and-jump-to-caption'; query: string }
+  | { type: 'trigger-mineru-parse'; pdfUri: string };

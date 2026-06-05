@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { GeneralSettings, LayoutConfig } from '../types/config';
+import { GeneralSettings, LayoutConfig, MineruConfig } from '../types/config';
 
 export class ConfigService {
   getTranslationConfig() {
@@ -53,6 +53,15 @@ export class ConfigService {
       timeoutMs: Number.isFinite(timeout) ? Math.max(500, Math.min(20000, timeout)) : 3500,
       hoverHighlightStyle: hoverHighlightStyle === 'bar' ? 'bar' : 'overlay',
       theme: theme === 'dark' || theme === 'light' ? theme : 'auto'
+    };
+  }
+
+  getMineruConfig(): MineruConfig {
+    const cfg = vscode.workspace.getConfiguration('chunzen.mineru');
+    return {
+      enable: cfg.get<boolean>('enable', false),
+      apiType: cfg.get<'agent' | 'standard'>('apiType', 'agent'),
+      token: cfg.get<string>('token', '').trim()
     };
   }
 
@@ -154,6 +163,19 @@ export class ConfigService {
       }
       if (settings.layout.theme === 'auto' || settings.layout.theme === 'dark' || settings.layout.theme === 'light') {
         await layoutCfg.update('theme', settings.layout.theme, vscode.ConfigurationTarget.Global);
+      }
+    }
+
+    if (settings.mineru) {
+      const mineruCfg = vscode.workspace.getConfiguration('chunzen.mineru');
+      if (typeof settings.mineru.enable === 'boolean') {
+        await mineruCfg.update('enable', settings.mineru.enable, vscode.ConfigurationTarget.Global);
+      }
+      if (settings.mineru.apiType === 'agent' || settings.mineru.apiType === 'standard') {
+        await mineruCfg.update('apiType', settings.mineru.apiType, vscode.ConfigurationTarget.Global);
+      }
+      if (typeof settings.mineru.token === 'string') {
+        await mineruCfg.update('token', settings.mineru.token.trim(), vscode.ConfigurationTarget.Global);
       }
     }
   }

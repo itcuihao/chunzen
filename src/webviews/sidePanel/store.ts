@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { TranslationHistoryEntry, JournalInfo, GlossaryEntry, SelectionHighlight } from '../../types/models';
-import { LayoutConfig } from '../../types/config';
+import { LayoutConfig, MineruConfig } from '../../types/config';
 export type TabId = 'translation' | 'journal' | 'glossary' | 'settings';
 
 export type EngineStatus = {
@@ -107,6 +107,16 @@ interface PanelState {
   setHighlights: (highlights: SelectionHighlight[]) => void;
   aiExplainResult: { text: string; explanation?: string; error?: string } | null;
   setAiExplainResult: (result: PanelState['aiExplainResult']) => void;
+  mineruConfig: MineruConfig;
+  setMineruConfig: (config: MineruConfig) => void;
+  mineruMarkdown: string | null;
+  setMineruMarkdown: (md: string | null) => void;
+  mineruStatus: 'idle' | 'parsing' | 'done' | 'failed';
+  setMineruStatus: (status: 'idle' | 'parsing' | 'done' | 'failed') => void;
+  mineruProgress: number;
+  setMineruProgress: (progress: number) => void;
+  mineruError: string | null;
+  setMineruError: (error: string | null) => void;
 }
 
 export const useStore = create<PanelState>((set) => ({
@@ -187,5 +197,19 @@ export const useStore = create<PanelState>((set) => ({
   highlights: [],
   setHighlights: (highlights) => set({ highlights }),
   aiExplainResult: null,
-  setAiExplainResult: (aiExplainResult) => set({ aiExplainResult })
+  setAiExplainResult: (aiExplainResult) => set({ aiExplainResult }),
+  mineruConfig: {
+    enable: false,
+    apiType: 'agent',
+    token: ''
+  },
+  setMineruConfig: (mineruConfig) => set({ mineruConfig }),
+  mineruMarkdown: null,
+  setMineruMarkdown: (mineruMarkdown) => set({ mineruMarkdown }),
+  mineruStatus: 'idle',
+  setMineruStatus: (mineruStatus) => set({ mineruStatus }),
+  mineruProgress: 0,
+  setMineruProgress: (mineruProgress) => set({ mineruProgress }),
+  mineruError: null,
+  setMineruError: (mineruError) => set({ mineruError })
 }));

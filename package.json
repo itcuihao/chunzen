@@ -163,7 +163,6 @@
           "default": "result",
           "description": "从响应 JSON 中提取翻译结果的路径（如 data.translation）"
         },
-
         "chunzen.cache.maxSize": {
           "type": "number",
           "default": 500,
@@ -216,6 +215,25 @@
           ],
           "default": "auto",
           "description": "阅读器主题：auto 为跟随 VS Code 主题，dark 为暖色深褐（琥珀深褐），light 为暖色浅黄（春蝉暖木）"
+        },
+        "chunzen.mineru.enable": {
+          "type": "boolean",
+          "default": false,
+          "description": "是否开启 MinerU AI 文档格式重构（转换为高精度 Markdown 表格与 LaTeX 公式）"
+        },
+        "chunzen.mineru.apiType": {
+          "type": "string",
+          "enum": [
+            "agent",
+            "standard"
+          ],
+          "default": "agent",
+          "description": "MinerU API 类型：agent 为免登录轻量版（限制 20 页/10MB），standard 为精准版（需要 API Token，支持 200 页/200MB）"
+        },
+        "chunzen.mineru.token": {
+          "type": "string",
+          "default": "",
+          "description": "MinerU 官方 API Token（仅在 Standard 精准模式下必填）"
         }
       }
     }
@@ -257,7 +275,10 @@
     "webpack-cli": "^5.1.0"
   },
   "dependencies": {
+    "katex": "^0.17.0",
+    "marked": "^18.0.5",
     "node-fetch": "^3.3.2",
+    "pdf-lib": "^1.17.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "zustand": "^4.5.2"

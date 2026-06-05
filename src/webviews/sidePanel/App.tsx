@@ -29,6 +29,7 @@ export const App: FunctionComponent = () => {
   const setCacheMaxSize = useStore((state) => state.setCacheMaxSize);
   const setCacheSize = useStore((state) => state.setCacheSize);
   const setLayoutConfig = useStore((state) => state.setLayoutConfig);
+  const setMineruConfig = useStore((state) => state.setMineruConfig);
 
   const handleInitState = useCallback((msg: InitStateMessage) => {
     if (msg.glossary) setGlossaryTerms(msg.glossary);
@@ -40,6 +41,7 @@ export const App: FunctionComponent = () => {
     if (msg.cacheMaxSize !== undefined && msg.cacheMaxSize !== null) setCacheMaxSize(msg.cacheMaxSize);
     if (msg.cacheSize !== undefined && msg.cacheSize !== null) setCacheSize(msg.cacheSize);
     if (msg.layoutConfig) setLayoutConfig(msg.layoutConfig);
+    if (msg.mineruConfig) setMineruConfig(msg.mineruConfig);
   }, [
     setGlossaryTerms,
     setTranslationHistory,
@@ -49,7 +51,8 @@ export const App: FunctionComponent = () => {
     setJournalSource,
     setCacheMaxSize,
     setCacheSize,
-    setLayoutConfig
+    setLayoutConfig,
+    setMineruConfig
   ]);
 
   const layoutConfig = useStore((state) => state.layoutConfig);
@@ -173,7 +176,29 @@ export const App: FunctionComponent = () => {
         break;
       }
       case 'set-active-pdf': {
-        useStore.setState({ activePdfUri: msg.pdfUri });
+        useStore.setState({
+          activePdfUri: msg.pdfUri,
+          mineruMarkdown: null,
+          mineruStatus: 'idle',
+          mineruProgress: 0,
+          mineruError: null
+        });
+        break;
+      }
+      case 'mineru-status': {
+        useStore.setState({
+          mineruStatus: msg.status,
+          mineruProgress: msg.progress ?? 0,
+          mineruError: msg.status === 'failed' ? (msg.error ?? '解析出错') : null
+        });
+        break;
+      }
+      case 'mineru-complete': {
+        useStore.setState({
+          mineruStatus: 'done',
+          mineruMarkdown: msg.markdown,
+          mineruError: null
+        });
         break;
       }
       case 'sync-highlights': {

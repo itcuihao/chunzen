@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as fs from 'fs';
 import { ExtToPanelMessage, PanelToExtMessage } from '../types/messages';
 import { JournalInfo } from '../types/models';
 import { getNonce } from '../utils/nonce';
@@ -8,6 +9,7 @@ import { HistoryService } from '../services/historyService';
 import { ConfigService } from '../services/configService';
 import { HighlightService } from '../services/highlightService';
 import { LayoutConfig } from '../types/config';
+import { MineruService } from '../services/mineruService';
 
 export class SidePanelProvider {
   public static readonly viewType = 'chunzen.sidePanel';
@@ -19,6 +21,9 @@ export class SidePanelProvider {
   private configService: ConfigService;
   private highlightService: HighlightService;
   private layoutTerminal: vscode.Terminal | undefined;
+  private mineruService = new MineruService();
+  private mineruCache = new Map<string, string>();
+  private activeMineruTaskUri: string | null = null;
 
   public onTranslatePageRequested?: (pageNumber: number, paragraphs: Array<{ id: string; text: string }>) => Promise<void>;
   public onGetPdfPagesTextRequested?: (scope: 'read' | 'all' | 'custom', customRange?: string) => void;
@@ -74,6 +79,161 @@ export class SidePanelProvider {
         pdfUri: uriStr
       });
       this.syncHighlights();
+      this.triggerMineruParse(uriStr);
+    }
+  }
+
+  private async triggerMineruParse(uriStr: string) {
+    const config = this.configService.getMineruConfig();
+    if (!config.enable) return;
+
+    if (this.mineruCache.has(uriStr)) {
+      const cachedMd = this.mineruCache.get(uriStr)!;
+      this.postMessage({
+        type: 'mineru-complete',
+        markdown: cachedMd
+      });
+      return;
+    }
+
+    if (this.activeMineruTaskUri === uriStr) {
+      return;
+    }
+
+    this.activeMineruTaskUri = uriStr;
+    this.postMessage({
+      type: 'mineru-status',
+      status: 'parsing',
+      progress: 0,
+      message: '正在初始化 MinerU AI 解析...'
+    });
+
+    try {
+      const uri = vscode.Uri.parse(uriStr);
+      let targetPath = uri.fsPath;
+
+      if (uri.scheme !== 'file') {
+        targetPath = uri.toString();
+      }
+
+      const apiType = config.apiType || 'agent';
+      const token = config.token || '';
+
+      // If standard mode is enabled, token exists, and local file size is <= 10MB, run dual-path progressive parsing
+      const runDual = apiType === 'standard' && token && uri.scheme === 'file' && fs.existsSync(targetPath) && (fs.statSync(targetPath).size / (1024 * 1024) <= 10);
+
+      if (runDual) {
+        console.log(`[ChunZen] 启动“渐进式双路解析”机制: 同时并发请求 Agent (免Token极速版) 与 Standard (VLM高精度版)`);
+
+        let agentCompleted = false;
+        let standardCompleted = false;
+
+        // Route 1: Free Agent API (Fast preview)
+        const agentPromise = this.mineruService.parsePdf(
+          targetPath,
+          { ...config, apiType: 'agent' },
+          (status, progress, message) => {
+            if (!standardCompleted) {
+              this.postMessage({
+                type: 'mineru-status',
+                status: 'parsing',
+                progress: Math.min(60, Math.round(progress * 0.6)), // Scale down agent progress
+                message: `[极速通道] ${message}`
+              });
+            }
+          }
+        ).then(markdown => {
+          agentCompleted = true;
+          if (!standardCompleted) {
+            console.log(`[ChunZen] 极速通道 (Agent API) 率先解析完成，渲染临时 AI 增强视图`);
+            this.mineruCache.set(uriStr, markdown);
+            this.postMessage({
+              type: 'mineru-complete',
+              markdown
+            });
+          }
+        }).catch(err => {
+          console.warn('[ChunZen] 极速通道 (Agent API) 失败，继续等待精度通道...', err.message);
+        });
+
+        // Route 2: Standard API (High precision VLM)
+        const standardPromise = this.mineruService.parsePdf(
+          targetPath,
+          config,
+          (status, progress, message) => {
+            this.postMessage({
+              type: 'mineru-status',
+              status: 'parsing',
+              progress,
+              message: `[精度通道] ${message}`
+            });
+          }
+        ).then(markdown => {
+          standardCompleted = true;
+          console.log(`[ChunZen] 精度通道 (Standard VLM) 解析完成，自动无缝覆盖升级为最高质量版面`);
+          this.mineruCache.set(uriStr, markdown);
+          this.postMessage({
+            type: 'mineru-complete',
+            markdown
+          });
+        }).catch(err => {
+          standardCompleted = true;
+          console.error('[ChunZen] 精度通道 (Standard VLM) 失败:', err);
+          if (!agentCompleted) {
+            this.postMessage({
+              type: 'mineru-status',
+              status: 'failed',
+              error: err.message || '精度通道解析失败'
+            });
+          }
+        });
+
+        Promise.allSettled([agentPromise, standardPromise]).finally(() => {
+          if (this.activeMineruTaskUri === uriStr) {
+            this.activeMineruTaskUri = null;
+          }
+        });
+
+      } else {
+        // Single path execution
+        console.log(`[ChunZen] 启动 MinerU 单路解析 (${apiType} 模式)`);
+        const markdown = await this.mineruService.parsePdf(
+          targetPath,
+          config,
+          (status, progress, message) => {
+            this.postMessage({
+              type: 'mineru-status',
+              status: 'parsing',
+              progress,
+              message
+            });
+          }
+        );
+
+        this.mineruCache.set(uriStr, markdown);
+        if (this.activePdfUri === uriStr) {
+          this.postMessage({
+            type: 'mineru-complete',
+            markdown
+          });
+        }
+        if (this.activeMineruTaskUri === uriStr) {
+          this.activeMineruTaskUri = null;
+        }
+      }
+
+    } catch (err: any) {
+      console.error('[ChunZen] MinerU 解析出错:', err);
+      if (this.activePdfUri === uriStr) {
+        this.postMessage({
+          type: 'mineru-status',
+          status: 'failed',
+          error: err.message || '未知错误'
+        });
+      }
+      if (this.activeMineruTaskUri === uriStr) {
+        this.activeMineruTaskUri = null;
+      }
     }
   }
 
@@ -157,7 +317,30 @@ export class SidePanelProvider {
               }
             }
             await this.onLayoutConfigChanged?.(this.configService.getLayoutConfig());
+            if (this.activePdfUri) {
+              const mineruConfig = this.configService.getMineruConfig();
+              if (mineruConfig.enable) {
+                this.triggerMineruParse(this.activePdfUri);
+              } else {
+                this.postMessage({
+                  type: 'mineru-status',
+                  status: 'idle'
+                });
+              }
+            }
             break;
+          case 'trigger-mineru-parse': {
+            const mineruCfg = this.configService.getMineruConfig();
+            if (!mineruCfg.enable) {
+              const cfg = vscode.workspace.getConfiguration('chunzen.mineru');
+              await cfg.update('enable', true, vscode.ConfigurationTarget.Global);
+              this.sendInitState();
+            }
+            if (msg.pdfUri) {
+              this.triggerMineruParse(msg.pdfUri);
+            }
+            break;
+          }
           case 'import-glossary':
             await this.handleImportGlossary(msg.defaultCategory);
             break;
@@ -341,7 +524,8 @@ export class SidePanelProvider {
       journalSource: { type: this.configService.getJournalConfig().source },
       cacheMaxSize: this.configService.getCacheConfig().maxSize,
       cacheSize: this.translationService.getCacheSize(),
-      layoutConfig: this.configService.getLayoutConfig()
+      layoutConfig: this.configService.getLayoutConfig(),
+      mineruConfig: this.configService.getMineruConfig()
     });
     if (this.lastJournalInfo) {
       this.postMessage({
@@ -370,6 +554,7 @@ export class SidePanelProvider {
         pdfUri: this.activePdfUri
       });
       this.syncHighlights();
+      this.triggerMineruParse(this.activePdfUri);
     }
   }
 
@@ -687,11 +872,12 @@ export class SidePanelProvider {
   <meta charset="UTF-8">
   <meta http-equiv="Content-Security-Policy"
     content="default-src 'none';
-             style-src ${webview.cspSource} 'unsafe-inline' https://fonts.googleapis.com;
-             font-src https://fonts.gstatic.com;
+             style-src ${webview.cspSource} 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net;
+             font-src https://fonts.gstatic.com https://cdn.jsdelivr.net;
              script-src 'nonce-${nonce}';">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="${panelCssUri}">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <title>春蝉面板</title>
 </head>
