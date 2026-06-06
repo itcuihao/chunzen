@@ -486,6 +486,16 @@ function buildTextLayer(container, richContent, viewport, options) {
                     if (inDoubleColumnZone && lineWidth < pageWidth * 0.55) {
                         colIndex = lineCenter < midX ? 0 : 1;
                     }
+                    else {
+                        // Fallback: if not inside double column zone, but the line is completely
+                        // confined to one side of the center gutter, it is still a column line.
+                        if (lineRight <= midX - 5) {
+                            colIndex = 0;
+                        }
+                        else if (lineLeft >= midX + 5) {
+                            colIndex = 1;
+                        }
+                    }
                 }
                 else if (effectiveGutters.length > 0 && lineWidth < pageWidth * 0.82) {
                     colIndex = estimateColumnIndex(line, effectiveGutters, pageWidth);
@@ -2170,8 +2180,11 @@ function shouldStartNewBodyParagraph(prev, cur, columnMargins, pageWidth, lineGa
     const prevText = prev.str.trim();
     const curStartsLower = /^[a-z]/.test(curText);
     const curStartsUpper = /^[A-Z]/.test(curText);
-    const curStartsList = /^(\(?\d+\)?[.)]?\s+|[-•*]\s+)/.test(curText);
-    const prevEndsTerminal = /[.!?;:。！？；：]$/.test(prevText);
+    const curStartsList = /^(\(?\d{1,3}\)?[.)]?\s+|[-•*]\s+)/.test(curText);
+    let prevEndsTerminal = /[.!?;:。！？；：]$/.test(prevText);
+    if (prevEndsTerminal && /\b(et\s+al|fig|tabs?|e\.g|i\.e|vs)\.$/i.test(prevText)) {
+        prevEndsTerminal = false;
+    }
     const curIndent = Math.max(0, cur.x - colMargin);
     const prevIndent = Math.max(0, prev.x - colMargin);
     const indentDelta = curIndent - prevIndent;

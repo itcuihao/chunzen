@@ -234,10 +234,10 @@ class SidePanelProvider {
     }
     show() {
         if (this.panel) {
-            this.panel.reveal(vscode.ViewColumn.Two);
+            this.panel.reveal(vscode.ViewColumn.Two, true);
             return;
         }
-        this.panel = vscode.window.createWebviewPanel(SidePanelProvider.viewType, '春蝉 — 翻译 & 期刊信息', vscode.ViewColumn.Two, {
+        this.panel = vscode.window.createWebviewPanel(SidePanelProvider.viewType, '春蝉 — 翻译 & 期刊信息', { viewColumn: vscode.ViewColumn.Two, preserveFocus: true }, {
             enableScripts: true,
             localResourceRoots: [
                 vscode.Uri.joinPath(this.context.extensionUri, 'dist')
@@ -249,6 +249,12 @@ class SidePanelProvider {
         this.panel.webview.html = this.getHtml(this.panel.webview);
         this.panel.webview.onDidReceiveMessage(async (msg) => {
             switch (msg.type) {
+                case 'toggle-panel-fullscreen':
+                    if (this.panel) {
+                        this.panel.reveal(vscode.ViewColumn.Two);
+                        await vscode.commands.executeCommand('workbench.action.toggleMaximizeEditorGroup');
+                    }
+                    break;
                 case 'request-state':
                     this.sendInitState();
                     break;

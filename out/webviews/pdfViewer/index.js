@@ -675,6 +675,20 @@ document.getElementById('btn-capture')?.addEventListener('click', () => {
         vscode.postMessage({ type: 'figure-screenshot-error', pageNumber: currentPage, reason: msg });
     });
 });
+let pdfFullscreenState = false;
+document.getElementById('btn-fullscreen')?.addEventListener('click', () => {
+    pdfFullscreenState = !pdfFullscreenState;
+    const svg = document.getElementById('fullscreen-svg');
+    if (svg) {
+        if (pdfFullscreenState) {
+            svg.innerHTML = '<polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="10" y1="14" x2="3" y2="21"/>';
+        }
+        else {
+            svg.innerHTML = '<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>';
+        }
+    }
+    vscode.postMessage({ type: 'toggle-pdf-fullscreen' });
+});
 pageInputEl.addEventListener('change', e => goToPage(parseInt(e.target.value, 10)));
 // Floating HUD Event Listeners
 hudBtnPrev.addEventListener('click', () => goToPage(currentPage - 1));

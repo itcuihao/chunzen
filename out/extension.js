@@ -98,12 +98,12 @@ function activate(context) {
                 filters: { 'PDF files': ['pdf'] }
             }).then(uris => {
                 if (uris && uris.length > 0) {
-                    vscode.commands.executeCommand('vscode.openWith', uris[0], PdfEditorProvider_1.PdfEditorProvider.viewType);
+                    vscode.commands.executeCommand('vscode.openWith', uris[0], PdfEditorProvider_1.PdfEditorProvider.viewType, vscode.ViewColumn.One);
                 }
             });
             return;
         }
-        vscode.commands.executeCommand('vscode.openWith', targetUri, PdfEditorProvider_1.PdfEditorProvider.viewType);
+        vscode.commands.executeCommand('vscode.openWith', targetUri, PdfEditorProvider_1.PdfEditorProvider.viewType, vscode.ViewColumn.One);
     }));
     // 注册命令：清除缓存
     context.subscriptions.push(vscode.commands.registerCommand('chunzen.clearCache', () => {

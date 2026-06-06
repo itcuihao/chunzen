@@ -72,6 +72,10 @@ class PdfEditorProvider {
         this.panelUris.set(webviewPanel, uri);
         this.activeWebviewPanel = webviewPanel;
         this.sidePanel.setActivePdf(uri);
+        // Default to open PDF on the left side (ViewColumn.One)
+        if (webviewPanel.viewColumn !== vscode.ViewColumn.One) {
+            webviewPanel.reveal(vscode.ViewColumn.One);
+        }
         webviewPanel.onDidChangeViewState(e => {
             if (e.webviewPanel.active) {
                 this.activeWebviewPanel = webviewPanel;
@@ -90,6 +94,10 @@ class PdfEditorProvider {
         // 接收 WebView 消息
         webviewPanel.webview.onDidReceiveMessage(async (msg) => {
             switch (msg.type) {
+                case 'toggle-pdf-fullscreen':
+                    webviewPanel.reveal(vscode.ViewColumn.One);
+                    await vscode.commands.executeCommand('workbench.action.toggleMaximizeEditorGroup');
+                    break;
                 case 'ready':
                     // WebView 就绪，确保面板打开
                     this.sidePanel.show();
@@ -401,6 +409,9 @@ class PdfEditorProvider {
       <button id="btn-fit" title="适合宽度">⊡</button>
       <button id="btn-capture" title="保存当前页为高清图片">
         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-camera"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
+      </button>
+      <button id="btn-fullscreen" title="PDF 全屏切换">
+        <svg id="fullscreen-svg" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-maximize-2"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
       </button>
     </div>
   </div>
