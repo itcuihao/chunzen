@@ -4,6 +4,7 @@ import * as os from 'os';
 import { exec } from 'child_process';
 import { PDFDocument } from 'pdf-lib';
 import { MineruConfig } from '../types/config';
+import { customFetch } from '../utils/fetch';
 
 export class MineruService {
   private async slicePdf(pdfPath: string, maxPages: number): Promise<string> {
@@ -72,27 +73,37 @@ export class MineruService {
     let isSliced = false;
 
     if (!isUrl) {
-      onProgress('parsing', 7, '自动优化解析范围 (免费版截取前 20 页)...');
-      targetUploadPath = await this.slicePdf(pdfPath, 20);
+      onProgress('parsing', 7, '自动优化解析范围 (免费版截取前 5 页)...');
+      targetUploadPath = await this.slicePdf(pdfPath, 5);
       isSliced = targetUploadPath !== pdfPath;
     }
 
     try {
+      const maxRetries = 3;
       if (isUrl) {
-        const response = await fetch('https://mineru.net/api/v1/agent/parse/url', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            url: pdfPath,
-            language: 'ch',
-            enable_table: true,
-            is_ocr: false,
-            enable_formula: true
-          })
-        });
+        let response;
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+          try {
+            response = await customFetch('https://mineru.net/api/v1/agent/parse/url', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                url: pdfPath,
+                language: 'ch',
+                enable_table: true,
+                is_ocr: false,
+                enable_formula: true
+              })
+            });
+            if (response.ok) break;
+          } catch (e) {
+            if (attempt === maxRetries) throw e;
+          }
+          await new Promise(resolve => setTimeout(resolve, 1500));
+        }
 
-        if (!response.ok) {
-          throw new Error(`MinerU Agent 接口提交失败: ${response.status} ${response.statusText}`);
+        if (!response || !response.ok) {
+          throw new Error(`MinerU Agent 接口提交失败: ${response ? response.status : '网络错误'}`);
         }
 
         const res = (await response.json()) as any;
@@ -103,20 +114,29 @@ export class MineruService {
       } else {
         // Local file upload
         onProgress('parsing', 10, '申请文件上传链接...');
-        const response = await fetch('https://mineru.net/api/v1/agent/parse/file', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            file_name: path.basename(targetUploadPath),
-            language: 'ch',
-            enable_table: true,
-            is_ocr: false,
-            enable_formula: true
-          })
-        });
+        let response;
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+          try {
+            response = await customFetch('https://mineru.net/api/v1/agent/parse/file', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                file_name: path.basename(targetUploadPath),
+                language: 'ch',
+                enable_table: true,
+                is_ocr: false,
+                enable_formula: true
+              })
+            });
+            if (response.ok) break;
+          } catch (e) {
+            if (attempt === maxRetries) throw e;
+          }
+          await new Promise(resolve => setTimeout(resolve, 1500));
+        }
 
-        if (!response.ok) {
-          throw new Error(`MinerU Agent 接口提交失败: ${response.status} ${response.statusText}`);
+        if (!response || !response.ok) {
+          throw new Error(`MinerU Agent 接口提交失败: ${response ? response.status : '网络错误'}`);
         }
 
         const res = (await response.json()) as any;
@@ -131,13 +151,22 @@ export class MineruService {
         const fileBuffer = fs.readFileSync(targetUploadPath);
 
         onProgress('parsing', 20, '正在上传 PDF 文件到云端...');
-        const uploadResponse = await fetch(uploadUrl, {
-          method: 'PUT',
-          body: fileBuffer
-        });
+        let uploadResponse;
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+          try {
+            uploadResponse = await customFetch(uploadUrl, {
+              method: 'PUT',
+              body: fileBuffer
+            });
+            if (uploadResponse.ok) break;
+          } catch (e) {
+            if (attempt === maxRetries) throw e;
+          }
+          await new Promise(resolve => setTimeout(resolve, 1500));
+        }
 
-        if (!uploadResponse.ok) {
-          throw new Error(`文件上传失败: ${uploadResponse.status} ${uploadResponse.statusText}`);
+        if (!uploadResponse || !uploadResponse.ok) {
+          throw new Error(`文件上传失败: ${uploadResponse ? uploadResponse.status : '网络错误'}`);
         }
       }
 
@@ -164,7 +193,7 @@ export class MineruService {
     for (let i = 0; i < maxRetries; i++) {
       await new Promise(resolve => setTimeout(resolve, intervalMs));
 
-      const response = await fetch(`https://mineru.net/api/v1/agent/parse/${taskId}`);
+      const response = await customFetch(`https://mineru.net/api/v1/agent/parse/${taskId}`);
       if (!response.ok) continue;
 
       const res = (await response.json()) as any;
@@ -176,9 +205,15 @@ export class MineruService {
       if (state === 'done') {
         onProgress('parsing', 95, '正在下载高精度 Markdown 结果...');
         const mdUrl = res.data.markdown_url;
-        const mdResponse = await fetch(mdUrl);
+        let mdResponse;
+        try {
+          mdResponse = await customFetch(mdUrl);
+        } catch (fetchErr: any) {
+          throw new Error(`下载 Markdown 结果网络连接失败。请检查您的网络或代理是否能正常访问域名 cdn-mineru.openxlab.org.cn。原因: ${fetchErr.message}`);
+        }
+
         if (!mdResponse.ok) {
-          throw new Error('下载 Markdown 结果失败');
+          throw new Error(`下载 Markdown 结果失败: ${mdResponse.status} ${mdResponse.statusText}`);
         }
         return await mdResponse.text();
       } else if (state === 'failed') {
@@ -207,7 +242,7 @@ export class MineruService {
     let batchId = '';
 
     if (isUrl) {
-      const response = await fetch('https://mineru.net/api/v4/extract/task', {
+      const response = await customFetch('https://mineru.net/api/v4/extract/task', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -231,7 +266,7 @@ export class MineruService {
     } else {
       // Local file upload in standard mode
       onProgress('parsing', 10, '申请 Standard 文件上传链接...');
-      const response = await fetch('https://mineru.net/api/v4/file-urls/batch', {
+      const response = await customFetch('https://mineru.net/api/v4/file-urls/batch', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -261,7 +296,7 @@ export class MineruService {
       const fileBuffer = fs.readFileSync(pdfPath);
 
       onProgress('parsing', 20, '正在上传 PDF 文件 (Standard Mode)...');
-      const uploadResponse = await fetch(uploadUrl, {
+      const uploadResponse = await customFetch(uploadUrl, {
         method: 'PUT',
         body: fileBuffer
       });
@@ -290,7 +325,7 @@ export class MineruService {
     for (let i = 0; i < maxRetries; i++) {
       await new Promise(resolve => setTimeout(resolve, intervalMs));
 
-      const response = await fetch(`https://mineru.net/api/v4/extract/task/${taskId}`, {
+      const response = await customFetch(`https://mineru.net/api/v4/extract/task/${taskId}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -335,7 +370,7 @@ export class MineruService {
     for (let i = 0; i < maxRetries; i++) {
       await new Promise(resolve => setTimeout(resolve, intervalMs));
 
-      const response = await fetch(`https://mineru.net/api/v4/extract-results/batch/${batchId}`, {
+      const response = await customFetch(`https://mineru.net/api/v4/extract-results/batch/${batchId}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -376,7 +411,13 @@ export class MineruService {
     const tempZipPath = path.join(tempDir, `mineru_${Date.now()}.zip`);
 
     try {
-      const response = await fetch(zipUrl);
+      let response;
+      try {
+        response = await customFetch(zipUrl);
+      } catch (fetchErr: any) {
+        throw new Error(`下载 ZIP 结果文件网络连接失败。请检查您的网络或代理是否能正常访问域名 cdn-mineru.openxlab.org.cn。原因: ${fetchErr.message}`);
+      }
+
       if (!response.ok) {
         throw new Error(`无法下载 ZIP 结果文件: ${response.status} ${response.statusText}`);
       }

@@ -311,7 +311,7 @@ export function buildTextLayer(
     const scaledH = item.height * viewport.scale;
     // Filter affiliation superscript number clusters (e.g. "29 30", "1,2,3")
     // Heuristic: pure digit/comma/space string with small font height
-    if (isAffiliationClutter(item.str, scaledH)) continue;
+    if ((options?.pageNumber === 1) && isAffiliationClutter(item.str, scaledH)) continue;
 
     const w = item.width * viewport.scale;
     if (isRightEdgeWatermarkToken(item.str, tx[4], tx[5], w, scaledH, viewport.width, rightEdgeNoiseZones)) continue;
@@ -754,7 +754,7 @@ export function buildTextLayer(
         if (tx[5] < headerY || tx[5] > footerY) continue;
         
         const scaledH = item.height * viewport.scale;
-        if (isAffiliationClutter(item.str, scaledH)) continue;
+        if ((options?.pageNumber === 1) && isAffiliationClutter(item.str, scaledH)) continue;
         
         const w = item.width * viewport.scale;
         if (isRightEdgeWatermarkToken(item.str, tx[4], tx[5], w, scaledH, viewport.width, rightEdgeNoiseZones)) continue;

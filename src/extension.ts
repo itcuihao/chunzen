@@ -90,12 +90,12 @@ export function activate(context: vscode.ExtensionContext) {
           filters: { 'PDF files': ['pdf'] }
         }).then(uris => {
           if (uris && uris.length > 0) {
-            vscode.commands.executeCommand('vscode.openWith', uris[0], PdfEditorProvider.viewType);
+            vscode.commands.executeCommand('vscode.openWith', uris[0], PdfEditorProvider.viewType, vscode.ViewColumn.One);
           }
         });
         return;
       }
-      vscode.commands.executeCommand('vscode.openWith', targetUri, PdfEditorProvider.viewType);
+      vscode.commands.executeCommand('vscode.openWith', targetUri, PdfEditorProvider.viewType, vscode.ViewColumn.One);
     })
   );
 

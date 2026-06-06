@@ -5,6 +5,7 @@ const jsx_runtime_1 = require("react/jsx-runtime");
 const client_1 = require("react-dom/client");
 const App_1 = require("./App");
 require("./styles/tailwind.css");
+require("./styles/panel.css");
 const container = document.getElementById('app');
 if (container) {
     const root = (0, client_1.createRoot)(container);

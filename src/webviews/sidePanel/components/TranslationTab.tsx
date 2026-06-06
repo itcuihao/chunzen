@@ -2,7 +2,8 @@ import { FunctionComponent, useState, useEffect, useMemo, ReactNode, useRef } fr
 import { useStore } from '../store';
 import { 
   Languages, FileCheck, RefreshCw, Compass, Plus, ArrowUpRight, Copy,
-  Highlighter, MessageSquareText, Sparkles, BookOpen, Trash2, X
+  Highlighter, MessageSquareText, Sparkles, BookOpen, Trash2, X,
+  Maximize2, Minimize2
 } from 'lucide-react';
 import { postMessage } from '../vscode';
 import { SelectionHighlight } from '../../../types/models';
@@ -1325,6 +1326,11 @@ export const TranslationTab: FunctionComponent = () => {
   const [activeHighlightAction, setActiveHighlightAction] = useState<{ highlight: SelectionHighlight; rect: { x: number; y: number; width: number; height: number } } | null>(null);
   const [noteEditingHlId, setNoteEditingHlId] = useState<string | null>(null);
   const [noteText, setNoteText] = useState('');
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const handleToggleFullscreen = () => {
+    setIsFullscreen(!isFullscreen);
+    postMessage({ type: 'toggle-panel-fullscreen' });
+  };
 
   // Sync AI explanation result from global store
   useEffect(() => {
@@ -1586,7 +1592,7 @@ export const TranslationTab: FunctionComponent = () => {
     );
   };
 
-  const isMineruActiveView = mineruConfig.enable && mineruStatus === 'done' && mineruMarkdown && mineruViewActive && mineruParas.length > 0;
+  const isMineruActiveView = false;
 
   const hasMineruTranslations = useMemo(() => {
     if (mineruParas.length === 0) return false;
@@ -2278,7 +2284,7 @@ export const TranslationTab: FunctionComponent = () => {
             双语对照
           </button>
         </div>
-        {activePdfUri && (
+        {/* {activePdfUri && (
           <label 
             onClick={handleMineruToggle}
             className={`flex items-center gap-1.5 text-[10px] font-bold cursor-pointer select-none bg-secondary/25 border border-border/40 rounded-lg px-2.5 py-1.5 hover:bg-secondary/40 active:scale-95 transition-all duration-150 flex-shrink-0 ${
@@ -2306,7 +2312,7 @@ export const TranslationTab: FunctionComponent = () => {
               )}
             </span>
           </label>
-        )}
+        )} */}
         <button
           onClick={handleRefreshText}
           title="重新提取当前页原文"
@@ -2314,9 +2320,16 @@ export const TranslationTab: FunctionComponent = () => {
         >
           <RefreshCw className="w-3.5 h-3.5" />
         </button>
+        <button
+          onClick={handleToggleFullscreen}
+          title="翻译全屏切换"
+          className="p-1.5 rounded-lg border border-border/40 bg-secondary/25 text-secondary-foreground hover:text-foreground hover:bg-secondary/40 active:scale-95 transition-all duration-150 cursor-pointer flex-shrink-0"
+        >
+          {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+        </button>
       </div>
       {/* MinerU Parsing Progress Bar */}
-      {mineruStatus === 'parsing' && (
+      {/* {mineruStatus === 'parsing' && (
         <div className="bg-primary/5 border border-primary/20 rounded-lg p-2.5 flex flex-col gap-1.5 animate-in slide-in-from-top duration-200">
           <div className="flex justify-between items-center text-[10px] font-bold text-primary">
             <span className="flex items-center gap-1">
@@ -2332,21 +2345,29 @@ export const TranslationTab: FunctionComponent = () => {
             />
           </div>
         </div>
-      )}
+      )} */}
 
       {/* MinerU Parsing Failure Warning */}
-      {mineruStatus === 'failed' && (
+      {/* {mineruStatus === 'failed' && (
         <div className="bg-error/5 border border-error/20 rounded-lg p-2.5 flex flex-col gap-1.5 text-[10px] text-error font-semibold animate-in slide-in-from-top duration-200">
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-1">
               ⚠️ AI 排版重构失败，已自动使用标准排版
             </span>
-            <button 
-              onClick={() => useStore.setState({ mineruStatus: 'idle', mineruError: null })}
-              className="text-[9px] underline hover:text-error-hover bg-transparent border-0 cursor-pointer"
-            >
-              忽略
-            </button>
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={handleMineruToggle}
+                className="text-[9px] underline hover:text-error-hover bg-transparent border-0 cursor-pointer font-bold"
+              >
+                重试
+              </button>
+              <button 
+                onClick={() => useStore.setState({ mineruStatus: 'idle', mineruError: null })}
+                className="text-[9px] underline hover:text-error-hover bg-transparent border-0 cursor-pointer"
+              >
+                忽略
+              </button>
+            </div>
           </div>
           {mineruError && (
             <div className="text-[9px] opacity-90 font-mono break-all border-t border-error/15 pt-1.5 leading-relaxed">
@@ -2354,7 +2375,7 @@ export const TranslationTab: FunctionComponent = () => {
             </div>
           )}
         </div>
-      )}
+      )} */}
 
       {/* The Academic PDF Paper Sheet */}
       <article 

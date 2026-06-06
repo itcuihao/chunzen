@@ -114,7 +114,8 @@ export type PdfViewerToExtMessage =
   | PageImageCapturedMessage
   | PdfHoverMessage
   | PdfPagesTextResultMessage
-  | PdfBibliographyExtractedMessage;
+  | PdfBibliographyExtractedMessage
+  | { type: 'toggle-pdf-fullscreen' };
 
 // ── Extension → Side Panel ──
 
@@ -387,4 +388,5 @@ export type PanelToExtMessage =
   | { type: 'refresh-page-text' }
   | { type: 'jump-to-page'; pageNumber: number }
   | { type: 'find-and-jump-to-caption'; query: string }
-  | { type: 'trigger-mineru-parse'; pdfUri: string };
+  | { type: 'trigger-mineru-parse'; pdfUri: string }
+  | { type: 'toggle-panel-fullscreen' };

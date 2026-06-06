@@ -37,6 +37,7 @@ exports.PdfEditorProvider = void 0;
 const vscode = __importStar(require("vscode"));
 const path = __importStar(require("path"));
 const nonce_1 = require("../utils/nonce");
+const doiResolver_1 = require("../services/doiResolver");
 /**
  * PDF 自定义编辑器 Provider
  * 处理 .pdf 文件的打开，渲染 PDF.js WebView
@@ -47,15 +48,19 @@ class PdfEditorProvider {
     journalService;
     sidePanel;
     historyService;
+    configService;
     context;
     // 每个文档对应的 WebView
     webviews = new Map();
-    constructor(context, translationService, journalService, sidePanel, historyService) {
+    panelUris = new Map();
+    activeWebviewPanel;
+    constructor(context, translationService, journalService, sidePanel, historyService, configService) {
         this.context = context;
         this.translationService = translationService;
         this.journalService = journalService;
         this.sidePanel = sidePanel;
         this.historyService = historyService;
+        this.configService = configService;
     }
     async openCustomDocument(uri, _openContext, _token) {
         return { uri, dispose: () => { } };
@@ -64,6 +69,15 @@ class PdfEditorProvider {
         const uri = document.uri;
         const key = uri.toString();
         this.webviews.set(key, webviewPanel);
+        this.panelUris.set(webviewPanel, uri);
+        this.activeWebviewPanel = webviewPanel;
+        this.sidePanel.setActivePdf(uri);
+        webviewPanel.onDidChangeViewState(e => {
+            if (e.webviewPanel.active) {
+                this.activeWebviewPanel = webviewPanel;
+                this.sidePanel.setActivePdf(uri);
+            }
+        });
         webviewPanel.webview.options = {
             enableScripts: true,
             localResourceRoots: [
@@ -79,6 +93,14 @@ class PdfEditorProvider {
                 case 'ready':
                     // WebView 就绪，确保面板打开
                     this.sidePanel.show();
+                    webviewPanel.webview.postMessage({
+                        type: 'layout-config',
+                        config: this.configService.getLayoutConfig()
+                    });
+                    break;
+                case 'pdf-hover':
+                    console.log('[Extension] PdfEditorProvider received pdf-hover from webview, forwarding to sidePanel with id:', msg.id);
+                    this.sidePanel.postMessage({ type: 'pdf-hover', id: msg.id });
                     break;
                 case 'sentence-hover':
                     await this.handleSentenceHover(msg.text);
@@ -92,11 +114,67 @@ class PdfEditorProvider {
                 case 'doi-found':
                     await this.handleDoiFound(msg.doi, msg.issn, msg.journal);
                     break;
+                case 'translate-page-paragraphs':
+                    await this.handleTranslatePageParagraphs(webviewPanel, msg.pageNumber, msg.paragraphs);
+                    break;
+                case 'page-text-loaded':
+                    this.sidePanel.syncPageText(msg.pageNumber, msg.paragraphs, msg.columnsCount, msg.translations);
+                    break;
+                case 'figure-screenshot-captured':
+                    await this.handleFigureScreenshotCaptured(webviewPanel, msg.pageNumber, msg.dataUrl);
+                    break;
+                case 'figure-screenshot-error':
+                    vscode.window.showWarningMessage(`图像区域截图失败（第 ${msg.pageNumber} 页）：${msg.reason}`);
+                    break;
+                case 'pdf-pages-text-result':
+                    this.sidePanel.handlePdfPagesTextResult(msg.paragraphs);
+                    break;
+                case 'pdf-bibliography-extracted':
+                    this.sidePanel.syncBibliography(msg.bibliography);
+                    break;
             }
         }, undefined, this.context.subscriptions);
         webviewPanel.onDidDispose(() => {
             this.webviews.delete(key);
+            this.panelUris.delete(webviewPanel);
+            if (this.activeWebviewPanel === webviewPanel) {
+                this.activeWebviewPanel = undefined;
+            }
         });
+    }
+    async handleFigureScreenshotCaptured(panel, pageNumber, dataUrl) {
+        const pdfUri = this.panelUris.get(panel);
+        if (!pdfUri) {
+            vscode.window.showWarningMessage('截图保存失败：未找到当前 PDF 文档路径。');
+            return;
+        }
+        const m = dataUrl.match(/^data:image\/png;base64,(.+)$/);
+        if (!m?.[1]) {
+            vscode.window.showWarningMessage('截图保存失败：无效的图片数据。');
+            return;
+        }
+        const raw = Buffer.from(m[1], 'base64');
+        const baseName = path.basename(pdfUri.fsPath, path.extname(pdfUri.fsPath));
+        const dir = path.dirname(pdfUri.fsPath);
+        let target = path.join(dir, `${baseName}.p${pageNumber}.png`);
+        for (let i = 1; i <= 99; i++) {
+            try {
+                await vscode.workspace.fs.stat(vscode.Uri.file(target));
+                target = path.join(dir, `${baseName}.p${pageNumber}-${i}.png`);
+            }
+            catch {
+                break;
+            }
+        }
+        await vscode.workspace.fs.writeFile(vscode.Uri.file(target), raw);
+        vscode.window.showInformationMessage(`整页高清截图已保存：${path.basename(target)}`);
+    }
+    resolveActivePanel() {
+        let panel = this.activeWebviewPanel;
+        if (!panel && this.webviews.size > 0) {
+            panel = Array.from(this.webviews.values())[0];
+        }
+        return panel;
     }
     async handleSentenceHover(text) {
         if (!text.trim() || text.trim().length < 5)
@@ -114,22 +192,168 @@ class PdfEditorProvider {
         }
     }
     async handleDoiFound(doi, issn, journal) {
-        const cfg = vscode.workspace.getConfiguration('chunzen.journal');
-        if (!cfg.get('enabled', true))
+        const journalCfg = vscode.workspace.getConfiguration('chunzen.journal');
+        if (!journalCfg.get('enabled', true))
             return;
-        const query = journal || issn || doi;
-        if (!query)
+        const preferredSource = journalCfg.get('source', 'ablesci');
+        let resolvedQuery = issn || journal || doi;
+        let paperMeta = {};
+        // 1. 优先使用 DOI 并在后台解析出准确的 ISSN / 期刊名以及论文元数据
+        if (doi) {
+            try {
+                const metadata = await doiResolver_1.DoiResolver.resolveDoi(doi);
+                paperMeta = metadata;
+                if (metadata.issn || metadata.journalName) {
+                    resolvedQuery = metadata.issn || metadata.journalName;
+                    console.log(`[ChunZen] DOI 解析成功, 得到的 ISSN/期刊名: "${resolvedQuery}"`);
+                }
+            }
+            catch (err) {
+                console.warn('[ChunZen] DOI 自动解析接口异常:', err);
+            }
+        }
+        if (!resolvedQuery)
             return;
         try {
-            const info = await this.journalService.query(query);
+            const info = await this.journalService.query(resolvedQuery, preferredSource);
             if (info) {
                 if (doi)
                     info.doi = doi;
+                // 合并论文级元数据
+                if (paperMeta.publishYear)
+                    info.publishYear = paperMeta.publishYear;
+                if (paperMeta.firstAuthor)
+                    info.firstAuthor = paperMeta.firstAuthor;
+                if (paperMeta.firstAuthorAffiliation)
+                    info.firstAuthorAffiliation = paperMeta.firstAuthorAffiliation;
+                if (paperMeta.lastAuthor)
+                    info.lastAuthor = paperMeta.lastAuthor;
+                if (paperMeta.lastAuthorAffiliation)
+                    info.lastAuthorAffiliation = paperMeta.lastAuthorAffiliation;
+                if (paperMeta.paperSource)
+                    info.paperSource = paperMeta.paperSource;
                 this.sidePanel.updateJournal(info);
             }
         }
         catch (err) {
             console.warn('期刊信息查询失败:', err);
+        }
+    }
+    async handleTranslatePageParagraphs(webviewPanel, pageNumber, paragraphs) {
+        try {
+            const translations = [];
+            for (const para of paragraphs) {
+                if (!para.text.trim()) {
+                    translations.push({ id: para.id, translatedText: '' });
+                    continue;
+                }
+                const result = await this.translationService.translate(para.text);
+                translations.push({ id: para.id, translatedText: result.text });
+                this.historyService.add(para.text, result.text, result.engine);
+                if (!result.cached) {
+                    await new Promise(resolve => setTimeout(resolve, 300));
+                }
+            }
+            webviewPanel.webview.postMessage({
+                type: 'translate-page-paragraphs-result',
+                pageNumber,
+                translations
+            });
+            // Also sync to the side panel!
+            this.sidePanel.syncPageTranslation(pageNumber, translations);
+        }
+        catch (err) {
+            const errMsg = err instanceof Error ? err.message : String(err);
+            webviewPanel.webview.postMessage({
+                type: 'translate-page-paragraphs-error',
+                pageNumber,
+                message: errMsg
+            });
+            this.sidePanel.showError(errMsg);
+        }
+    }
+    async translateActivePage(pageNumber, paragraphs) {
+        const panel = this.resolveActivePanel();
+        if (!panel) {
+            vscode.window.showWarningMessage('未检测到活动的 PDF 编辑器，请确保 PDF 编辑器处于打开状态。');
+            return;
+        }
+        // Instruct the active webview panel to show translation loading state
+        panel.webview.postMessage({
+            type: 'translate-page-paragraphs-loading',
+            pageNumber
+        });
+        await this.handleTranslatePageParagraphs(panel, pageNumber, paragraphs);
+    }
+    hoverActivePageElement(id) {
+        const panel = this.resolveActivePanel();
+        if (panel) {
+            console.log('[Extension] PdfEditorProvider hoverActivePageElement, posting sync-panel-hover to active PDF viewer webview with id:', id);
+            panel.webview.postMessage({
+                type: 'sync-panel-hover',
+                id
+            });
+        }
+        else {
+            console.warn('[Extension] PdfEditorProvider hoverActivePageElement, no activeWebviewPanel or other panels found to send sync-panel-hover.');
+        }
+    }
+    async refreshActivePageText() {
+        const panel = this.resolveActivePanel();
+        if (!panel) {
+            vscode.window.showWarningMessage('未检测到活动的 PDF 编辑器，请确保 PDF 编辑器处于打开状态。');
+            return;
+        }
+        panel.webview.postMessage({
+            type: 'trigger-page-text-extract',
+            layoutConfig: this.configService.getLayoutConfig()
+        });
+    }
+    jumpToActivePage(pageNumber) {
+        const panel = this.resolveActivePanel();
+        if (panel) {
+            panel.webview.postMessage({
+                type: 'jump-to-page',
+                pageNumber
+            });
+        }
+    }
+    findAndJumpToCaption(query) {
+        const panel = this.resolveActivePanel();
+        if (panel) {
+            panel.webview.postMessage({
+                type: 'find-and-jump-to-caption',
+                query
+            });
+        }
+    }
+    async captureActiveFigureScreenshot() {
+        const panel = this.resolveActivePanel();
+        if (!panel) {
+            vscode.window.showWarningMessage('未检测到活动的 PDF 编辑器，请确保 PDF 编辑器处于打开状态。');
+            return;
+        }
+        panel.webview.postMessage({ type: 'capture-figure-screenshot' });
+    }
+    getPdfPagesText(scope, customRange) {
+        const panel = this.resolveActivePanel();
+        if (!panel) {
+            vscode.window.showWarningMessage('未检测到活动的 PDF 编辑器，请确保 PDF 编辑器处于打开状态。');
+            return;
+        }
+        panel.webview.postMessage({
+            type: 'get-pdf-pages-text',
+            scope,
+            customRange
+        });
+    }
+    syncLayoutConfigToAllViewers() {
+        const layoutConfig = this.configService.getLayoutConfig();
+        for (const panel of this.webviews.values()) {
+            panel.webview.postMessage({
+                type: 'layout-config',
+                config: layoutConfig
+            });
         }
     }
     getHtml(webview, pdfUri) {
@@ -143,7 +367,7 @@ class PdfEditorProvider {
   <meta charset="UTF-8">
   <meta http-equiv="Content-Security-Policy"
     content="default-src 'none';
-             connect-src ${webview.cspSource};
+             connect-src ${webview.cspSource} https: http:;
              style-src ${webview.cspSource} 'unsafe-inline' https://fonts.googleapis.com;
              font-src https://fonts.gstatic.com;
              script-src 'nonce-${nonce}' https://cdnjs.cloudflare.com;
@@ -156,6 +380,10 @@ class PdfEditorProvider {
 <body>
   <div id="toolbar">
     <div class="toolbar-left">
+      <button id="btn-outline" title="显示/隐藏目录">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-menu"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>
+      </button>
+      <div style="width: 1px; height: 16px; background: var(--toolbar-border); margin: 0 6px;"></div>
       <button id="btn-prev" title="上一页">‹</button>
       <span id="page-info">
         <input id="page-input" type="number" min="1" value="1">
@@ -171,13 +399,36 @@ class PdfEditorProvider {
       <span id="zoom-level">100%</span>
       <button id="btn-zoom-in" title="放大">+</button>
       <button id="btn-fit" title="适合宽度">⊡</button>
+      <button id="btn-capture" title="保存当前页为高清图片">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-camera"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
+      </button>
     </div>
   </div>
 
-  <div id="pdf-container">
-    <canvas id="pdf-canvas"></canvas>
-    <div id="text-layer"></div>
-    <div id="sentence-highlight"></div>
+  <div id="main-layout">
+    <div id="outline-sidebar" class="hidden">
+      <div class="outline-header">目录导航</div>
+      <div id="outline-tree"></div>
+    </div>
+    <div id="pdf-container">
+      <canvas id="pdf-canvas"></canvas>
+      <div id="text-layer"></div>
+      <div id="sentence-highlight"></div>
+    </div>
+    <!-- Floating HUD Controls -->
+    <div id="floating-hud" class="floating-hud">
+      <button id="hud-btn-prev" title="上一页">‹</button>
+      <span id="hud-page-info">
+        <input id="hud-page-input" type="number" min="1" value="1">
+        <span id="hud-page-total">/ ?</span>
+      </span>
+      <button id="hud-btn-next" title="下一页">›</button>
+      <div class="hud-divider"></div>
+      <button id="hud-btn-zoom-out" title="缩小">−</button>
+      <span id="hud-zoom-level">100%</span>
+      <button id="hud-btn-zoom-in" title="放大">+</button>
+      <button id="hud-btn-fit" title="适合宽度">⊡</button>
+    </div>
   </div>
 
   <div id="loading-overlay">

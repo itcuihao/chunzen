@@ -1,3 +1,5 @@
+import { customFetch } from '../utils/fetch';
+
 export interface DoiMetadata {
   issn?: string;
   journalName?: string;
@@ -46,7 +48,7 @@ export class DoiResolver {
 
   private static async fetchFromCrossRef(doi: string): Promise<DoiMetadata> {
     const url = `https://api.crossref.org/works/${encodeURIComponent(doi)}`;
-    const resp = await fetch(url, {
+    const resp = await customFetch(url, {
       headers: {
         'User-Agent': 'ChunZenAcademicReader/1.0 (mailto:chunzen@example.com)'
       },
@@ -107,7 +109,7 @@ export class DoiResolver {
 
   private static async fetchFromOpenAlex(doi: string): Promise<DoiMetadata> {
     const url = `https://api.openalex.org/works/https://doi.org/${encodeURIComponent(doi)}`;
-    const resp = await fetch(url, {
+    const resp = await customFetch(url, {
       headers: {
         'User-Agent': 'ChunZenAcademicReader/1.0 (mailto:chunzen@example.com)'
       },

@@ -44,11 +44,12 @@ class DeepLEngine {
     displayName = 'DeepL';
     isConfigured() {
         const cfg = vscode.workspace.getConfiguration('chunzen.translation.deepl');
-        return !!cfg.get('apiKey');
+        const apiKey = (cfg.get('apiKey') || '').trim();
+        return !!apiKey;
     }
-    async translate(text) {
+    async translate(text, sourceLang, targetLang, glossary) {
         const cfg = vscode.workspace.getConfiguration('chunzen.translation.deepl');
-        const apiKey = cfg.get('apiKey', '');
+        const apiKey = cfg.get('apiKey', '').trim();
         const freeApi = cfg.get('freeApi', true);
         if (!apiKey) {
             throw new Error('DeepL 未配置 API Key');

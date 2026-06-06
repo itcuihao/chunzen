@@ -53,7 +53,29 @@ function activate(context) {
     const configService = new configService_1.ConfigService();
     const sidePanel = new SidePanelProvider_1.SidePanelProvider(context, translationService, glossaryService, historyService, configService);
     // 注册 PDF 自定义编辑器
-    const pdfProvider = new PdfEditorProvider_1.PdfEditorProvider(context, translationService, journalService, sidePanel, historyService);
+    const pdfProvider = new PdfEditorProvider_1.PdfEditorProvider(context, translationService, journalService, sidePanel, historyService, configService);
+    sidePanel.onTranslatePageRequested = async (pageNumber, paragraphs) => {
+        await pdfProvider.translateActivePage(pageNumber, paragraphs);
+    };
+    sidePanel.onGetPdfPagesTextRequested = (scope, customRange) => {
+        pdfProvider.getPdfPagesText(scope, customRange);
+    };
+    sidePanel.onRefreshPageTextRequested = async () => {
+        await pdfProvider.refreshActivePageText();
+    };
+    sidePanel.onPanelHoverRequested = async (id) => {
+        pdfProvider.hoverActivePageElement(id);
+    };
+    sidePanel.onLayoutConfigChanged = async () => {
+        pdfProvider.syncLayoutConfigToAllViewers();
+        await pdfProvider.refreshActivePageText();
+    };
+    sidePanel.onJumpToPageRequested = (pageNumber) => {
+        pdfProvider.jumpToActivePage(pageNumber);
+    };
+    sidePanel.onFindAndJumpToCaptionRequested = (query) => {
+        pdfProvider.findAndJumpToCaption(query);
+    };
     context.subscriptions.push(vscode.window.registerCustomEditorProvider(PdfEditorProvider_1.PdfEditorProvider.viewType, pdfProvider, {
         webviewOptions: {
             retainContextWhenHidden: true
@@ -64,9 +86,29 @@ function activate(context) {
     context.subscriptions.push(vscode.commands.registerCommand('chunzen.openSidePanel', () => {
         sidePanel.show();
     }));
+    // 注册命令：用春蝉 PDF 阅读器打开 PDF 文件
+    context.subscriptions.push(vscode.commands.registerCommand('chunzen.openPdf', (uri) => {
+        let targetUri = uri;
+        if (!targetUri && vscode.window.activeTextEditor) {
+            targetUri = vscode.window.activeTextEditor.document.uri;
+        }
+        if (!targetUri) {
+            vscode.window.showOpenDialog({
+                canSelectMany: false,
+                filters: { 'PDF files': ['pdf'] }
+            }).then(uris => {
+                if (uris && uris.length > 0) {
+                    vscode.commands.executeCommand('vscode.openWith', uris[0], PdfEditorProvider_1.PdfEditorProvider.viewType);
+                }
+            });
+            return;
+        }
+        vscode.commands.executeCommand('vscode.openWith', targetUri, PdfEditorProvider_1.PdfEditorProvider.viewType);
+    }));
     // 注册命令：清除缓存
     context.subscriptions.push(vscode.commands.registerCommand('chunzen.clearCache', () => {
         translationService.clearCache();
+        sidePanel.syncCacheSize();
     }));
     // 注册命令：显示已配置的翻译引擎
     context.subscriptions.push(vscode.commands.registerCommand('chunzen.configureEngines', () => {
@@ -81,6 +123,10 @@ function activate(context) {
         else {
             vscode.window.showInformationMessage(`春蝉：已配置的翻译引擎：${engines.join('、')}`);
         }
+    }));
+    // 注册命令：自动识别并截图当前页图像区域
+    context.subscriptions.push(vscode.commands.registerCommand('chunzen.captureFigureScreenshot', async () => {
+        await pdfProvider.captureActiveFigureScreenshot();
     }));
     // 启动提示
     const engines = translationService.getConfiguredEngines();

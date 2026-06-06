@@ -20,18 +20,36 @@ const App = () => {
     const setEngineStatuses = (0, store_1.useStore)((state) => state.setEngineStatuses);
     const setTestResultForEngine = (0, store_1.useStore)((state) => state.setTestResultForEngine);
     const setGlossaryTerms = (0, store_1.useStore)((state) => state.setGlossaryTerms);
+    const setCurrentPageText = (0, store_1.useStore)((state) => state.setCurrentPageText);
+    const setCurrentPageTranslation = (0, store_1.useStore)((state) => state.setCurrentPageTranslation);
     const setEnginePriority = (0, store_1.useStore)((state) => state.setEnginePriority);
     const setEngineConfigs = (0, store_1.useStore)((state) => state.setEngineConfigs);
     const setJournalSource = (0, store_1.useStore)((state) => state.setJournalSource);
     const setCacheMaxSize = (0, store_1.useStore)((state) => state.setCacheMaxSize);
+    const setCacheSize = (0, store_1.useStore)((state) => state.setCacheSize);
+    const setLayoutConfig = (0, store_1.useStore)((state) => state.setLayoutConfig);
+    const setMineruConfig = (0, store_1.useStore)((state) => state.setMineruConfig);
     const handleInitState = (0, react_1.useCallback)((msg) => {
-        setGlossaryTerms(msg.glossary);
-        setTranslationHistory(msg.history);
-        setEngineStatuses(msg.engines);
-        setEnginePriority(msg.priority);
-        setEngineConfigs(msg.engineConfigs);
-        setJournalSource(msg.journalSource);
-        setCacheMaxSize(msg.cacheMaxSize);
+        if (msg.glossary)
+            setGlossaryTerms(msg.glossary);
+        if (msg.history)
+            setTranslationHistory(msg.history);
+        if (msg.engines)
+            setEngineStatuses(msg.engines);
+        if (msg.priority)
+            setEnginePriority(msg.priority);
+        if (msg.engineConfigs)
+            setEngineConfigs(msg.engineConfigs);
+        if (msg.journalSource)
+            setJournalSource(msg.journalSource);
+        if (msg.cacheMaxSize !== undefined && msg.cacheMaxSize !== null)
+            setCacheMaxSize(msg.cacheMaxSize);
+        if (msg.cacheSize !== undefined && msg.cacheSize !== null)
+            setCacheSize(msg.cacheSize);
+        if (msg.layoutConfig)
+            setLayoutConfig(msg.layoutConfig);
+        if (msg.mineruConfig)
+            setMineruConfig(msg.mineruConfig);
     }, [
         setGlossaryTerms,
         setTranslationHistory,
@@ -39,14 +57,35 @@ const App = () => {
         setEnginePriority,
         setEngineConfigs,
         setJournalSource,
-        setCacheMaxSize
+        setCacheMaxSize,
+        setCacheSize,
+        setLayoutConfig,
+        setMineruConfig
     ]);
+    const layoutConfig = (0, store_1.useStore)((state) => state.layoutConfig);
+    (0, react_1.useEffect)(() => {
+        const themeSetting = layoutConfig?.theme || 'auto';
+        if (themeSetting === 'dark') {
+            document.body.classList.remove('theme-light');
+            document.body.classList.add('theme-dark');
+        }
+        else if (themeSetting === 'light') {
+            document.body.classList.remove('theme-dark');
+            document.body.classList.add('theme-light');
+        }
+        else {
+            document.body.classList.remove('theme-dark', 'theme-light');
+        }
+    }, [layoutConfig?.theme]);
     const handleMessage = (0, react_1.useCallback)((msg) => {
         switch (msg.type) {
             case 'init-state':
                 handleInitState(msg);
                 break;
             case 'translate-result':
+                if (msg.cacheSize !== undefined && msg.cacheSize !== null) {
+                    setCacheSize(msg.cacheSize);
+                }
                 setCurrentTranslation({
                     original: msg.original,
                     translated: msg.translated,
@@ -96,6 +135,87 @@ const App = () => {
             case 'history-sync':
                 setTranslationHistory(msg.history);
                 break;
+            case 'sync-page-text': {
+                const transRecord = {};
+                if (msg.translations) {
+                    for (const item of msg.translations) {
+                        transRecord[item.id] = item.translatedText;
+                    }
+                }
+                setCurrentPageText({
+                    pageNumber: msg.pageNumber,
+                    paragraphs: msg.paragraphs,
+                    columnsCount: msg.columnsCount,
+                    translations: msg.translations ? transRecord : undefined
+                });
+                store_1.useStore.setState({ activeParagraphId: null });
+                setIsTranslating(false);
+                break;
+            }
+            case 'pdf-hover': {
+                console.log('[Side Panel Webview] received pdf-hover with id:', msg.id);
+                store_1.useStore.setState({ activeParagraphId: msg.id || null });
+                break;
+            }
+            case 'cache-size-sync': {
+                setCacheSize(msg.size);
+                break;
+            }
+            case 'sync-page-translation': {
+                const transRecord = {};
+                for (const item of msg.translations) {
+                    transRecord[item.id] = item.translatedText;
+                }
+                setCurrentPageTranslation(transRecord);
+                setIsTranslating(false);
+                break;
+            }
+            case 'sync-bibliography': {
+                const bibRecord = {};
+                for (const item of msg.bibliography) {
+                    bibRecord[item.key] = { text: item.text, pageNumber: item.pageNumber };
+                }
+                store_1.useStore.getState().setBibliography(bibRecord);
+                break;
+            }
+            case 'export-progress': {
+                store_1.useStore.setState({ exportProgress: msg });
+                break;
+            }
+            case 'set-active-pdf': {
+                store_1.useStore.setState({
+                    activePdfUri: msg.pdfUri,
+                    mineruMarkdown: null,
+                    mineruStatus: 'idle',
+                    mineruProgress: 0,
+                    mineruError: null
+                });
+                break;
+            }
+            case 'mineru-status': {
+                store_1.useStore.setState({
+                    mineruStatus: msg.status,
+                    mineruProgress: msg.progress ?? 0,
+                    mineruError: msg.status === 'failed' ? (msg.error ?? '解析出错') : null
+                });
+                break;
+            }
+            case 'mineru-complete': {
+                store_1.useStore.setState({
+                    mineruStatus: 'done',
+                    mineruMarkdown: msg.markdown,
+                    mineruError: null
+                });
+                break;
+            }
+            case 'sync-highlights': {
+                store_1.useStore.setState({ highlights: msg.highlights });
+                break;
+            }
+            case 'ai-explain-result': {
+                store_1.useStore.setState({ aiExplainResult: msg });
+                break;
+            }
         }
     }, [
         handleInitState,
@@ -106,7 +226,10 @@ const App = () => {
         setEngineStatuses,
         setTestResultForEngine,
         setGlossaryTerms,
-        setTranslationHistory
+        setTranslationHistory,
+        setCurrentPageText,
+        setCurrentPageTranslation,
+        setCacheSize
     ]);
     (0, react_1.useEffect)(() => {
         const cleanup = (0, vscode_1.onMessage)(handleMessage);

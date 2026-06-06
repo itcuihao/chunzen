@@ -45,12 +45,14 @@ class BaiduEngine {
     displayName = '百度翻译';
     isConfigured() {
         const cfg = vscode.workspace.getConfiguration('chunzen.translation.baidu');
-        return !!(cfg.get('appId') && cfg.get('secretKey'));
+        const appId = (cfg.get('appId') || '').trim();
+        const secretKey = (cfg.get('secretKey') || '').trim();
+        return !!(appId && secretKey);
     }
-    async translate(text, _sourceLang = 'en', _targetLang = 'zh') {
+    async translate(text, _sourceLang = 'en', _targetLang = 'zh', glossary) {
         const cfg = vscode.workspace.getConfiguration('chunzen.translation.baidu');
-        const appId = cfg.get('appId', '');
-        const secretKey = cfg.get('secretKey', '');
+        const appId = cfg.get('appId', '').trim();
+        const secretKey = cfg.get('secretKey', '').trim();
         if (!appId || !secretKey) {
             throw new Error('百度翻译未配置');
         }

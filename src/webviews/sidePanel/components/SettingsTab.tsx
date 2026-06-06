@@ -10,7 +10,7 @@ export const SettingsTab: FunctionComponent = () => {
       <EngineSettings />
       <JournalSourceSettings />
       <LayoutSettings />
-      <MineruSettings />
+      {/* <MineruSettings /> */}
       <GeneralSettings />
       <BuildInfo />
     </div>

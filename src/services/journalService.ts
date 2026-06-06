@@ -1,4 +1,5 @@
 import { JournalInfo } from '../types';
+import { customFetch } from '../utils/fetch';
 
 /**
  * 期刊信息查询服务
@@ -75,13 +76,13 @@ export class JournalService {
     const url = `https://www.ablesci.com/journal/index?keywords=${encodeURIComponent(query)}`;
     console.log(`[ChunZen] 请求科研通: ${url}`);
     
-    const resp = await fetch(url, {
+    const resp = await customFetch(url, {
       headers: {
         'User-Agent':
           'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120 Safari/537.36',
         Referer: 'https://www.ablesci.com/journal'
       },
-      signal: AbortSignal.timeout(15000)
+      signal: AbortSignal.timeout(35000)
     });
 
     if (!resp.ok) {
@@ -101,13 +102,13 @@ export class JournalService {
       try {
         const detailUrl = `https://www.ablesci.com/journal/detail?id=${detailId}`;
         console.log(`[ChunZen] 请求科研通详情页: ${detailUrl}`);
-        const detailResp = await fetch(detailUrl, {
+        const detailResp = await customFetch(detailUrl, {
           headers: {
             'User-Agent':
               'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120 Safari/537.36',
             Referer: url
           },
-          signal: AbortSignal.timeout(10000)
+          signal: AbortSignal.timeout(20000)
         });
 
         if (detailResp.ok) {
@@ -135,13 +136,13 @@ export class JournalService {
     
     console.log(`[ChunZen] 请求LetPub: ${url}`);
 
-    const resp = await fetch(url, {
+    const resp = await customFetch(url, {
       headers: {
         'User-Agent':
           'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120 Safari/537.36',
         Referer: 'https://www.letpub.com.cn/index.php?page=journalapp'
       },
-      signal: AbortSignal.timeout(15000)
+      signal: AbortSignal.timeout(35000)
     });
 
     if (!resp.ok) {

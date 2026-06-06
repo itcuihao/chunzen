@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { TranslationEngine, GlossaryEntry } from '../../types';
+import { customFetch } from '../../utils/fetch';
 
 /**
  * OpenAI / Gemini / 自定义兼容接口翻译引擎
@@ -36,7 +37,7 @@ export class OpenAIEngine implements TranslationEngine {
 
     const url = baseUrl.replace(/\/$/, '') + '/chat/completions';
 
-    const resp = await fetch(url, {
+    const resp = await customFetch(url, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -106,7 +107,7 @@ export class CustomHttpEngine implements TranslationEngine {
 
     const body = bodyTemplate.replace('{{text}}', JSON.stringify(text).slice(1, -1));
 
-    const resp = await fetch(url, {
+    const resp = await customFetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

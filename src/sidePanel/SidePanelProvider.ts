@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import { ExtToPanelMessage, PanelToExtMessage } from '../types/messages';
 import { JournalInfo } from '../types/models';
 import { getNonce } from '../utils/nonce';
+import { customFetch } from '../utils/fetch';
 import { TranslationService } from '../services/translationService';
 import { GlossaryService } from '../services/glossaryService';
 import { HistoryService } from '../services/historyService';
@@ -83,9 +84,14 @@ export class SidePanelProvider {
     }
   }
 
-  private async triggerMineruParse(uriStr: string) {
+  private async triggerMineruParse(uriStr: string, force: boolean = false) {
     const config = this.configService.getMineruConfig();
-    if (!config.enable) return;
+    if (!config.enable && !force) return;
+
+    if (force) {
+      this.activeMineruTaskUri = null;
+      this.mineruCache.delete(uriStr);
+    }
 
     if (this.mineruCache.has(uriStr)) {
       const cachedMd = this.mineruCache.get(uriStr)!;
@@ -249,14 +255,14 @@ export class SidePanelProvider {
 
   show(): void {
     if (this.panel) {
-      this.panel.reveal(vscode.ViewColumn.Two);
+      this.panel.reveal(vscode.ViewColumn.Two, true);
       return;
     }
 
     this.panel = vscode.window.createWebviewPanel(
       SidePanelProvider.viewType,
       '春蝉 — 翻译 & 期刊信息',
-      vscode.ViewColumn.Two,
+      { viewColumn: vscode.ViewColumn.Two, preserveFocus: true },
       {
         enableScripts: true,
         localResourceRoots: [
@@ -273,6 +279,12 @@ export class SidePanelProvider {
     this.panel.webview.onDidReceiveMessage(
       async (msg: PanelToExtMessage) => {
         switch (msg.type) {
+          case 'toggle-panel-fullscreen':
+            if (this.panel) {
+              this.panel.reveal(vscode.ViewColumn.Two);
+              await vscode.commands.executeCommand('workbench.action.toggleMaximizeEditorGroup');
+            }
+            break;
           case 'request-state':
             this.sendInitState();
             break;
@@ -337,7 +349,7 @@ export class SidePanelProvider {
               this.sendInitState();
             }
             if (msg.pdfUri) {
-              this.triggerMineruParse(msg.pdfUri);
+              this.triggerMineruParse(msg.pdfUri, true);
             }
             break;
           }
@@ -809,7 +821,7 @@ export class SidePanelProvider {
     const url = baseUrl.replace(/\/$/, '') + '/chat/completions';
 
     try {
-      const resp = await fetch(url, {
+      const resp = await customFetch(url, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${apiKey}`,

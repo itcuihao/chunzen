@@ -59,7 +59,7 @@ export class ConfigService {
   getMineruConfig(): MineruConfig {
     const cfg = vscode.workspace.getConfiguration('chunzen.mineru');
     return {
-      enable: cfg.get<boolean>('enable', false),
+      enable: false,
       apiType: cfg.get<'agent' | 'standard'>('apiType', 'agent'),
       token: cfg.get<string>('token', '').trim()
     };

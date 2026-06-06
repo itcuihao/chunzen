@@ -40,14 +40,15 @@ const vscode = __importStar(require("vscode"));
  */
 class CacheService {
     cache = new Map();
-    maxSize;
     persistPath;
     constructor(context) {
-        this.maxSize = vscode.workspace
-            .getConfiguration('chunzen')
-            .get('cache.maxSize', 500);
         this.persistPath = vscode.Uri.joinPath(context.globalStorageUri, 'translation-cache.json');
         this.loadFromDisk();
+    }
+    get maxCacheSize() {
+        return vscode.workspace
+            .getConfiguration('chunzen')
+            .get('cache.maxSize', 500);
     }
     get(key) {
         const entry = this.cache.get(key);
@@ -62,7 +63,7 @@ class CacheService {
         if (this.cache.has(key)) {
             this.cache.delete(key);
         }
-        else if (this.cache.size >= this.maxSize) {
+        else if (this.cache.size >= this.maxCacheSize) {
             // 删除最旧的条目
             const firstKey = this.cache.keys().next().value;
             if (firstKey)
