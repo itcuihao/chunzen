@@ -455,6 +455,7 @@ const LayoutSettings: FunctionComponent = () => {
   const [timeoutMs, setTimeoutMs] = useState(String(layoutConfig?.timeoutMs ?? 3500));
   const [hoverHighlightStyle, setHoverHighlightStyle] = useState<'overlay' | 'bar'>(layoutConfig?.hoverHighlightStyle ?? 'overlay');
   const [theme, setTheme] = useState<'auto' | 'dark' | 'light'>(layoutConfig?.theme ?? 'auto');
+  const [renderScale, setRenderScale] = useState<'auto' | 'balanced' | 'high'>(layoutConfig?.renderScale ?? 'auto');
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
@@ -463,7 +464,8 @@ const LayoutSettings: FunctionComponent = () => {
     setTimeoutMs(String(layoutConfig?.timeoutMs ?? 3500));
     setHoverHighlightStyle(layoutConfig?.hoverHighlightStyle ?? 'overlay');
     setTheme(layoutConfig?.theme ?? 'auto');
-  }, [layoutConfig?.useModel, layoutConfig?.modelEndpoint, layoutConfig?.timeoutMs, layoutConfig?.hoverHighlightStyle, layoutConfig?.theme]);
+    setRenderScale(layoutConfig?.renderScale ?? 'auto');
+  }, [layoutConfig?.useModel, layoutConfig?.modelEndpoint, layoutConfig?.timeoutMs, layoutConfig?.hoverHighlightStyle, layoutConfig?.theme, layoutConfig?.renderScale]);
 
   const handleSave = () => {
     const timeout = Number(timeoutMs);
@@ -483,7 +485,7 @@ const LayoutSettings: FunctionComponent = () => {
           timeoutMs: normalizedTimeout,
           hoverHighlightStyle,
           theme,
-          renderScale: layoutConfig.renderScale
+          renderScale: renderScale
         }
       }
     });
@@ -575,6 +577,21 @@ const LayoutSettings: FunctionComponent = () => {
             <option value="auto">跟随 VS Code 主题 (auto)</option>
             <option value="dark">琥珀深褐 (Cozy Warm Dark)</option>
             <option value="light">春蝉暖木 (Spring Cicada Light)</option>
+          </select>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <label className="text-[10px] font-semibold text-secondary-foreground/80 tracking-wider uppercase">
+            PDF 渲染清晰度
+          </label>
+          <select
+            className="w-full px-3 py-1.5 text-xs rounded border border-border bg-background text-foreground outline-none focus:border-accent font-mono"
+            value={renderScale}
+            onChange={(e) => setRenderScale(e.target.value as 'auto' | 'balanced' | 'high')}
+          >
+            <option value="auto">自动 (auto，推荐)</option>
+            <option value="balanced">均衡 (balanced，1.5x 超采样)</option>
+            <option value="high">高清 (high，2x 超采样，更耗内存)</option>
           </select>
         </div>
 

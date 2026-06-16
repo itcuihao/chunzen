@@ -166,6 +166,9 @@ export class ConfigService {
       if (settings.layout.theme === 'auto' || settings.layout.theme === 'dark' || settings.layout.theme === 'light') {
         await layoutCfg.update('theme', settings.layout.theme, vscode.ConfigurationTarget.Global);
       }
+      if (settings.layout.renderScale === 'auto' || settings.layout.renderScale === 'balanced' || settings.layout.renderScale === 'high') {
+        await layoutCfg.update('renderScale', settings.layout.renderScale, vscode.ConfigurationTarget.Global);
+      }
     }
 
     if (settings.mineru) {
