@@ -449,7 +449,7 @@ const JournalSourceSettings: FunctionComponent = () => {
 
 const LayoutSettings: FunctionComponent = () => {
   const defaultEndpoint = 'http://127.0.0.1:8765/layout';
-  const layoutConfig = useStore((state) => state.layoutConfig) || { useModel: false, modelEndpoint: '', timeoutMs: 3500, hoverHighlightStyle: 'overlay' as const, theme: 'auto' as const };
+  const layoutConfig = useStore((state) => state.layoutConfig) || { useModel: false, modelEndpoint: '', timeoutMs: 3500, hoverHighlightStyle: 'overlay' as const, theme: 'auto' as const, renderScale: 'auto' as const };
   const [useModel, setUseModel] = useState(layoutConfig?.useModel ?? false);
   const [modelEndpoint, setModelEndpoint] = useState(layoutConfig?.modelEndpoint ?? '');
   const [timeoutMs, setTimeoutMs] = useState(String(layoutConfig?.timeoutMs ?? 3500));
@@ -482,7 +482,8 @@ const LayoutSettings: FunctionComponent = () => {
           modelEndpoint: normalizedEndpoint,
           timeoutMs: normalizedTimeout,
           hoverHighlightStyle,
-          theme
+          theme,
+          renderScale: layoutConfig.renderScale
         }
       }
     });

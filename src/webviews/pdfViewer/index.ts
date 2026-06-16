@@ -18,6 +18,7 @@ type LayoutConfig = {
   timeoutMs: number;
   hoverHighlightStyle: 'overlay' | 'bar';
   theme: 'auto' | 'dark' | 'light';
+  renderScale: 'auto' | 'balanced' | 'high';
 };
 
 const defaultLayoutConfig: LayoutConfig = {
@@ -25,7 +26,8 @@ const defaultLayoutConfig: LayoutConfig = {
   modelEndpoint: '',
   timeoutMs: 3500,
   hoverHighlightStyle: 'overlay',
-  theme: 'auto'
+  theme: 'auto',
+  renderScale: 'auto'
 };
 
 let pdfDoc: PdfDocument | null = null;
@@ -143,7 +145,8 @@ async function renderCurrentPage() {
   }
 
   const page = await pdfDoc.getPage(currentPage);
-  const viewport = await renderPageToCanvas(page, canvas, scale);
+  const multiplier = renderScaleToMultiplier(layoutConfig.renderScale);
+  const viewport = await renderPageToCanvas(page, canvas, scale, multiplier);
 
   wrapper.style.width = viewport.width + 'px';
   wrapper.style.height = viewport.height + 'px';
@@ -575,12 +578,14 @@ function normalizeLayoutConfig(input: unknown): LayoutConfig {
   const timeoutRaw = Number(raw.timeoutMs);
   const hoverHighlightStyle = raw.hoverHighlightStyle === 'bar' ? 'bar' : 'overlay';
   const theme = raw.theme === 'dark' || raw.theme === 'light' ? raw.theme : 'auto';
+  const renderScale = raw.renderScale === 'balanced' || raw.renderScale === 'high' ? raw.renderScale : 'auto';
   return {
     useModel: Boolean(raw.useModel),
     modelEndpoint: typeof raw.modelEndpoint === 'string' ? raw.modelEndpoint.trim() : '',
     timeoutMs: Number.isFinite(timeoutRaw) ? Math.max(500, Math.min(20000, Math.round(timeoutRaw))) : 3500,
     hoverHighlightStyle,
-    theme
+    theme,
+    renderScale
   };
 }
 
@@ -589,7 +594,15 @@ function isLayoutConfigEqual(a: LayoutConfig, b: LayoutConfig): boolean {
     && a.modelEndpoint === b.modelEndpoint
     && a.timeoutMs === b.timeoutMs
     && a.hoverHighlightStyle === b.hoverHighlightStyle
-    && a.theme === b.theme;
+    && a.theme === b.theme
+    && a.renderScale === b.renderScale;
+}
+
+// Map renderScale preset to a supersample multiplier applied on top of devicePixelRatio.
+function renderScaleToMultiplier(renderScale: LayoutConfig['renderScale']): number {
+  if (renderScale === 'balanced') return 1.5;
+  if (renderScale === 'high') return 2.0;
+  return 1.0;
 }
 
 // Removed unused hover text events to avoid single sentence translation

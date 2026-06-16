@@ -47,12 +47,14 @@ export class ConfigService {
     const timeout = cfg.get<number>('timeoutMs', 3500);
     const hoverHighlightStyle = cfg.get<'overlay' | 'bar'>('hoverHighlightStyle', 'overlay');
     const theme = cfg.get<'auto' | 'dark' | 'light'>('theme', 'auto');
+    const renderScale = cfg.get<'auto' | 'balanced' | 'high'>('renderScale', 'auto');
     return {
       useModel: cfg.get<boolean>('useModel', false),
       modelEndpoint: cfg.get<string>('modelEndpoint', '').trim(),
       timeoutMs: Number.isFinite(timeout) ? Math.max(500, Math.min(20000, timeout)) : 3500,
       hoverHighlightStyle: hoverHighlightStyle === 'bar' ? 'bar' : 'overlay',
-      theme: theme === 'dark' || theme === 'light' ? theme : 'auto'
+      theme: theme === 'dark' || theme === 'light' ? theme : 'auto',
+      renderScale: renderScale === 'balanced' || renderScale === 'high' ? renderScale : 'auto'
     };
   }
 

@@ -70,6 +70,15 @@ export function activate(context: vscode.ExtensionContext) {
     )
   );
 
+  // 版面/渲染相关配置变更时，热同步到已打开的 PDF webview（如 renderScale、theme）
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration(e => {
+      if (e.affectsConfiguration('chunzen.layout')) {
+        pdfProvider.syncLayoutConfigToAllViewers();
+      }
+    })
+  );
+
   // 注册命令：打开翻译面板
   context.subscriptions.push(
     vscode.commands.registerCommand('chunzen.openSidePanel', () => {

@@ -29,6 +29,7 @@ export interface LayoutConfig {
   timeoutMs: number;
   hoverHighlightStyle: 'overlay' | 'bar';
   theme: 'auto' | 'dark' | 'light';
+  renderScale: 'auto' | 'balanced' | 'high';
 }
 
 export interface MineruConfig {

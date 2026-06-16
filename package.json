@@ -216,6 +216,21 @@
           "default": "auto",
           "description": "阅读器主题：auto 为跟随 VS Code 主题，dark 为暖色深褐（琥珀深褐），light 为暖色浅黄（春蝉暖木）"
         },
+        "chunzen.layout.renderScale": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "balanced",
+            "high"
+          ],
+          "enumDescriptions": [
+            "自动（适配屏幕分辨率，推荐）",
+            "均衡：超采样 1.5 倍，文字更锐利，显存占用约 2.3 倍",
+            "高清：超采样 2 倍，最锐利，显存占用约 4 倍，大页面或快速翻页可能变慢"
+          ],
+          "default": "auto",
+          "markdownDescription": "PDF 渲染清晰度（超采样倍率）。Retina/高分屏默认已按物理像素渲染；调高档位会以更高分辨率栅格化页面再缩放显示，文字边缘更锐利，代价是显存与渲染耗时增加。若出现卡顿或内存吃紧请调回 `auto`。"
+        },
         "chunzen.mineru.enable": {
           "type": "boolean",
           "default": false,
