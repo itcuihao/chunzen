@@ -1191,10 +1191,13 @@ function findTableLikeClusters(paragraphs: Paragraph[], viewport: PdfViewport): 
 }
 
 function cropCanvasDataUrl(rect: Rect): string | null {
-  const sx = Math.max(0, Math.floor(rect.x));
-  const sy = Math.max(0, Math.floor(rect.y));
-  const sw = Math.max(1, Math.ceil(rect.width));
-  const sh = Math.max(1, Math.ceil(rect.height));
+  // rect is in CSS pixels (matches paragraph/viewport coords); the canvas
+  // backing store is now at devicePixelRatio, so scale source coords up.
+  const dpr = window.devicePixelRatio || 1;
+  const sx = Math.max(0, Math.floor(rect.x * dpr));
+  const sy = Math.max(0, Math.floor(rect.y * dpr));
+  const sw = Math.max(1, Math.ceil(rect.width * dpr));
+  const sh = Math.max(1, Math.ceil(rect.height * dpr));
   if (sx >= canvas.width || sy >= canvas.height) return null;
   const cw = Math.min(sw, canvas.width - sx);
   const ch = Math.min(sh, canvas.height - sy);

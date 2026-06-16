@@ -23,7 +23,7 @@ interface PdfPage {
     normalizeWhitespace?: boolean;
   }): Promise<TextContent>;
   getOperatorList(): Promise<OperatorList>;
-  render(config: { canvasContext: CanvasRenderingContext2D; viewport: PdfViewport }): RenderTask;
+  render(config: { canvasContext: CanvasRenderingContext2D; viewport: PdfViewport; transform?: number[] | null }): RenderTask;
   commonObjs?: any;
 }
 
@@ -134,14 +134,26 @@ export async function loadPdf(url: string): Promise<PdfDocument> {
 export async function renderPageToCanvas(
   page: PdfPage,
   canvas: HTMLCanvasElement,
-  scale: number
+  scale: number,
+  pixelRatioMultiplier = 1
 ): Promise<PdfViewport> {
   const viewport = page.getViewport({ scale });
-  canvas.width = viewport.width;
-  canvas.height = viewport.height;
+
+  // Render at physical-pixel resolution on HiDPI/Retina displays, then display
+  // at CSS size. Without scaling the backing store by devicePixelRatio, the
+  // browser upscales the bitmap and text/lines look blurry.
+  // pixelRatioMultiplier > 1 supersamples beyond devicePixelRatio for extra
+  // sharpness, at the cost of memory and render time (area grows quadratically).
+  const outputScale = (window.devicePixelRatio || 1) * Math.max(1, pixelRatioMultiplier);
+  canvas.width = Math.floor(viewport.width * outputScale);
+  canvas.height = Math.floor(viewport.height * outputScale);
+  canvas.style.width = Math.floor(viewport.width) + 'px';
+  canvas.style.height = Math.floor(viewport.height) + 'px';
+
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Failed to get canvas context');
-  const renderTask = page.render({ canvasContext: ctx, viewport });
+  const transform = outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null;
+  const renderTask = page.render({ canvasContext: ctx, viewport, transform });
   try {
     await renderTask.promise;
   } catch (e: unknown) {
