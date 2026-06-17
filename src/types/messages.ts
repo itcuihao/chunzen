@@ -298,6 +298,7 @@ export interface SaveEngineConfigMessage {
 export interface TestEngineMessage {
   type: 'test-engine';
   engineName: string;
+  config?: Record<string, string>;
 }
 
 export interface SetEnginePriorityMessage {

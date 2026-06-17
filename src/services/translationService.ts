@@ -81,7 +81,7 @@ export class TranslationService {
     );
   }
 
-  async translateWithEngine(engineName: string, text: string): Promise<string> {
+  async translateWithEngine(engineName: string, text: string, configOverride?: Record<string, any>): Promise<string> {
     const trimmed = text.trim();
     if (!trimmed) {
       return '';
@@ -92,12 +92,12 @@ export class TranslationService {
       throw new Error(`未找到指定的翻译引擎: ${engineName}`);
     }
 
-    if (!engine.isConfigured()) {
+    if (!configOverride && !engine.isConfigured()) {
       throw new Error(`翻译引擎 ${engine.displayName} 未配置`);
     }
 
     const matchingTerms = this.glossaryService.getMatchingTerms(trimmed);
-    const result = await engine.translate(trimmed, undefined, undefined, matchingTerms);
+    const result = await engine.translate(trimmed, undefined, undefined, matchingTerms, configOverride);
 
     if (engineName === 'baidu' || engineName === 'deepl' || engineName === 'custom') {
       return this.postProcessGlossary(result, matchingTerms);

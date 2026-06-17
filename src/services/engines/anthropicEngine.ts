@@ -14,7 +14,7 @@ export class AnthropicEngine implements TranslationEngine {
     return !!(cfg.get<string>('apiKey') && cfg.get<string>('baseUrl'));
   }
 
-  async translate(text: string, sourceLang?: string, targetLang?: string, glossary?: GlossaryEntry[]): Promise<string> {
+  async translate(text: string, sourceLang?: string, targetLang?: string, glossary?: GlossaryEntry[], configOverride?: Record<string, any>): Promise<string> {
     const cfg = vscode.workspace.getConfiguration('chunzen.translation.anthropic');
     const apiKey = cfg.get<string>('apiKey', '');
     const baseUrl = cfg.get<string>('baseUrl', '').replace(/\/$/, '');

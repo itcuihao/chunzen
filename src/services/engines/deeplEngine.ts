@@ -15,10 +15,12 @@ export class DeepLEngine implements TranslationEngine {
     return !!apiKey;
   }
 
-  async translate(text: string, sourceLang?: string, targetLang?: string, glossary?: GlossaryEntry[]): Promise<string> {
+  async translate(text: string, sourceLang?: string, targetLang?: string, glossary?: GlossaryEntry[], configOverride?: Record<string, any>): Promise<string> {
     const cfg = vscode.workspace.getConfiguration('chunzen.translation.deepl');
-    const apiKey = cfg.get<string>('apiKey', '').trim();
-    const freeApi = cfg.get<boolean>('freeApi', true);
+    const apiKey = (configOverride?.apiKey ?? cfg.get<string>('apiKey', '')).trim();
+    const freeApi = configOverride && configOverride.freeApi !== undefined
+      ? configOverride.freeApi === 'true' || configOverride.freeApi === true
+      : cfg.get<boolean>('freeApi', true);
 
     if (!apiKey) {
       throw new Error('DeepL 未配置 API Key');

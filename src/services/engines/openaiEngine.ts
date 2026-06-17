@@ -15,15 +15,15 @@ export class OpenAIEngine implements TranslationEngine {
     return !!apiKey;
   }
 
-  async translate(text: string, sourceLang?: string, targetLang?: string, glossary?: GlossaryEntry[]): Promise<string> {
+  async translate(text: string, sourceLang?: string, targetLang?: string, glossary?: GlossaryEntry[], configOverride?: Record<string, any>): Promise<string> {
     const cfg = vscode.workspace.getConfiguration('chunzen.translation.openai');
-    const apiKey = cfg.get<string>('apiKey', '').trim();
-    const baseUrl = cfg.get<string>('baseUrl', 'https://api.openai.com/v1').trim();
-    const model = cfg.get<string>('model', 'gpt-4o-mini').trim();
-    const systemPrompt = cfg.get<string>(
+    const apiKey = (configOverride?.apiKey ?? cfg.get<string>('apiKey', '')).trim();
+    const baseUrl = (configOverride?.baseUrl ?? cfg.get<string>('baseUrl', 'https://api.openai.com/v1')).trim();
+    const model = (configOverride?.model ?? cfg.get<string>('model', 'gpt-4o-mini')).trim();
+    const systemPrompt = (configOverride?.systemPrompt ?? cfg.get<string>(
       'systemPrompt',
       '你是一个学术论文翻译专家。请将以下英文学术句子翻译成中文，保持专业术语准确，语言简洁流畅。只输出翻译结果，不要解释。'
-    );
+    )).trim();
 
     if (!apiKey) {
       throw new Error('OpenAI 兼容接口未配置 API Key');
@@ -91,15 +91,27 @@ export class CustomHttpEngine implements TranslationEngine {
     return !!url;
   }
 
-  async translate(text: string, sourceLang?: string, targetLang?: string, glossary?: GlossaryEntry[]): Promise<string> {
+  async translate(text: string, sourceLang?: string, targetLang?: string, glossary?: GlossaryEntry[], configOverride?: Record<string, any>): Promise<string> {
     const cfg = vscode.workspace.getConfiguration('chunzen.translation.custom');
-    const url = cfg.get<string>('url', '').trim();
-    const headers = cfg.get<Record<string, string>>('headers', {});
-    const bodyTemplate = cfg.get<string>(
+    const url = (configOverride?.url ?? cfg.get<string>('url', '')).trim();
+    
+    let headers: Record<string, string> = {};
+    const rawHeaders = configOverride?.headers ?? cfg.get<any>('headers', {});
+    if (typeof rawHeaders === 'string') {
+      try {
+        headers = JSON.parse(rawHeaders);
+      } catch (e) {
+        // ignore
+      }
+    } else if (rawHeaders && typeof rawHeaders === 'object') {
+      headers = rawHeaders;
+    }
+
+    const bodyTemplate = configOverride?.bodyTemplate ?? cfg.get<string>(
       'bodyTemplate',
       '{"text": "{{text}}", "target_lang": "ZH"}'
     );
-    const responsePath = cfg.get<string>('responsePath', 'result').trim();
+    const responsePath = (configOverride?.responsePath ?? cfg.get<string>('responsePath', 'result')).trim();
 
     if (!url) {
       throw new Error('自定义接口未配置 URL');
@@ -124,7 +136,7 @@ export class CustomHttpEngine implements TranslationEngine {
     const data = (await resp.json()) as Record<string, unknown>;
 
     // 按路径提取结果，如 "data.translation"
-    const result = responsePath.split('.').reduce<unknown>((obj, key) => {
+    const result = responsePath.split('.').reduce((obj: any, key: string) => {
       if (obj && typeof obj === 'object') {
         return (obj as Record<string, unknown>)[key];
       }

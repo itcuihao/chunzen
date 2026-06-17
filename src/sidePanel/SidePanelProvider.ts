@@ -309,7 +309,7 @@ export class SidePanelProvider {
             this.syncHistory();
             break;
           case 'test-engine':
-            await this.handleTestEngine(msg.engineName);
+            await this.handleTestEngine(msg.engineName, msg.config);
             break;
           case 'save-engine-config':
             await this.configService.saveEngineConfig(msg.engineName, msg.config);
@@ -588,9 +588,9 @@ export class SidePanelProvider {
     this.panel?.dispose();
   }
 
-  private async handleTestEngine(engineName: string): Promise<void> {
+  private async handleTestEngine(engineName: string, tempConfig?: Record<string, string>): Promise<void> {
     try {
-      const result = await this.translationService.translateWithEngine(engineName, 'test sentence');
+      const result = await this.translationService.translateWithEngine(engineName, 'test sentence', tempConfig);
       this.postMessage({
         type: 'engine-test-result',
         engineName,

@@ -17,10 +17,10 @@ export class BaiduEngine implements TranslationEngine {
     return !!(appId && secretKey);
   }
 
-  async translate(text: string, _sourceLang = 'en', _targetLang = 'zh', glossary?: GlossaryEntry[]): Promise<string> {
+  async translate(text: string, _sourceLang = 'en', _targetLang = 'zh', glossary?: GlossaryEntry[], configOverride?: Record<string, any>): Promise<string> {
     const cfg = vscode.workspace.getConfiguration('chunzen.translation.baidu');
-    const appId = cfg.get<string>('appId', '').trim();
-    const secretKey = cfg.get<string>('secretKey', '').trim();
+    const appId = (configOverride?.appId ?? cfg.get<string>('appId', '')).trim();
+    const secretKey = (configOverride?.secretKey ?? cfg.get<string>('secretKey', '')).trim();
 
     if (!appId || !secretKey) {
       throw new Error('百度翻译未配置');

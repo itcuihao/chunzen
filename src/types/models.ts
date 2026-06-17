@@ -10,7 +10,7 @@ export interface TranslationEngine {
   name: string;
   displayName: string;
   isConfigured(): boolean;
-  translate(text: string, sourceLang?: string, targetLang?: string, glossary?: GlossaryEntry[]): Promise<string>;
+  translate(text: string, sourceLang?: string, targetLang?: string, glossary?: GlossaryEntry[], configOverride?: Record<string, any>): Promise<string>;
 }
 
 export interface JournalInfo {

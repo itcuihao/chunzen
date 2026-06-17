@@ -93,9 +93,9 @@ const EngineSettings: FunctionComponent = () => {
     setOverIndex(null);
   };
 
-  const handleTest = (engineName: string) => {
+  const handleTest = (engineName: string, config?: Record<string, string>) => {
     setTesting(engineName);
-    postMessage({ type: 'test-engine', engineName });
+    postMessage({ type: 'test-engine', engineName, config });
     // Reset testing status after 5 seconds automatically in case response lags
     setTimeout(() => setTesting(null), 5000);
   };
@@ -186,7 +186,7 @@ const EngineSettings: FunctionComponent = () => {
                     config={engineConfigs[name] || {}}
                     fields={engineFields[name] || []}
                     onSave={(config) => handleSave(name, config)}
-                    onTest={() => handleTest(name)}
+                    onTest={(config) => handleTest(name, config)}
                     isTesting={isTesting}
                     testResult={testResult}
                   />
@@ -210,7 +210,7 @@ interface EngineConfigFormProps {
   config: EngineConfigFields;
   fields: EngineField[];
   onSave: (config: Record<string, string>) => void;
-  onTest: () => void;
+  onTest: (config: Record<string, string>) => void;
   isTesting: boolean;
   testResult: { success: boolean; message: string } | null | undefined;
 }
@@ -257,6 +257,19 @@ const EngineConfigForm: FunctionComponent<EngineConfigFormProps> = ({
     onSave(values);
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
+  };
+
+  const handleTestClick = () => {
+    const values: Record<string, string> = {};
+    for (const field of fields) {
+      const val = formState[field.key] !== undefined ? formState[field.key] : (config as Record<string, string | boolean>)[field.key];
+      if (field.type === 'toggle') {
+        values[field.key] = String(Boolean(val));
+      } else {
+        values[field.key] = String(val ?? '');
+      }
+    }
+    onTest(values);
   };
 
   return (
@@ -362,7 +375,7 @@ const EngineConfigForm: FunctionComponent<EngineConfigFormProps> = ({
 
       <div className="flex gap-2 justify-end mt-1.5">
         <button 
-          onClick={onTest} 
+          onClick={handleTestClick} 
           disabled={isTesting}
           className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded border border-border bg-secondary text-secondary-foreground hover:bg-secondary-hover transition-colors"
         >
