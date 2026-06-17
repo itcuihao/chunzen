@@ -22,8 +22,9 @@ Press F5 in VSCode to launch the Extension Development Host.
 ```
 src/
 ├── extension.ts                     # Entry point: creates services, wires providers
-├── providers/
-│   ├── PdfEditorProvider.ts         # CustomReadonlyEditorProvider for *.pdf — HTML template refs dist/pdfViewer.js
+├── pdfEditor/
+│   └── PdfEditorProvider.ts         # CustomReadonlyEditorProvider for *.pdf — HTML template refs dist/pdfViewer.js
+├── sidePanel/
 │   └── SidePanelProvider.ts         # WebviewPanel in ViewColumn.Two — HTML template refs dist/panel.js + panel.css
 ├── services/
 │   ├── translationService.ts        # Multi-engine orchestration with fallback chain
@@ -123,6 +124,6 @@ All message types in `src/types/messages.ts`:
 - **PDF.js 3.11.174** loaded from CDN in the PDF viewer webview (not bundled)
 - **CSP nonce** generated per webview HTML via `utils/nonce.ts`
 - **Single webview per document**: `supportsMultipleEditorsPerDocument: false`
-- **Only `node-fetch`** is an external dependency
+- **Bundled** by webpack (only `vscode` is external); vsix packaged with `--no-dependencies` (no `node_modules` shipped)
 - **No test framework** is currently configured
 - **tsconfig**: `jsx: "react-jsx"`, `jsxImportSource: "preact"`
