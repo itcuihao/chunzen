@@ -7,6 +7,12 @@ import {
 } from 'lucide-react';
 import { postMessage } from '../vscode';
 import { SelectionHighlight } from '../../../types/models';
+import { 
+  convertSupTagsToUnicode, 
+  isSuperscriptCitation, 
+  parseCitationKeys, 
+  normalizeSuperscript 
+} from '../../../utils/academicHelper';
 // @ts-ignore
 import { marked } from 'marked';
 import katex from 'katex';
@@ -43,7 +49,9 @@ function protectMathAndCitations(text: string): {
   const maths: string[] = [];
   const citations: string[] = [];
   
-  let protectedText = text.replace(/\$\$(.+?)\$\$/gs, (match) => {
+  let protectedText = convertSupTagsToUnicode(text);
+
+  protectedText = protectedText.replace(/\$\$(.+?)\$\$/gs, (match) => {
     maths.push(match);
     return `[[CZDISPLAYMATH_${maths.length - 1}]]`;
   });
@@ -53,7 +61,14 @@ function protectMathAndCitations(text: string): {
     return `[[CZINLINEMATH_${maths.length - 1}]]`;
   });
 
+  // 1. Bracket citations: [1], [1-3]
   protectedText = protectedText.replace(/\[\d+(?:\s*[-–,]\s*\d+)*\]/g, (match) => {
+    citations.push(match);
+    return `[[CZCITATION_${citations.length - 1}]]`;
+  });
+
+  // 2. Superscript citations: ¹, ¹⁻³
+  protectedText = protectedText.replace(/(?<!\d)([⁰¹²³⁴⁵⁶⁷⁸⁹]+(?:\s*[,⁻–-]\s*[⁰¹²³⁴⁵⁶⁷⁸⁹]+)*)(?!\d)/g, (match) => {
     citations.push(match);
     return `[[CZCITATION_${citations.length - 1}]]`;
   });
@@ -269,10 +284,11 @@ function renderTextSegmentWithJumps(
 ): ReactNode {
   if (!text) return '';
 
-  const preprocessed = preprocessLinks(text);
+  const preprocessed = convertSupTagsToUnicode(preprocessLinks(text));
   const { plainText, mapIdx } = mapHtmlToPlain(preprocessed);
 
-  const jumpRegex = /\[(\d+(?:\s*[-–,]\s*\d+)*)\]|\[((?:Figure|Fig\.|Table|图|表)\s*(?:S\d+|s\d+|\d+)(?:\s*[a-zA-Z])?)\]|\b((?:Figure|Fig\.|Table)\s*(?:S\d+|s\d+|\d+)(?:\s*[a-zA-Z])?)\b|((?:图|表)\s*(?:S\d+|s\d+|\d+)(?:\s*[a-zA-Z])?)|\b([A-Z][a-zA-Z\u00C0-\u017F\-]+)(?:\s+et\s+al\.|\s+等|\s+and\s+[A-Z][a-zA-Z\u00C0-\u017F\-]+)?\s*\((18\d{2}|19\d{2}|20\d{2})([a-z])?\)|(\(((?:[A-Z][a-zA-Z\u00C0-\u017F\-]+(?:\s+et\s+al\.|\s+等|\s+and\s+[A-Z][a-zA-Z\u00C0-\u017F\-]+)?(?:,\s*|，\s*)\d{4}[a-z]?(?:\s*[;；]\s*)?)+)\))|\b(https?:\/\/[^\s()<>]+[^\s()<>.,;:!?"'])\b|\b(10\.\d{4,9}\/[-._;()/:A-Z0-9]+)\b/gi;
+  // Appended Group 12 for unicode superscript citations
+  const jumpRegex = /\[(\d+(?:\s*[-–,]\s*\d+)*)\]|\[((?:Figure|Fig\.|Table|图|表)\s*(?:S\d+|s\d+|\d+)(?:\s*[a-zA-Z])?)\]|\b((?:Figure|Fig\.|Table)\s*(?:S\d+|s\d+|\d+)(?:\s*[a-zA-Z])?)\b|((?:图|表)\s*(?:S\d+|s\d+|\d+)(?:\s*[a-zA-Z])?)|\b([A-Z][a-zA-Z\u00C0-\u017F\-]+)(?:\s+et\s+al\.|\s+等|\s+and\s+[A-Z][a-zA-Z\u00C0-\u017F\-]+)?\s*\((18\d{2}|19\d{2}|20\d{2})([a-z])?\)|(\(((?:[A-Z][a-zA-Z\u00C0-\u017F\-]+(?:\s+et\s+al\.|\s+等|\s+and\s+[A-Z][a-zA-Z\u00C0-\u017F\-]+)?(?:,\s*|，\s*)\d{4}[a-z]?(?:\s*[;；]\s*)?)+)\))|\b(https?:\/\/[^\s()<>]+[^\s()<>.,;:!?"'])\b|\b(10\.\d{4,9}\/[-._;()/:A-Z0-9]+)\b|(?<!\d)([⁰¹²³⁴⁵⁶⁷⁸⁹]+(?:\s*[,⁻–-]\s*[⁰¹²³⁴⁵⁶⁷⁸⁹]+)*)(?!\d)/gi;
   const parts: ReactNode[] = [];
   let lastPlainIndex = 0;
   let match;
@@ -293,29 +309,7 @@ function renderTextSegmentWithJumps(
 
     if (match[1]) {
       const citationKeysStr = match[1];
-      const keys: string[] = [];
-      const subParts = citationKeysStr.split(',');
-      for (const subPart of subParts) {
-        const trimmed = subPart.trim();
-        if (trimmed.includes('-') || trimmed.includes('–')) {
-          const hyphen = trimmed.includes('-') ? '-' : '–';
-          const [startStr, endStr] = trimmed.split(hyphen);
-          const start = parseInt(startStr.trim(), 10);
-          const end = parseInt(endStr.trim(), 10);
-          if (!isNaN(start) && !isNaN(end)) {
-            const low = Math.min(start, end);
-            const high = Math.max(start, end);
-            for (let i = low; i <= high; i++) {
-              keys.push(String(i));
-            }
-          }
-        } else {
-          const key = parseInt(trimmed, 10);
-          if (!isNaN(key)) {
-            keys.push(String(key));
-          }
-        }
-      }
+      const keys = parseCitationKeys(citationKeysStr);
 
       parts.push(
         <span key={`citation-${matchIndex}`} className="select-none text-zinc-500 dark:text-zinc-400 font-sans">
@@ -492,6 +486,40 @@ function renderTextSegmentWithJumps(
           {renderFormattedContent(taggedMatchText)}
         </a>
       );
+    } else if (match[12]) {
+      const citationKeysStr = match[12];
+      const keys = parseCitationKeys(citationKeysStr);
+      parts.push(
+        <sup key={`citation-${matchIndex}`} className="select-none text-zinc-500 dark:text-zinc-400 font-sans">
+          {keys.map((key, idx) => {
+            const hasRef = bibliography[key];
+            const className = hasRef 
+              ? "text-blue-600 dark:text-blue-400 hover:underline cursor-pointer font-mono font-bold px-0.5"
+              : "text-zinc-600 dark:text-zinc-400 font-mono px-0.5";
+            return (
+              <span key={idx}>
+                {idx > 0 && ','}
+                <span 
+                  className={className}
+                  onClick={(e) => {
+                    if (hasRef) {
+                      e.stopPropagation();
+                      window.getSelection()?.removeAllRanges();
+                      postMessage({
+                        type: 'jump-to-page',
+                        pageNumber: bibliography[key].pageNumber
+                      });
+                    }
+                  }}
+                  title={hasRef ? `跳转到文献 [${key}]` : undefined}
+                >
+                  {key}
+                </span>
+              </span>
+            );
+          })}
+        </sup>
+      );
     }
 
     lastPlainIndex = jumpRegex.lastIndex;
@@ -590,13 +618,14 @@ function renderTextWithHighlightsAndCitations(
 function protectTextWithPlaceholders(text: string): string {
   if (!text) return '';
 
-  const preprocessed = preprocessLinks(text);
+  const preprocessed = convertSupTagsToUnicode(preprocessLinks(text));
   const { plainText, mapIdx } = mapHtmlToPlain(preprocessed);
 
-  const unionRegexWithoutHtml = /\[(\d+(?:\s*[-–,]\s*\d+)*)\]|\[((?:Figure|Fig\.|Table)\s*(?:S\d+|s\d+|\d+)(?:\s*[a-zA-Z])?)\]|\b((?:Figure|Fig\.|Table)\s*(?:S\d+|s\d+|\d+)(?:\s*[a-zA-Z])?)\b|\b([A-Z][a-zA-Z\u00C0-\u017F\-]+)(?:\s+et\s+al\.|\s+等|\s+and\s+[A-Z][a-zA-Z\u00C0-\u017F\-]+)?\s*\((18\d{2}|19\d{2}|20\d{2})([a-z])?\)|(\(((?:[A-Z][a-zA-Z\u00C0-\u017F\-]+(?:\s+et\s+al\.|\s+等|\s+and\s+[A-Z][a-zA-Z\u00C0-\u017F\-]+)?,\s*\d{4}[a-z]?(?:\s*;|，|;|,)?\s*)+)\))|\b(https?:\/\/[^\s()<>]+[^\s()<>.,;:!?"'])\b|\b(10\.\d{4,9}\/[-._;()/:A-Z0-9]+)\b/gi;
+  // Appended Group 11 for unicode superscript citations
+  const unionRegexWithoutHtml = /\[(\d+(?:\s*[-–,]\s*\d+)*)\]|\[((?:Figure|Fig\.|Table)\s*(?:S\d+|s\d+|\d+)(?:\s*[a-zA-Z])?)\]|\b((?:Figure|Fig\.|Table)\s*(?:S\d+|s\d+|\d+)(?:\s*[a-zA-Z])?)\b|\b([A-Z][a-zA-Z\u00C0-\u017F\-]+)(?:\s+et\s+al\.|\s+等|\s+and\s+[A-Z][a-zA-Z\u00C0-\u017F\-]+)?\s*\((18\d{2}|19\d{2}|20\d{2})([a-z])?\)|(\(((?:[A-Z][a-zA-Z\u00C0-\u017F\-]+(?:\s+et\s+al\.|\s+等|\s+and\s+[A-Z][a-zA-Z\u00C0-\u017F\-]+)?,\s*\d{4}[a-z]?(?:\s*;|，|;|,)?\s*)+)\))|\b(https?:\/\/[^\s()<>]+[^\s()<>.,;:!?"'])\b|\b(10\.\d{4,9}\/[-._;()/:A-Z0-9]+)\b|(?<!\d)([⁰¹²³⁴⁵⁶⁷⁸⁹]+(?:\s*[,⁻–-]\s*[⁰¹²³⁴⁵⁶⁷⁸⁹]+)*)(?!\d)/gi;
 
   const citations: Array<{
-    type: 'CZNUM' | 'CZFIG' | 'CZNAR' | 'CZPAR' | 'CZURL' | 'CZDOI';
+    type: 'CZNUM' | 'CZFIG' | 'CZNAR' | 'CZPAR' | 'CZURL' | 'CZDOI' | 'CZSUP';
     taggedStart: number;
     taggedEnd: number;
   }> = [];
@@ -609,13 +638,14 @@ function protectTextWithPlaceholders(text: string): string {
     const taggedStart = mapIdx[plainStart];
     const taggedEnd = mapIdx[plainEnd];
     
-    let type: 'CZNUM' | 'CZFIG' | 'CZNAR' | 'CZPAR' | 'CZURL' | 'CZDOI';
+    let type: 'CZNUM' | 'CZFIG' | 'CZNAR' | 'CZPAR' | 'CZURL' | 'CZDOI' | 'CZSUP';
     if (match[1]) type = 'CZNUM';
     else if (match[2] || match[3]) type = 'CZFIG';
     else if (match[4]) type = 'CZNAR';
     else if (match[7]) type = 'CZPAR';
     else if (match[9]) type = 'CZURL';
     else if (match[10]) type = 'CZDOI';
+    else if (match[11]) type = 'CZSUP';
     else continue;
 
     citations.push({ type, taggedStart, taggedEnd });
@@ -639,7 +669,7 @@ function protectTextWithPlaceholders(text: string): string {
   }
 
   const allMatches: Array<{
-    type: 'CZNUM' | 'CZFIG' | 'CZNAR' | 'CZPAR' | 'CZHTML' | 'CZURL' | 'CZDOI';
+    type: 'CZNUM' | 'CZFIG' | 'CZNAR' | 'CZPAR' | 'CZHTML' | 'CZURL' | 'CZDOI' | 'CZSUP';
     taggedStart: number;
     taggedEnd: number;
   }> = [];
@@ -663,11 +693,14 @@ function protectTextWithPlaceholders(text: string): string {
   let htmlIndex = 0;
   let urlIndex = 0;
   let doiIndex = 0;
+  let supIndex = 0;
 
   for (const m of allMatches) {
     result += preprocessed.substring(lastIdx, m.taggedStart);
     if (m.type === 'CZNUM') {
       result += `[[CZNUM_${refIndex++}]]`;
+    } else if (m.type === 'CZSUP') {
+      result += `[[CZSUP_${supIndex++}]]`;
     } else if (m.type === 'CZFIG') {
       result += `[[CZFIG_${figIndex++}]]`;
     } else if (m.type === 'CZNAR') {
@@ -695,6 +728,7 @@ function renderTextWithPlaceholders(
   onHighlightClick: (hl: SelectionHighlight, rect: DOMRect) => void
 ): ReactNode {
   const nums: Array<{ match: string; key: string }> = [];
+  const sups: Array<{ match: string; key: string }> = [];
   const figs: Array<{ match: string; query: string }> = [];
   const nars: Array<{ match: string; author: string; year: string }> = [];
   const pars: Array<{ match: string; items: Array<{ text: string; taggedText: string }> }> = [];
@@ -702,13 +736,14 @@ function renderTextWithPlaceholders(
   const urls: Array<{ match: string; url: string }> = [];
   const dois: Array<{ match: string; doi: string }> = [];
 
-  const preprocessedParaText = preprocessLinks(para.text);
+  const preprocessedParaText = convertSupTagsToUnicode(preprocessLinks(para.text));
   const { plainText, mapIdx } = mapHtmlToPlain(preprocessedParaText);
 
-  const unionRegexWithoutHtml = /\[(\d+(?:\s*[-–,]\s*\d+)*)\]|\[((?:Figure|Fig\.|Table)\s*(?:S\d+|s\d+|\d+)(?:\s*[a-zA-Z])?)\]|\b((?:Figure|Fig\.|Table)\s*(?:S\d+|s\d+|\d+)(?:\s*[a-zA-Z])?)\b|\b([A-Z][a-zA-Z\u00C0-\u017F\-]+)(?:\s+et\s+al\.|\s+等|\s+and\s+[A-Z][a-zA-Z\u00C0-\u017F\-]+)?\s*\((18\d{2}|19\d{2}|20\d{2})([a-z])?\)|(\(((?:[A-Z][a-zA-Z\u00C0-\u017F\-]+(?:\s+et\s+al\.|\s+等|\s+and\s+[A-Z][a-zA-Z\u00C0-\u017F\-]+)?,\s*\d{4}[a-z]?(?:\s*;|，|;|,)?\s*)+)\))|\b(https?:\/\/[^\s()<>]+[^\s()<>.,;:!?"'])\b|\b(10\.\d{4,9}\/[-._;()/:A-Z0-9]+)\b/gi;
+  // Appended Group 11 for unicode superscript citations
+  const unionRegexWithoutHtml = /\[(\d+(?:\s*[-–,]\s*\d+)*)\]|\[((?:Figure|Fig\.|Table)\s*(?:S\d+|s\d+|\d+)(?:\s*[a-zA-Z])?)\]|\b((?:Figure|Fig\.|Table)\s*(?:S\d+|s\d+|\d+)(?:\s*[a-zA-Z])?)\b|\b([A-Z][a-zA-Z\u00C0-\u017F\-]+)(?:\s+et\s+al\.|\s+等|\s+and\s+[A-Z][a-zA-Z\u00C0-\u017F\-]+)?\s*\((18\d{2}|19\d{2}|20\d{2})([a-z])?\)|(\(((?:[A-Z][a-zA-Z\u00C0-\u017F\-]+(?:\s+et\s+al\.|\s+等|\s+and\s+[A-Z][a-zA-Z\u00C0-\u017F\-]+)?,\s*\d{4}[a-z]?(?:\s*;|，|;|,)?\s*)+)\))|\b(https?:\/\/[^\s()<>]+[^\s()<>.,;:!?"'])\b|\b(10\.\d{4,9}\/[-._;()/:A-Z0-9]+)\b|(?<!\d)([⁰¹²³⁴⁵⁶⁷⁸⁹]+(?:\s*[,⁻–-]\s*[⁰¹²³⁴⁵⁶⁷⁸⁹]+)*)(?!\d)/gi;
 
   const citations: Array<{
-    type: 'CZNUM' | 'CZFIG' | 'CZNAR' | 'CZPAR' | 'CZURL' | 'CZDOI';
+    type: 'CZNUM' | 'CZFIG' | 'CZNAR' | 'CZPAR' | 'CZURL' | 'CZDOI' | 'CZSUP';
     taggedStart: number;
     taggedEnd: number;
     match: any;
@@ -722,13 +757,14 @@ function renderTextWithPlaceholders(
     const taggedStart = mapIdx[plainStart];
     const taggedEnd = mapIdx[plainEnd];
     
-    let type: 'CZNUM' | 'CZFIG' | 'CZNAR' | 'CZPAR' | 'CZURL' | 'CZDOI';
+    let type: 'CZNUM' | 'CZFIG' | 'CZNAR' | 'CZPAR' | 'CZURL' | 'CZDOI' | 'CZSUP';
     if (match[1]) type = 'CZNUM';
     else if (match[2] || match[3]) type = 'CZFIG';
     else if (match[4]) type = 'CZNAR';
     else if (match[7]) type = 'CZPAR';
     else if (match[9]) type = 'CZURL';
     else if (match[10]) type = 'CZDOI';
+    else if (match[11]) type = 'CZSUP';
     else continue;
 
     citations.push({ type, taggedStart, taggedEnd, match });
@@ -753,7 +789,7 @@ function renderTextWithPlaceholders(
   }
 
   const allMatches: Array<{
-    type: 'CZNUM' | 'CZFIG' | 'CZNAR' | 'CZPAR' | 'CZHTML' | 'CZURL' | 'CZDOI';
+    type: 'CZNUM' | 'CZFIG' | 'CZNAR' | 'CZPAR' | 'CZHTML' | 'CZURL' | 'CZDOI' | 'CZSUP';
     taggedStart: number;
     taggedEnd: number;
     data: any;
@@ -772,6 +808,8 @@ function renderTextWithPlaceholders(
     const taggedMatchText = preprocessedParaText.substring(m.taggedStart, m.taggedEnd);
     if (m.type === 'CZNUM') {
       nums.push({ match: taggedMatchText, key: m.data[1] });
+    } else if (m.type === 'CZSUP') {
+      sups.push({ match: taggedMatchText, key: m.data[11] });
     } else if (m.type === 'CZFIG') {
       figs.push({ match: taggedMatchText, query: (m.data[2] || m.data[3]).trim() });
     } else if (m.type === 'CZNAR') {
@@ -807,7 +845,7 @@ function renderTextWithPlaceholders(
     }
   }
 
-  const placeholderSplitRegex = /(\[\[(?:CZNUM|CZFIG|CZNAR|CZPAR|CZHTML|CZURL|CZDOI)_\d+\]\])/g;
+  const placeholderSplitRegex = /(\[\[(?:CZNUM|CZFIG|CZNAR|CZPAR|CZHTML|CZURL|CZDOI|CZSUP)_\d+\]\])/g;
   const parts = translated.split(placeholderSplitRegex);
   const resultNodes: ReactNode[] = [];
 
@@ -815,7 +853,7 @@ function renderTextWithPlaceholders(
     const part = parts[i];
     if (!part) continue;
 
-    const placeholderMatch = part.match(/^\[\[(CZNUM|CZFIG|CZNAR|CZPAR|CZHTML|CZURL|CZDOI)_(\d+)\]\]$/);
+    const placeholderMatch = part.match(/^\[\[(CZNUM|CZFIG|CZNAR|CZPAR|CZHTML|CZURL|CZDOI|CZSUP)_(\d+)\]\]$/);
     if (placeholderMatch) {
       const type = placeholderMatch[1];
       const idx = parseInt(placeholderMatch[2], 10);
@@ -828,6 +866,44 @@ function renderTextWithPlaceholders(
             <Tag key={`placeholder-html-${idx}-${i}`}>
               {renderFormattedContent(data.content)}
             </Tag>
+          );
+        } else {
+          resultNodes.push(part);
+        }
+      } else if (type === 'CZSUP') {
+        const data = sups[idx];
+        if (data) {
+          const keys = parseCitationKeys(data.key);
+          resultNodes.push(
+            <sup key={`placeholder-sup-${i}`} className="select-none text-zinc-500 dark:text-zinc-400 font-sans">
+              {keys.map((key, keyIdx) => {
+                const hasRef = bibliography[key];
+                const className = hasRef 
+                  ? "text-blue-600 dark:text-blue-400 hover:underline cursor-pointer font-mono font-bold px-0.5"
+                  : "text-zinc-600 dark:text-zinc-400 font-mono px-0.5";
+                return (
+                  <span key={keyIdx}>
+                    {keyIdx > 0 && ','}
+                    <span 
+                      className={className}
+                      onClick={(e) => {
+                        if (hasRef) {
+                          e.stopPropagation();
+                          window.getSelection()?.removeAllRanges();
+                          postMessage({
+                            type: 'jump-to-page',
+                            pageNumber: bibliography[key].pageNumber
+                          });
+                        }
+                      }}
+                      title={hasRef ? `跳转到文献 [${key}]` : undefined}
+                    >
+                      {key}
+                    </span>
+                  </span>
+                );
+              })}
+            </sup>
           );
         } else {
           resultNodes.push(part);
@@ -1784,7 +1860,7 @@ export const TranslationTab: FunctionComponent = () => {
     if (!translation) return '';
 
     // If translation has CZ placeholders, use renderTextWithPlaceholders
-    const hasPlaceholders = /\[\[CZ(NUM|FIG|CZNAR|CZPAR)_\d+\]\]/.test(translation);
+    const hasPlaceholders = /\[\[CZ(NUM|FIG|CZNAR|CZPAR|CZSUP)_\d+\]\]/.test(translation);
     if (hasPlaceholders) {
       return renderTextWithPlaceholders(translation, para, bibliography, highlights, handleHighlightClick);
     }
