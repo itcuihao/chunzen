@@ -16,6 +16,9 @@ rm -f chunzen-*.vsix
 # 2. Generate build info
 echo "[2/5] Generating build info..."
 VERSION=$(node -p "require('./package.json').version")
+PUBLISHER=$(node -p "require('./package.json').publisher")
+PKG_NAME=$(node -p "require('./package.json').name")
+EXT_ID="${PUBLISHER}.${PKG_NAME}"
 GIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE=$(date -u +"%Y-%m-%d %H:%M")
 cat > src/build-info.ts << EOF
@@ -73,7 +76,7 @@ echo "=================="
 if $LOCAL_MODE; then
   echo ""
   echo "Installing to local VSCode..."
-  code --uninstall-extension chunzen.chunzen 2>/dev/null || true
+  code --uninstall-extension "$EXT_ID" 2>/dev/null || true
   code --install-extension "$PACKAGE_FILE" --force
   echo "Installed. Reload any open VSCode windows to apply."
 else
