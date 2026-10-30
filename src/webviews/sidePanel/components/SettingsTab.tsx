@@ -50,6 +50,9 @@ const engineFields: Record<string, EngineField[]> = {
   ]
 };
 
+/** 多数用户用不到的引擎：未配置时收进“更多引擎”，已配置则正常显示 */
+const COLLAPSED_BY_DEFAULT = ['deepl'];
+
 // ── EngineSettings ──
 
 const EngineSettings: FunctionComponent = () => {
@@ -57,12 +60,18 @@ const EngineSettings: FunctionComponent = () => {
   const [testing, setTesting] = useState<string | null>(null);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);
+  const [showCollapsed, setShowCollapsed] = useState(false);
 
   const enginePriority = useStore((state) => state.enginePriority) || [];
   const engineStatuses = useStore((state) => state.engineStatuses) || [];
   const engineConfigs = useStore((state) => state.engineConfigs) || {};
   const testResults = useStore((state) => state.testResults) || {};
   const setEnginePriority = useStore((state) => state.setEnginePriority);
+
+  // 默认折叠、但用户已配置时自动展示的引擎（例如拥有会员的 DeepL）
+  const isCollapsed = (name: string) =>
+    COLLAPSED_BY_DEFAULT.includes(name) && !engineStatuses.find((e) => e.name === name)?.configured;
+  const collapsedNames = enginePriority.filter(isCollapsed);
 
   const handleDragStart = (index: number) => {
     setDragIndex(index);
@@ -120,6 +129,7 @@ const EngineSettings: FunctionComponent = () => {
         
         <div className="flex flex-col gap-2.5">
           {enginePriority.map((name, i) => {
+            if (isCollapsed(name) && !showCollapsed) return null;
             const status = engineStatuses.find((e) => e.name === name);
             const isExpanded = expanded === name;
             const isTesting = testing === name;
@@ -198,6 +208,18 @@ const EngineSettings: FunctionComponent = () => {
             );
           })}
         </div>
+        {collapsedNames.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowCollapsed(!showCollapsed)}
+            className="mt-3 flex items-center gap-1 text-[11px] text-secondary-foreground hover:text-foreground transition-colors"
+          >
+            {showCollapsed ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            {showCollapsed
+              ? '收起更多引擎'
+              : `更多引擎（${collapsedNames.map((n) => engineStatuses.find((e) => e.name === n)?.displayName || n).join('、')}，已有账号可在此配置）`}
+          </button>
+        )}
       </div>
     </section>
   );

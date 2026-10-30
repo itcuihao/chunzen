@@ -164,6 +164,9 @@ export class SidePanelProvider {
       case 'test-engine':
         await this.handleTestEngine(msg.engineName, msg.config);
         break;
+      case 'set-engine-priority':
+        await this.configService.saveEnginePriority(msg.priority);
+        break;
       case 'save-engine-config':
         await this.configService.saveEngineConfig(msg.engineName, msg.config);
         this.postMessage({

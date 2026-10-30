@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { GeneralSettings, JournalSourceType, LayoutConfig, MineruConfig } from '../types/config';
-import { getEngines, getTranslationPriority } from './engines/registry';
+import { getEngineNames, getEngines, getTranslationPriority } from './engines/registry';
+import { normalizePriority } from './enginePriority';
 import { CACHE_MAX_SIZE, DEFAULT_LAYOUT_ENDPOINT, LAYOUT_TIMEOUT_MS, clampNumber, oneOf } from './settingsNormalize';
 import { OPENAI_DEFAULT_BASE_URL, OPENAI_DEFAULT_MODEL } from './engines/defaults';
 
@@ -86,6 +87,14 @@ export class ConfigService {
       displayName: e.displayName,
       configured: e.isConfigured()
     }));
+  }
+
+  /** 保存用户拖拽后的引擎优先级（规范化后写入全局设置） */
+  async saveEnginePriority(priority: string[]): Promise<void> {
+    const normalized = normalizePriority(priority, getEngineNames());
+    await vscode.workspace
+      .getConfiguration('chunzen.translation')
+      .update('priority', normalized, vscode.ConfigurationTarget.Global);
   }
 
   /**

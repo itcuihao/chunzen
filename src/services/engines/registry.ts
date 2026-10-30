@@ -12,8 +12,8 @@ import { OpenAIEngine, CustomHttpEngine } from './openaiEngine';
  */
 const ENGINES: readonly TranslationEngine[] = [
   new BaiduEngine(),
-  new DeepLEngine(),
   new OpenAIEngine(),
+  new DeepLEngine(),
   new CustomHttpEngine()
 ];
 

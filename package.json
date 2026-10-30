@@ -97,8 +97,8 @@
           "type": "array",
           "default": [
             "baidu",
-            "deepl",
             "openai",
+            "deepl",
             "custom"
           ],
           "description": "翻译引擎优先级顺序（从高到低）"
