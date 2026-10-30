@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { CACHE_MAX_SIZE, clampNumber } from './settingsNormalize';
 
 /**
  * LRU 缓存服务 — 内存 + 磁盘持久化
@@ -16,9 +17,10 @@ export class CacheService {
   }
 
   get maxCacheSize(): number {
-    return vscode.workspace
-      .getConfiguration('chunzen')
-      .get<number>('cache.maxSize', 500);
+    return clampNumber(
+      vscode.workspace.getConfiguration('chunzen').get<number>('cache.maxSize'),
+      CACHE_MAX_SIZE
+    );
   }
 
   get(key: string): string | undefined {

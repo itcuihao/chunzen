@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { TranslationHistoryEntry, JournalInfo, GlossaryEntry, SelectionHighlight } from '../../types/models';
-import { LayoutConfig, MineruConfig } from '../../types/config';
+import { JournalSource, LayoutConfig, MineruConfig } from '../../types/config';
 export type TabId = 'translation' | 'journal' | 'glossary' | 'settings';
 
 export type EngineStatus = {
@@ -17,8 +17,6 @@ export interface EngineConfigFields {
   model?: string;
   systemPrompt?: string;
   freeApi?: boolean;
-  enabled?: boolean;
-  prompt?: string;
   url?: string;
   headers?: string;
   bodyTemplate?: string;
@@ -79,8 +77,8 @@ interface PanelState {
   setEnginePriority: (priority: string[]) => void;
   engineConfigs: Record<string, EngineConfigFields>;
   setEngineConfigs: (configs: Record<string, EngineConfigFields>) => void;
-  journalSource: { type: string };
-  setJournalSource: (source: { type: string }) => void;
+  journalSource: JournalSource;
+  setJournalSource: (source: JournalSource) => void;
   cacheMaxSize: number;
   setCacheMaxSize: (size: number) => void;
   cacheSize: number;
@@ -163,7 +161,7 @@ export const useStore = create<PanelState>((set) => ({
   setEnginePriority: (enginePriority) => set({ enginePriority }),
   engineConfigs: {},
   setEngineConfigs: (engineConfigs) => set({ engineConfigs }),
-  journalSource: { type: 'letpub' },
+  journalSource: { type: 'ablesci' },
   setJournalSource: (journalSource) => set({ journalSource }),
   cacheMaxSize: 500,
   setCacheMaxSize: (cacheMaxSize) => set({ cacheMaxSize }),

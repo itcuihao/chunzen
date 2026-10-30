@@ -342,12 +342,6 @@ export class SidePanelProvider {
             }
             break;
           case 'trigger-mineru-parse': {
-            const mineruCfg = this.configService.getMineruConfig();
-            if (!mineruCfg.enable) {
-              const cfg = vscode.workspace.getConfiguration('chunzen.mineru');
-              await cfg.update('enable', true, vscode.ConfigurationTarget.Global);
-              this.sendInitState();
-            }
             if (msg.pdfUri) {
               this.triggerMineruParse(msg.pdfUri, true);
             }
@@ -698,7 +692,7 @@ export class SidePanelProvider {
     if (!this.currentExportConfig) {
       return;
     }
-    const { untranslatedPolicy, format, documentName } = this.currentExportConfig;
+    const { untranslatedPolicy, format } = this.currentExportConfig;
     this.currentExportConfig = null;
 
     const total = paragraphs.length;

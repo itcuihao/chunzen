@@ -1094,7 +1094,7 @@ function isHeadingSegment(seg: LineSegment): boolean {
   const tokens = text.split(/\s+/).filter(Boolean);
   const tokenCount = tokens.length;
   const endsWithSentencePunc = /[.!?;:。！？；：]$/.test(text);
-  const upperTokens = tokens.filter(t => /^[A-Z0-9\-]{2,}$/.test(t)).length;
+  const upperTokens = tokens.filter(t => /^[A-Z0-9-]{2,}$/.test(t)).length;
   const upperRatio = tokenCount > 0 ? upperTokens / tokenCount : 0;
   const startsWithEnum = /^(\(?\d+\)?[.)]?\s+|[IVXLC]+\.\s+)/.test(text);
   const looksShortTitle = tokenCount <= 12 && text.length <= 90 && !endsWithSentencePunc;
@@ -1195,7 +1195,7 @@ function isLikelyTableLine(seg: LineSegment, colWidth: number): boolean {
   const hasNumeric = /\d/.test(seg.str);
   const hasPipeLikeDelimiter = /[:%]|±|×|\/|\(|\)/.test(seg.str);
   const tokens = seg.str.trim().split(/\s+/).filter(Boolean);
-  const upperTokens = tokens.filter(t => /^[A-Z0-9\-]{2,}$/.test(t)).length;
+  const upperTokens = tokens.filter(t => /^[A-Z0-9-]{2,}$/.test(t)).length;
   const upperRatio = tokens.length > 0 ? upperTokens / tokens.length : 0;
   const uppercaseGridLike = tokens.length >= 4 && tokens.length <= 18 && upperRatio > 0.45;
   return hasNumeric || hasPipeLikeDelimiter || uppercaseGridLike;
@@ -2006,7 +2006,7 @@ function composeFormattedLineText(items: ColLayoutItem[], styles: Record<string,
     const attachNoSpace =
       gap <= gapThreshold ||
       /^[,.;:!?%)\]}]/.test(curText) ||
-      /[(\[{]$/.test(prevText) ||
+      /[([{]$/.test(prevText) ||
       (curIsSup && !prevIsSup) ||
       (curIsSub && !prevIsSub) ||
       (!curIsSup && prevIsSup) ||
@@ -2039,7 +2039,7 @@ function composeLineText(items: ColLayoutItem[]): string {
     const attachNoSpace =
       gap <= gapThreshold ||
       /^[,.;:!?%)\]}]/.test(curText) ||
-      /[(\[{]$/.test(prevText);
+      /[([{]$/.test(prevText);
 
     if (attachNoSpace) {
       text += curText;
@@ -2094,54 +2094,6 @@ function computeColumnEvidenceByLines(
   return evidenceLines / considered;
 }
 
-function detectStableGutters(
-  lines: ColLayoutItem[][],
-  minX: number,
-  pageWidth: number,
-  minGapWidth: number
-): number[] {
-  const gutterPoints: number[] = [];
-  for (const line of lines) {
-    if (line.length < 2) continue;
-    for (let i = 0; i < line.length - 1; i++) {
-      const cur = line[i];
-      const next = line[i + 1];
-      const right = cur.x + cur.width;
-      const left = next.x;
-      const gap = left - right;
-      if (gap < minGapWidth) continue;
-      const mid = (right + left) / 2;
-      if (mid < minX + pageWidth * 0.12 || mid > minX + pageWidth * 0.88) continue;
-      gutterPoints.push(mid);
-    }
-  }
-  if (gutterPoints.length === 0) return [];
-
-  gutterPoints.sort((a, b) => a - b);
-  const clusterDistance = Math.max(18, pageWidth * 0.05);
-  const clusters: Array<{ center: number; count: number }> = [];
-  for (const x of gutterPoints) {
-    if (clusters.length === 0) {
-      clusters.push({ center: x, count: 1 });
-      continue;
-    }
-    const last = clusters[clusters.length - 1];
-    if (Math.abs(x - last.center) <= clusterDistance) {
-      const newCount = last.count + 1;
-      last.center = (last.center * last.count + x) / newCount;
-      last.count = newCount;
-    } else {
-      clusters.push({ center: x, count: 1 });
-    }
-  }
-
-  const minSupport = Math.max(3, Math.floor(lines.length * 0.06));
-  return clusters
-    .filter(c => c.count >= minSupport)
-    .map(c => c.center)
-    .sort((a, b) => a - b);
-}
-
 function isLikelyHeadingLikeLine(text: string): boolean {
   const t = text.trim();
   if (!t) return false;
@@ -2149,7 +2101,7 @@ function isLikelyHeadingLikeLine(text: string): boolean {
   if (/^(\(?\d+\)?[.)]?\s+|[-•*]\s+)/.test(t)) return true;
   const words = t.split(/\s+/).filter(Boolean);
   if (words.length === 0) return false;
-  const upperWords = words.filter(w => /^[A-Z0-9\-]{2,}$/.test(w)).length;
+  const upperWords = words.filter(w => /^[A-Z0-9-]{2,}$/.test(w)).length;
   return upperWords / words.length > 0.7;
 }
 
@@ -2216,7 +2168,7 @@ function mergeTexts(a: string, b: string): string {
   if (/[-\u2010\u2011\u2012\u2013\u2014]$/.test(left)) {
     return `${left.slice(0, -1)}${right}`;
   }
-  if (/[({\[]$/.test(left) || /^[)\]}.,;:!?]/.test(right)) {
+  if (/[({[]$/.test(left) || /^[)\]}.,;:!?]/.test(right)) {
     return `${left}${right}`;
   }
   return `${left} ${right}`;
@@ -2293,7 +2245,6 @@ function shouldStartNewBodyParagraph(
     }
   }
 
-  const colWidth = columnMargins.get(cur.columnIndex)?.width || pageWidth;
   const colMargin = columnMargins.get(cur.columnIndex)?.left ?? cur.x;
 
   const yGap = cur.y - prev.y;

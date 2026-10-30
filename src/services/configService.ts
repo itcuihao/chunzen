@@ -1,6 +1,12 @@
 import * as vscode from 'vscode';
-import { GeneralSettings, LayoutConfig, MineruConfig } from '../types/config';
+import { GeneralSettings, JournalSourceType, LayoutConfig, MineruConfig } from '../types/config';
 import { getEngines, getTranslationPriority } from './engines/registry';
+import { CACHE_MAX_SIZE, DEFAULT_LAYOUT_ENDPOINT, LAYOUT_TIMEOUT_MS, clampNumber, oneOf } from './settingsNormalize';
+import { OPENAI_DEFAULT_BASE_URL, OPENAI_DEFAULT_MODEL } from './engines/defaults';
+
+const HOVER_STYLES = ['overlay', 'bar'] as const;
+const THEMES = ['auto', 'dark', 'light'] as const;
+const RENDER_SCALES = ['auto', 'balanced', 'high'] as const;
 
 export class ConfigService {
   getTranslationConfig() {
@@ -17,8 +23,8 @@ export class ConfigService {
       },
       openai: {
         apiKey: cfg.get<string>('openai.apiKey', '').trim(),
-        baseUrl: cfg.get<string>('openai.baseUrl', 'https://api.openai.com/v1').trim(),
-        model: cfg.get<string>('openai.model', 'gpt-4o-mini').trim(),
+        baseUrl: cfg.get<string>('openai.baseUrl', OPENAI_DEFAULT_BASE_URL).trim(),
+        model: cfg.get<string>('openai.model', OPENAI_DEFAULT_MODEL).trim(),
         systemPrompt: cfg.get<string>('openai.systemPrompt', '').trim()
       },
       custom: {
@@ -34,38 +40,30 @@ export class ConfigService {
     const cfg = vscode.workspace.getConfiguration('chunzen.journal');
     return {
       enabled: cfg.get<boolean>('enabled', true),
-      source: cfg.get<'ablesci' | 'letpub'>('source', 'ablesci')
+      source: cfg.get<JournalSourceType>('source', 'ablesci')
     };
   }
 
   getCacheConfig() {
     const cfg = vscode.workspace.getConfiguration('chunzen.cache');
-    return { maxSize: cfg.get<number>('maxSize', 500) };
+    return { maxSize: clampNumber(cfg.get<number>('maxSize'), CACHE_MAX_SIZE) };
   }
 
   getLayoutConfig(): LayoutConfig {
     const cfg = vscode.workspace.getConfiguration('chunzen.layout');
-    const timeout = cfg.get<number>('timeoutMs', 3500);
-    const hoverHighlightStyle = cfg.get<'overlay' | 'bar'>('hoverHighlightStyle', 'overlay');
-    const theme = cfg.get<'auto' | 'dark' | 'light'>('theme', 'auto');
-    const renderScale = cfg.get<'auto' | 'balanced' | 'high'>('renderScale', 'auto');
     return {
       useModel: cfg.get<boolean>('useModel', false),
       modelEndpoint: cfg.get<string>('modelEndpoint', '').trim(),
-      timeoutMs: Number.isFinite(timeout) ? Math.max(500, Math.min(20000, timeout)) : 3500,
-      hoverHighlightStyle: hoverHighlightStyle === 'bar' ? 'bar' : 'overlay',
-      theme: theme === 'dark' || theme === 'light' ? theme : 'auto',
-      renderScale: renderScale === 'balanced' || renderScale === 'high' ? renderScale : 'auto'
+      timeoutMs: clampNumber(cfg.get<number>('timeoutMs'), LAYOUT_TIMEOUT_MS),
+      hoverHighlightStyle: oneOf(cfg.get<string>('hoverHighlightStyle'), HOVER_STYLES, 'overlay'),
+      theme: oneOf(cfg.get<string>('theme'), THEMES, 'auto'),
+      renderScale: oneOf(cfg.get<string>('renderScale'), RENDER_SCALES, 'auto')
     };
   }
 
   getMineruConfig(): MineruConfig {
-    const cfg = vscode.workspace.getConfiguration('chunzen.mineru');
-    return {
-      enable: false,
-      apiType: cfg.get<'agent' | 'standard'>('apiType', 'agent'),
-      token: cfg.get<string>('token', '').trim()
-    };
+    // MinerU 当前整体停用（入口已从 UI 移除），不再暴露用户配置项
+    return { enable: false, apiType: 'agent', token: '' };
   }
 
   /**
@@ -96,16 +94,13 @@ export class ConfigService {
    * and secrets storage for API keys when available.
    */
   async saveEngineConfig(engineName: string, config: Record<string, string>): Promise<void> {
-    const prefix = `chunzen.translation.${engineName}.`;
     const cfg = vscode.workspace.getConfiguration('chunzen.translation');
 
     for (const [key, value] of Object.entries(config)) {
       const fullKey = `${engineName}.${key}`;
       const trimmedValue = typeof value === 'string' ? value.trim() : value;
 
-      if (key === 'enabled') {
-        await cfg.update(fullKey, trimmedValue === 'true', vscode.ConfigurationTarget.Global);
-      } else if (key === 'freeApi') {
+      if (key === 'freeApi') {
         await cfg.update(fullKey, trimmedValue === 'true', vscode.ConfigurationTarget.Global);
       } else if (key === 'headers') {
         try {
@@ -126,9 +121,8 @@ export class ConfigService {
     const journalCfg = vscode.workspace.getConfiguration('chunzen.journal');
     const layoutCfg = vscode.workspace.getConfiguration('chunzen.layout');
 
-    if (typeof settings.cacheMaxSize === 'number' && Number.isFinite(settings.cacheMaxSize)) {
-      const normalized = Math.max(50, Math.min(5000, Math.round(settings.cacheMaxSize)));
-      await cacheCfg.update('maxSize', normalized, vscode.ConfigurationTarget.Global);
+    if (typeof settings.cacheMaxSize === 'number') {
+      await cacheCfg.update('maxSize', clampNumber(settings.cacheMaxSize, CACHE_MAX_SIZE), vscode.ConfigurationTarget.Global);
     }
 
     if (typeof settings.journalEnabled === 'boolean') {
@@ -147,7 +141,7 @@ export class ConfigService {
         ? settings.layout.modelEndpoint.trim()
         : '';
       const normalizedEndpoint = useModelEnabled
-        ? (endpointTrimmed || 'http://127.0.0.1:8765/layout')
+        ? (endpointTrimmed || DEFAULT_LAYOUT_ENDPOINT)
         : endpointTrimmed;
 
       if (typeof settings.layout.useModel === 'boolean') {
@@ -156,31 +150,17 @@ export class ConfigService {
       if (typeof settings.layout.modelEndpoint === 'string' || useModelEnabled) {
         await layoutCfg.update('modelEndpoint', normalizedEndpoint, vscode.ConfigurationTarget.Global);
       }
-      if (typeof settings.layout.timeoutMs === 'number' && Number.isFinite(settings.layout.timeoutMs)) {
-        const timeout = Math.max(500, Math.min(20000, Math.round(settings.layout.timeoutMs)));
-        await layoutCfg.update('timeoutMs', timeout, vscode.ConfigurationTarget.Global);
+      if (typeof settings.layout.timeoutMs === 'number') {
+        await layoutCfg.update('timeoutMs', clampNumber(settings.layout.timeoutMs, LAYOUT_TIMEOUT_MS), vscode.ConfigurationTarget.Global);
       }
-      if (settings.layout.hoverHighlightStyle === 'overlay' || settings.layout.hoverHighlightStyle === 'bar') {
+      if (HOVER_STYLES.includes(settings.layout.hoverHighlightStyle)) {
         await layoutCfg.update('hoverHighlightStyle', settings.layout.hoverHighlightStyle, vscode.ConfigurationTarget.Global);
       }
-      if (settings.layout.theme === 'auto' || settings.layout.theme === 'dark' || settings.layout.theme === 'light') {
+      if (THEMES.includes(settings.layout.theme)) {
         await layoutCfg.update('theme', settings.layout.theme, vscode.ConfigurationTarget.Global);
       }
-      if (settings.layout.renderScale === 'auto' || settings.layout.renderScale === 'balanced' || settings.layout.renderScale === 'high') {
+      if (RENDER_SCALES.includes(settings.layout.renderScale)) {
         await layoutCfg.update('renderScale', settings.layout.renderScale, vscode.ConfigurationTarget.Global);
-      }
-    }
-
-    if (settings.mineru) {
-      const mineruCfg = vscode.workspace.getConfiguration('chunzen.mineru');
-      if (typeof settings.mineru.enable === 'boolean') {
-        await mineruCfg.update('enable', settings.mineru.enable, vscode.ConfigurationTarget.Global);
-      }
-      if (settings.mineru.apiType === 'agent' || settings.mineru.apiType === 'standard') {
-        await mineruCfg.update('apiType', settings.mineru.apiType, vscode.ConfigurationTarget.Global);
-      }
-      if (typeof settings.mineru.token === 'string') {
-        await mineruCfg.update('token', settings.mineru.token.trim(), vscode.ConfigurationTarget.Global);
       }
     }
   }

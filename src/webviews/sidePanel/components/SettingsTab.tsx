@@ -1,7 +1,8 @@
 import { FunctionComponent, useEffect, useState } from 'react';
-import { useStore, EngineStatus, EngineConfigFields } from '../store';
+import { useStore, EngineConfigFields } from '../store';
 import { postMessage } from '../vscode';
-import { Database, Sparkles, Trash2, Settings, ChevronDown, ChevronUp, Network, Play, CheckCircle2, XCircle, Info, Lock, Eye, EyeOff, Bot, GripVertical } from 'lucide-react';
+import { Database, Sparkles, Trash2, Settings, ChevronDown, ChevronUp, Network, Play, CheckCircle2, XCircle, Info, Eye, EyeOff, Bot, GripVertical } from 'lucide-react';
+import type { JournalSourceType } from '../../../types/config';
 import { BUILD_INFO } from '../../../build-info';
 
 export const SettingsTab: FunctionComponent = () => {
@@ -10,7 +11,6 @@ export const SettingsTab: FunctionComponent = () => {
       <EngineSettings />
       <JournalSourceSettings />
       <LayoutSettings />
-      {/* <MineruSettings /> */}
       <GeneralSettings />
       <BuildInfo />
     </div>
@@ -420,7 +420,7 @@ const JournalSourceSettings: FunctionComponent = () => {
   const setJournalSource = useStore((state) => state.setJournalSource);
 
   const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const val = e.target.value as 'ablesci' | 'letpub' | 'crossref' | 'custom';
+    const val = e.target.value as JournalSourceType;
     setJournalSource({ type: val });
     postMessage({
       type: 'save-general-settings',
@@ -461,7 +461,7 @@ const JournalSourceSettings: FunctionComponent = () => {
 // ── LayoutSettings ──
 
 const LayoutSettings: FunctionComponent = () => {
-  const defaultEndpoint = 'http://127.0.0.1:8765/layout';
+  const defaultEndpoint = 'http://127.0.0.1:8765/layout'; // 须与 services/settingsNormalize.ts DEFAULT_LAYOUT_ENDPOINT 一致（webview 不能引用扩展端模块）
   const layoutConfig = useStore((state) => state.layoutConfig) || { useModel: false, modelEndpoint: '', timeoutMs: 3500, hoverHighlightStyle: 'overlay' as const, theme: 'auto' as const, renderScale: 'auto' as const };
   const [useModel, setUseModel] = useState(layoutConfig?.useModel ?? false);
   const [modelEndpoint, setModelEndpoint] = useState(layoutConfig?.modelEndpoint ?? '');
@@ -718,104 +718,3 @@ const BuildInfo: FunctionComponent = () => {
   );
 };
 
-// ── MineruSettings ──
-
-const MineruSettings: FunctionComponent = () => {
-  const mineruConfig = useStore((state) => state.mineruConfig) || { enable: false, apiType: 'agent', token: '' };
-  const [enable, setEnable] = useState(mineruConfig.enable ?? false);
-  const [apiType, setApiType] = useState<'agent' | 'standard'>(mineruConfig.apiType ?? 'agent');
-  const [token, setToken] = useState(mineruConfig.token ?? '');
-  const [saved, setSaved] = useState(false);
-
-  useEffect(() => {
-    setEnable(mineruConfig.enable ?? false);
-    setApiType(mineruConfig.apiType ?? 'agent');
-    setToken(mineruConfig.token ?? '');
-  }, [mineruConfig.enable, mineruConfig.apiType, mineruConfig.token]);
-
-  const handleSave = () => {
-    postMessage({
-      type: 'save-general-settings',
-      settings: {
-        mineru: {
-          enable,
-          apiType,
-          token
-        }
-      }
-    });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
-  };
-
-  return (
-    <section className="glass-panel rounded-lg overflow-hidden border border-border shadow-sm">
-      <div className="flex items-center gap-2 px-3.5 py-2 border-b border-border bg-card">
-        <Sparkles className="w-4 h-4 text-accent" />
-        <span className="text-[11px] font-semibold tracking-wider text-secondary-foreground uppercase font-medium">MinerU AI 增强重构</span>
-      </div>
-      <div className="p-3.5 flex flex-col gap-3">
-        <div className="flex items-start gap-1.5 p-2.5 rounded bg-secondary/35 border border-border/30 text-secondary-foreground text-xs leading-relaxed">
-          <Info className="w-3.5 h-3.5 mt-0.5 text-accent flex-shrink-0" />
-          <p>
-            开启 MinerU AI 文档重构后，系统会自动在后台将 PDF 转换为高精度的 Markdown，完美还原数学公式（LaTeX）与表格。
-          </p>
-        </div>
-
-        <div className="flex items-center justify-between">
-          <span className="text-xs text-foreground font-medium">启用 MinerU AI 重构排版</span>
-          <label className="relative inline-flex items-center cursor-pointer select-none">
-            <input
-              type="checkbox"
-              className="sr-only peer"
-              checked={enable}
-              onChange={(e) => setEnable(e.target.checked)}
-            />
-            <div className="w-9 h-5 bg-border rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
-          </label>
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <label className="text-[10px] font-semibold text-secondary-foreground/80 tracking-wider uppercase">
-            API 类型
-          </label>
-          <select
-            className="w-full px-3 py-1.5 text-xs rounded border border-border bg-background text-foreground outline-none focus:border-accent font-mono"
-            value={apiType}
-            onChange={(e) => setApiType(e.target.value as 'agent' | 'standard')}
-          >
-            <option value="agent">Agent 免 Token 体验版 (≤ 20页 / 10MB)</option>
-            <option value="standard">Standard 精准解析版 (支持最大 200页 / 200MB)</option>
-          </select>
-        </div>
-
-        {apiType === 'standard' && (
-          <div className="flex flex-col gap-1.5 animate-in slide-in-from-top-1 duration-150">
-            <label className="text-[10px] font-semibold text-secondary-foreground/80 tracking-wider uppercase">
-              API Token
-            </label>
-            <input
-              type="password"
-              className="w-full px-3 py-1.5 text-xs rounded border border-border bg-background placeholder-secondary-foreground/40 text-foreground outline-none focus:border-accent font-mono"
-              placeholder="从 mineru.net 申请的 API Token"
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-            />
-          </div>
-        )}
-
-        <div className="flex justify-end">
-          <button
-            onClick={handleSave}
-            className={`flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded text-white transition-all ${
-              saved ? 'bg-success hover:bg-success' : 'bg-primary hover:bg-primary-hover shadow-sm'
-            }`}
-          >
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            {saved ? '已保存' : '保存设置'}
-          </button>
-        </div>
-      </div>
-    </section>
-  );
-};

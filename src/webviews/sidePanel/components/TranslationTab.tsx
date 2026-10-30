@@ -1,17 +1,15 @@
-import { FunctionComponent, useState, useEffect, useMemo, ReactNode, useRef } from 'react';
+import { FunctionComponent, useState, useEffect, useMemo, ReactNode } from 'react';
 import { useStore } from '../store';
 import { 
-  Languages, FileCheck, RefreshCw, Compass, Plus, ArrowUpRight, Copy,
-  Highlighter, MessageSquareText, Sparkles, BookOpen, Trash2, X,
+  Languages, FileCheck, RefreshCw, Compass, Plus, Copy,
+  Highlighter, MessageSquareText, Sparkles, Trash2, X,
   Maximize2, Minimize2
 } from 'lucide-react';
 import { postMessage } from '../vscode';
 import { SelectionHighlight } from '../../../types/models';
 import { 
   convertSupTagsToUnicode, 
-  isSuperscriptCitation, 
-  parseCitationKeys, 
-  normalizeSuperscript 
+  parseCitationKeys
 } from '../../../utils/academicHelper';
 // @ts-ignore
 import { marked } from 'marked';
@@ -242,8 +240,8 @@ function mergeSplitDoi(text: string): string {
   let prevText = text;
   while (true) {
     const nextText = prevText.replace(splitDoiRegex, (match, g1, g2) => {
-      const endsWithConnector = /[\/.\-_]$/.test(g1);
-      const startsWithConnector = /^[\/.\-_]/.test(g2);
+      const endsWithConnector = /[/.\-_]$/.test(g1);
+      const startsWithConnector = /^[/.\-_]/.test(g2);
       if (endsWithConnector || startsWithConnector) {
         return g1 + g2;
       }
@@ -260,8 +258,8 @@ function mergeSplitUrl(text: string): string {
   let prevText = text;
   while (true) {
     const nextText = prevText.replace(splitUrlRegex, (match, g1, g2) => {
-      const endsWithConnector = /[\/.\-_=?&]$/.test(g1);
-      const startsWithConnector = /^[\/.\-_=?&]/.test(g2);
+      const endsWithConnector = /[/.\-_=?&]$/.test(g1);
+      const startsWithConnector = /^[/.\-_=?&]/.test(g2);
       if (endsWithConnector || startsWithConnector) {
         return g1 + g2;
       }
@@ -288,7 +286,7 @@ function renderTextSegmentWithJumps(
   const { plainText, mapIdx } = mapHtmlToPlain(preprocessed);
 
   // Appended Group 12 for unicode superscript citations
-  const jumpRegex = /\[(\d+(?:\s*[-–,]\s*\d+)*)\]|\[((?:Figure|Fig\.|Table|图|表)\s*(?:S\d+|s\d+|\d+)(?:\s*[a-zA-Z])?)\]|\b((?:Figure|Fig\.|Table)\s*(?:S\d+|s\d+|\d+)(?:\s*[a-zA-Z])?)\b|((?:图|表)\s*(?:S\d+|s\d+|\d+)(?:\s*[a-zA-Z])?)|\b([A-Z][a-zA-Z\u00C0-\u017F\-]+)(?:\s+et\s+al\.|\s+等|\s+and\s+[A-Z][a-zA-Z\u00C0-\u017F\-]+)?\s*\((18\d{2}|19\d{2}|20\d{2})([a-z])?\)|(\(((?:[A-Z][a-zA-Z\u00C0-\u017F\-]+(?:\s+et\s+al\.|\s+等|\s+and\s+[A-Z][a-zA-Z\u00C0-\u017F\-]+)?(?:,\s*|，\s*)\d{4}[a-z]?(?:\s*[;；]\s*)?)+)\))|\b(https?:\/\/[^\s()<>]+[^\s()<>.,;:!?"'])\b|\b(10\.\d{4,9}\/[-._;()/:A-Z0-9]+)\b|(?<!\d)([⁰¹²³⁴⁵⁶⁷⁸⁹]+(?:\s*[,⁻–-]\s*[⁰¹²³⁴⁵⁶⁷⁸⁹]+)*)(?!\d)/gi;
+  const jumpRegex = /\[(\d+(?:\s*[-–,]\s*\d+)*)\]|\[((?:Figure|Fig\.|Table|图|表)\s*(?:S\d+|s\d+|\d+)(?:\s*[a-zA-Z])?)\]|\b((?:Figure|Fig\.|Table)\s*(?:S\d+|s\d+|\d+)(?:\s*[a-zA-Z])?)\b|((?:图|表)\s*(?:S\d+|s\d+|\d+)(?:\s*[a-zA-Z])?)|\b([A-Z][a-zA-Z\u00C0-\u017F-]+)(?:\s+et\s+al\.|\s+等|\s+and\s+[A-Z][a-zA-Z\u00C0-\u017F-]+)?\s*\((18\d{2}|19\d{2}|20\d{2})([a-z])?\)|(\(((?:[A-Z][a-zA-Z\u00C0-\u017F-]+(?:\s+et\s+al\.|\s+等|\s+and\s+[A-Z][a-zA-Z\u00C0-\u017F-]+)?(?:,\s*|，\s*)\d{4}[a-z]?(?:\s*[;；]\s*)?)+)\))|\b(https?:\/\/[^\s()<>]+[^\s()<>.,;:!?"'])\b|\b(10\.\d{4,9}\/[-._;()/:A-Z0-9]+)\b|(?<!\d)([⁰¹²³⁴⁵⁶⁷⁸⁹]+(?:\s*[,⁻–-]\s*[⁰¹²³⁴⁵⁶⁷⁸⁹]+)*)(?!\d)/gi;
   const parts: ReactNode[] = [];
   let lastPlainIndex = 0;
   let match;
@@ -403,7 +401,7 @@ function renderTextSegmentWithJumps(
         const itemEndPlain = itemStartPlain + item.length;
         currentPlainOffset = itemEndPlain + 1;
 
-        const itemMatch = item.match(/\b([A-Z][a-zA-Z\u00C0-\u017F\-]+)(?:\s+et\s+al\.|\s+等|\s+and\s+[A-Z][a-zA-Z\u00C0-\u017F\-]+)?(?:,\s*|，\s*)(\d{4})([a-z])?/i);
+        const itemMatch = item.match(/\b([A-Z][a-zA-Z\u00C0-\u017F-]+)(?:\s+et\s+al\.|\s+等|\s+and\s+[A-Z][a-zA-Z\u00C0-\u017F-]+)?(?:,\s*|，\s*)(\d{4})([a-z])?/i);
         
         if (i > 0) {
           renderedItems.push('; ');
@@ -622,7 +620,7 @@ function protectTextWithPlaceholders(text: string): string {
   const { plainText, mapIdx } = mapHtmlToPlain(preprocessed);
 
   // Appended Group 11 for unicode superscript citations
-  const unionRegexWithoutHtml = /\[(\d+(?:\s*[-–,]\s*\d+)*)\]|\[((?:Figure|Fig\.|Table)\s*(?:S\d+|s\d+|\d+)(?:\s*[a-zA-Z])?)\]|\b((?:Figure|Fig\.|Table)\s*(?:S\d+|s\d+|\d+)(?:\s*[a-zA-Z])?)\b|\b([A-Z][a-zA-Z\u00C0-\u017F\-]+)(?:\s+et\s+al\.|\s+等|\s+and\s+[A-Z][a-zA-Z\u00C0-\u017F\-]+)?\s*\((18\d{2}|19\d{2}|20\d{2})([a-z])?\)|(\(((?:[A-Z][a-zA-Z\u00C0-\u017F\-]+(?:\s+et\s+al\.|\s+等|\s+and\s+[A-Z][a-zA-Z\u00C0-\u017F\-]+)?,\s*\d{4}[a-z]?(?:\s*;|，|;|,)?\s*)+)\))|\b(https?:\/\/[^\s()<>]+[^\s()<>.,;:!?"'])\b|\b(10\.\d{4,9}\/[-._;()/:A-Z0-9]+)\b|(?<!\d)([⁰¹²³⁴⁵⁶⁷⁸⁹]+(?:\s*[,⁻–-]\s*[⁰¹²³⁴⁵⁶⁷⁸⁹]+)*)(?!\d)/gi;
+  const unionRegexWithoutHtml = /\[(\d+(?:\s*[-–,]\s*\d+)*)\]|\[((?:Figure|Fig\.|Table)\s*(?:S\d+|s\d+|\d+)(?:\s*[a-zA-Z])?)\]|\b((?:Figure|Fig\.|Table)\s*(?:S\d+|s\d+|\d+)(?:\s*[a-zA-Z])?)\b|\b([A-Z][a-zA-Z\u00C0-\u017F-]+)(?:\s+et\s+al\.|\s+等|\s+and\s+[A-Z][a-zA-Z\u00C0-\u017F-]+)?\s*\((18\d{2}|19\d{2}|20\d{2})([a-z])?\)|(\(((?:[A-Z][a-zA-Z\u00C0-\u017F-]+(?:\s+et\s+al\.|\s+等|\s+and\s+[A-Z][a-zA-Z\u00C0-\u017F-]+)?,\s*\d{4}[a-z]?(?:\s*;|，|;|,)?\s*)+)\))|\b(https?:\/\/[^\s()<>]+[^\s()<>.,;:!?"'])\b|\b(10\.\d{4,9}\/[-._;()/:A-Z0-9]+)\b|(?<!\d)([⁰¹²³⁴⁵⁶⁷⁸⁹]+(?:\s*[,⁻–-]\s*[⁰¹²³⁴⁵⁶⁷⁸⁹]+)*)(?!\d)/gi;
 
   const citations: Array<{
     type: 'CZNUM' | 'CZFIG' | 'CZNAR' | 'CZPAR' | 'CZURL' | 'CZDOI' | 'CZSUP';
@@ -723,9 +721,7 @@ function protectTextWithPlaceholders(text: string): string {
 function renderTextWithPlaceholders(
   translated: string,
   para: AnnotatedPara,
-  bibliography: Record<string, { text: string; pageNumber: number }>,
-  highlights: SelectionHighlight[],
-  onHighlightClick: (hl: SelectionHighlight, rect: DOMRect) => void
+  bibliography: Record<string, { text: string; pageNumber: number }>
 ): ReactNode {
   const nums: Array<{ match: string; key: string }> = [];
   const sups: Array<{ match: string; key: string }> = [];
@@ -740,7 +736,7 @@ function renderTextWithPlaceholders(
   const { plainText, mapIdx } = mapHtmlToPlain(preprocessedParaText);
 
   // Appended Group 11 for unicode superscript citations
-  const unionRegexWithoutHtml = /\[(\d+(?:\s*[-–,]\s*\d+)*)\]|\[((?:Figure|Fig\.|Table)\s*(?:S\d+|s\d+|\d+)(?:\s*[a-zA-Z])?)\]|\b((?:Figure|Fig\.|Table)\s*(?:S\d+|s\d+|\d+)(?:\s*[a-zA-Z])?)\b|\b([A-Z][a-zA-Z\u00C0-\u017F\-]+)(?:\s+et\s+al\.|\s+等|\s+and\s+[A-Z][a-zA-Z\u00C0-\u017F\-]+)?\s*\((18\d{2}|19\d{2}|20\d{2})([a-z])?\)|(\(((?:[A-Z][a-zA-Z\u00C0-\u017F\-]+(?:\s+et\s+al\.|\s+等|\s+and\s+[A-Z][a-zA-Z\u00C0-\u017F\-]+)?,\s*\d{4}[a-z]?(?:\s*;|，|;|,)?\s*)+)\))|\b(https?:\/\/[^\s()<>]+[^\s()<>.,;:!?"'])\b|\b(10\.\d{4,9}\/[-._;()/:A-Z0-9]+)\b|(?<!\d)([⁰¹²³⁴⁵⁶⁷⁸⁹]+(?:\s*[,⁻–-]\s*[⁰¹²³⁴⁵⁶⁷⁸⁹]+)*)(?!\d)/gi;
+  const unionRegexWithoutHtml = /\[(\d+(?:\s*[-–,]\s*\d+)*)\]|\[((?:Figure|Fig\.|Table)\s*(?:S\d+|s\d+|\d+)(?:\s*[a-zA-Z])?)\]|\b((?:Figure|Fig\.|Table)\s*(?:S\d+|s\d+|\d+)(?:\s*[a-zA-Z])?)\b|\b([A-Z][a-zA-Z\u00C0-\u017F-]+)(?:\s+et\s+al\.|\s+等|\s+and\s+[A-Z][a-zA-Z\u00C0-\u017F-]+)?\s*\((18\d{2}|19\d{2}|20\d{2})([a-z])?\)|(\(((?:[A-Z][a-zA-Z\u00C0-\u017F-]+(?:\s+et\s+al\.|\s+等|\s+and\s+[A-Z][a-zA-Z\u00C0-\u017F-]+)?,\s*\d{4}[a-z]?(?:\s*;|，|;|,)?\s*)+)\))|\b(https?:\/\/[^\s()<>]+[^\s()<>.,;:!?"'])\b|\b(10\.\d{4,9}\/[-._;()/:A-Z0-9]+)\b|(?<!\d)([⁰¹²³⁴⁵⁶⁷⁸⁹]+(?:\s*[,⁻–-]\s*[⁰¹²³⁴⁵⁶⁷⁸⁹]+)*)(?!\d)/gi;
 
   const citations: Array<{
     type: 'CZNUM' | 'CZFIG' | 'CZNAR' | 'CZPAR' | 'CZURL' | 'CZDOI' | 'CZSUP';
@@ -1030,7 +1026,7 @@ function renderTextWithPlaceholders(
           const renderedItems: ReactNode[] = [];
           for (let k = 0; k < data.items.length; k++) {
             const itemObj = data.items[k];
-            const itemMatch = itemObj.text.match(/\b([A-Z][a-zA-Z\u00C0-\u017F\-]+)(?:\s+et\s+al\.|\s+等|\s+and\s+[A-Z][a-zA-Z\u00C0-\u017F\-]+)?(?:,\s*|，\s*)(\d{4})([a-z])?/i);
+            const itemMatch = itemObj.text.match(/\b([A-Z][a-zA-Z\u00C0-\u017F-]+)(?:\s+et\s+al\.|\s+等|\s+and\s+[A-Z][a-zA-Z\u00C0-\u017F-]+)?(?:,\s*|，\s*)(\d{4})([a-z])?/i);
             
             if (k > 0) {
               renderedItems.push('; ');
@@ -1344,9 +1340,10 @@ export const TranslationTab: FunctionComponent = () => {
 
   const mineruConfig = useStore((state) => state.mineruConfig);
   const mineruStatus = useStore((state) => state.mineruStatus);
-  const mineruProgress = useStore((state) => state.mineruProgress);
+  // MinerU 入口当前停用（见 CLAUDE.md），以下状态随被注释的 UI 保留
+  const _mineruProgress = useStore((state) => state.mineruProgress);
   const mineruMarkdown = useStore((state) => state.mineruMarkdown);
-  const mineruError = useStore((state) => state.mineruError);
+  const _mineruError = useStore((state) => state.mineruError);
 
   const [mineruViewActive, setMineruViewActive] = useState(true);
 
@@ -1508,25 +1505,6 @@ export const TranslationTab: FunctionComponent = () => {
         height: rect.height
       }
     });
-  };
-
-  const handleOpenAddGlossary = (para: AnnotatedPara) => {
-    const selection = window.getSelection()?.toString().trim() || '';
-    let sourceVal = '';
-    let targetVal = '';
-
-    if (selection) {
-      const isChinese = /[\u4e00-\u9fa5]/.test(selection);
-      if (isChinese) {
-        targetVal = selection;
-      } else {
-        sourceVal = selection;
-      }
-    }
-
-    setGlossarySource(sourceVal);
-    setGlossaryTarget(targetVal);
-    setAddingGlossaryParaId(para.id);
   };
 
   const renderInlineGlossaryForm = (para: AnnotatedPara) => {
@@ -1862,7 +1840,7 @@ export const TranslationTab: FunctionComponent = () => {
     // If translation has CZ placeholders, use renderTextWithPlaceholders
     const hasPlaceholders = /\[\[CZ(NUM|FIG|CZNAR|CZPAR|CZSUP)_\d+\]\]/.test(translation);
     if (hasPlaceholders) {
-      return renderTextWithPlaceholders(translation, para, bibliography, highlights, handleHighlightClick);
+      return renderTextWithPlaceholders(translation, para, bibliography);
     }
 
     const aligned = alignSentences(para.sentences, translation);
@@ -1911,7 +1889,7 @@ export const TranslationTab: FunctionComponent = () => {
     });
   };
 
-  const handleMineruToggle = () => {
+  const _handleMineruToggle = () => {
     if (mineruStatus === 'parsing') {
       return;
     }
@@ -2362,7 +2340,7 @@ export const TranslationTab: FunctionComponent = () => {
         </div>
         {/* {activePdfUri && (
           <label 
-            onClick={handleMineruToggle}
+            onClick={_handleMineruToggle}
             className={`flex items-center gap-1.5 text-[10px] font-bold cursor-pointer select-none bg-secondary/25 border border-border/40 rounded-lg px-2.5 py-1.5 hover:bg-secondary/40 active:scale-95 transition-all duration-150 flex-shrink-0 ${
               mineruStatus === 'done' ? 'text-primary' : 'text-secondary-foreground/60'
             }`}
@@ -2432,7 +2410,7 @@ export const TranslationTab: FunctionComponent = () => {
             </span>
             <div className="flex items-center gap-2">
               <button 
-                onClick={handleMineruToggle}
+                onClick={_handleMineruToggle}
                 className="text-[9px] underline hover:text-error-hover bg-transparent border-0 cursor-pointer font-bold"
               >
                 重试

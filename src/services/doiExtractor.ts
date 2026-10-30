@@ -4,7 +4,7 @@
  */
 export class DoiExtractor {
   // DOI 正则：10.xxxx/xxx
-  private static DOI_REGEX = /\b(10\.\d{4,9}\/[^\s"<>{}|\\^`\[\]]+)/gi;
+  private static DOI_REGEX = /\b(10\.\d{4,9}\/[^\s"<>{}|\\^`[\]]+)/gi;
   // ISSN 正则：XXXX-XXXX
   private static ISSN_REGEX = /\b(\d{4}-\d{3}[\dX])\b/gi;
 

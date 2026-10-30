@@ -1,18 +1,9 @@
 // Configuration types
 
-export interface EngineConfig {
-  apiKey?: string;
-  baseUrl?: string;
-  model?: string;
-  systemPrompt?: string;
-  freeApi?: boolean;
-  enabled?: boolean;
-  prompt?: string;
-}
+export type JournalSourceType = 'ablesci' | 'letpub';
 
 export interface JournalSource {
-  type: 'letpub' | 'ablesci' | 'crossref' | 'custom';
-  customUrl?: string;
+  type: JournalSourceType;
 }
 
 export interface GeneralSettings {
@@ -20,7 +11,6 @@ export interface GeneralSettings {
   journalEnabled?: boolean;
   journalSource?: JournalSource;
   layout?: LayoutConfig;
-  mineru?: MineruConfig;
 }
 
 export interface LayoutConfig {

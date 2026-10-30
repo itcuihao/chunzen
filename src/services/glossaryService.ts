@@ -148,7 +148,7 @@ export class GlossaryService {
         if (!s) continue;
         const isEnglish = /^[a-zA-Z\s\-_]+$/.test(s);
         if (isEnglish) {
-          const escS = s.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+          const escS = s.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
           const reg = new RegExp(`\\b${escS}\\b`, 'i');
           if (reg.test(text)) {
             hasMatch = true;

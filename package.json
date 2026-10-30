@@ -166,6 +166,8 @@
         "chunzen.cache.maxSize": {
           "type": "number",
           "default": 500,
+          "minimum": 50,
+          "maximum": 5000,
           "description": "翻译缓存最大条数"
         },
         "chunzen.journal.enabled": {
@@ -195,6 +197,8 @@
         "chunzen.layout.timeoutMs": {
           "type": "number",
           "default": 3500,
+          "minimum": 500,
+          "maximum": 20000,
           "description": "版面分析模型请求超时（毫秒）"
         },
         "chunzen.layout.hoverHighlightStyle": {
@@ -230,25 +234,6 @@
           ],
           "default": "auto",
           "markdownDescription": "PDF 渲染清晰度（超采样倍率）。Retina/高分屏默认已按物理像素渲染；调高档位会以更高分辨率栅格化页面再缩放显示，文字边缘更锐利，代价是显存与渲染耗时增加。若出现卡顿或内存吃紧请调回 `auto`。"
-        },
-        "chunzen.mineru.enable": {
-          "type": "boolean",
-          "default": false,
-          "description": "是否开启 MinerU AI 文档格式重构（转换为高精度 Markdown 表格与 LaTeX 公式）"
-        },
-        "chunzen.mineru.apiType": {
-          "type": "string",
-          "enum": [
-            "agent",
-            "standard"
-          ],
-          "default": "agent",
-          "description": "MinerU API 类型：agent 为免登录轻量版（限制 20 页/10MB），standard 为精准版（需要 API Token，支持 200 页/200MB）"
-        },
-        "chunzen.mineru.token": {
-          "type": "string",
-          "default": "",
-          "description": "MinerU 官方 API Token（仅在 Standard 精准模式下必填）"
         }
       }
     }

@@ -1,14 +1,10 @@
 // PDF viewer webview entry point
 
-import { initPdfJs, loadPdf, PdfDocument, PdfPage, PdfViewport, TextItem, RichTextContent, renderPageToCanvas, getPageText } from './pdfRenderer';
+import { initPdfJs, loadPdf, PdfDocument, PdfViewport, RichTextContent, renderPageToCanvas, getPageText } from './pdfRenderer';
 import { buildTextLayer, Paragraph, LayoutHints } from './textLayer';
 
 
 declare function acquireVsCodeApi(): { postMessage(msg: unknown): void };
-declare const pdfjsLib: {
-  OPS?: Record<string, number>;
-  Util: { transform(transform: number[], viewportTransform: number[]): number[] };
-};
 
 const vscode = acquireVsCodeApi();
 
@@ -53,8 +49,6 @@ function applyTheme(t: 'auto' | 'dark' | 'light') {
 
 // Translation states
 let currentParagraphs: Paragraph[] = [];
-let currentViewport: PdfViewport | null = null;
-let currentRichContent: RichTextContent | null = null;
 const pageTranslationsCache = new Map<number, Record<string, string>>();
 const pageRichContentCache = new Map<number, RichTextContent>();
 const readPages = new Set<number>();
@@ -171,8 +165,6 @@ async function renderCurrentPage() {
     }))
   };
 
-  currentViewport = viewport;
-  currentRichContent = renderedRichContent;
   const modelHints = await getLayoutHints(renderedRichContent, viewport);
   const { paragraphs: newParagraphs, columnsCount } = buildTextLayer(textLayer, renderedRichContent, viewport, {
     layoutHints: modelHints || undefined,
@@ -620,7 +612,7 @@ async function extractMetaFromFirstPage() {
 
     // Normalize spacing that often occurs in PDF text layer extraction (e.g. "10. 1038 / s..." or "10 . 1038")
     const cleanedText = text.replace(/10\s*\.\s*/gi, '10.').replace(/\s*\/\s*/g, '/').replace(/\s*-\s*/g, '-');
-    const doiMatch = cleanedText.match(/\b(10\.\d{4,9}\/[^\s"<>{}|\\^`\[\]]+)/i);
+    const doiMatch = cleanedText.match(/\b(10\.\d{4,9}\/[^\s"<>{}|\\^`[\]]+)/i);
     const issnMatch = text.match(/\b(\d{4}-\d{3}[\dX])\b/);
     const journalPatterns = [
       /(?:Nature|Science|Cell|PNAS|PLOS|IEEE|ACM|Journal of|Proceedings of)\s+[\w\s]{2,40}/i
@@ -938,23 +930,6 @@ function fitWidth() {
   });
 }
 
-interface RenderedTextItem {
-  str: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-interface RenderedTextLine {
-  text: string;
-  x1: number;
-  x2: number;
-  y: number;
-  height: number;
-  width: number;
-}
-
 interface Rect {
   x: number;
   y: number;
@@ -964,172 +939,6 @@ interface Rect {
 
 interface ParaCluster {
   indices: number[];
-}
-
-function composeLineText(items: RenderedTextItem[]): string {
-  if (items.length === 0) return '';
-  if (items.length === 1) return items[0].str.trim();
-  let text = items[0].str.trim();
-  for (let i = 1; i < items.length; i++) {
-    const prev = items[i - 1];
-    const cur = items[i];
-    const gap = cur.x - (prev.x + prev.width);
-    const gapThreshold = Math.max(cur.height * 0.2, 1.5);
-    const attachNoSpace =
-      gap <= gapThreshold ||
-      /^[,.;:!?%)\]}]/.test(cur.str) ||
-      /[(\[{]$/.test(prev.str);
-    text += attachNoSpace ? cur.str : ` ${cur.str}`;
-  }
-  return text.trim();
-}
-
-function toNumberArray(input: unknown): number[] {
-  if (!input) return [];
-  if (Array.isArray(input)) return input.map(Number).filter(Number.isFinite);
-  if (ArrayBuffer.isView(input)) return Array.from(input as unknown as ArrayLike<number>).map(Number).filter(Number.isFinite);
-  return [];
-}
-
-function buildRenderedTextItems(items: TextItem[], viewport: PdfViewport): RenderedTextItem[] {
-  const output: RenderedTextItem[] = [];
-  for (const it of items) {
-    if (!it.str || !it.str.trim()) continue;
-    const tx = pdfjsLib.Util.transform(viewport.transform, it.transform);
-    const x = tx[4];
-    const y = tx[5];
-    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
-    output.push({
-      str: it.str.trim(),
-      x,
-      y,
-      width: Math.max(0, it.width * viewport.scale),
-      height: Math.max(1, it.height * viewport.scale),
-    });
-  }
-  return output;
-}
-
-function groupRenderedLines(items: RenderedTextItem[]): RenderedTextLine[] {
-  if (items.length === 0) return [];
-  const sorted = [...items].sort((a, b) => {
-    if (Math.abs(a.y - b.y) > 2) return a.y - b.y;
-    return a.x - b.x;
-  });
-
-  const lines: RenderedTextItem[][] = [];
-  let cur: RenderedTextItem[] = [];
-  for (const it of sorted) {
-    if (cur.length === 0) {
-      cur.push(it);
-      continue;
-    }
-    const yRef = cur[0].y;
-    const hRef = cur.reduce((sum, x) => sum + x.height, 0) / cur.length;
-    const sameLine = Math.abs(it.y - yRef) <= Math.max(2.5, hRef * 0.45);
-    if (sameLine) {
-      cur.push(it);
-    } else {
-      cur.sort((a, b) => a.x - b.x);
-      lines.push(cur);
-      cur = [it];
-    }
-  }
-  if (cur.length > 0) {
-    cur.sort((a, b) => a.x - b.x);
-    lines.push(cur);
-  }
-
-  return lines.map((line) => {
-    const text = composeLineText(line);
-    const x1 = Math.min(...line.map(it => it.x));
-    const x2 = Math.max(...line.map(it => it.x + it.width));
-    const height = line.reduce((sum, it) => sum + it.height, 0) / line.length;
-    return { text, x1, x2, y: line[0].y, height, width: x2 - x1 };
-  });
-}
-
-function scoreCaptionParagraph(para: Paragraph, viewport: PdfViewport): number {
-  if (para.skipped || !para.text.trim()) return -999;
-  if (para.width < viewport.width * 0.66) return -999;
-  if (para.y < viewport.height * 0.10 || para.y > viewport.height * 0.72) return -999;
-  if (para.text.length < 80) return -999;
-
-  const lower = para.text.toLowerCase();
-  let score = 0;
-  if (/^(figure|fig\.)\s*\d/i.test(para.text)) score += 4;
-  if (lower.includes('mechanism') || lower.includes('biogenesis')) score += 3;
-  if (lower.includes('regular splicing') || lower.includes('back splicing')) score += 2;
-  if (/\([a-z]\)/i.test(para.text)) score += 1;
-  if (para.y < viewport.height * 0.45) score += 1;
-  score += Math.min(2, para.text.length / 180);
-  return score;
-}
-
-function multiplyTransform(a: number[], b: number[]): number[] {
-  return pdfjsLib.Util.transform(a, b);
-}
-
-function applyTransformPoint(x: number, y: number, m: number[]): [number, number] {
-  return [
-    m[0] * x + m[2] * y + m[4],
-    m[1] * x + m[3] * y + m[5],
-  ];
-}
-
-async function extractImageBoxes(page: PdfPage, viewport: PdfViewport): Promise<Rect[]> {
-  const opList = await page.getOperatorList();
-  const OPS = pdfjsLib.OPS || {};
-  const saveCode = OPS.save;
-  const restoreCode = OPS.restore;
-  const transformCode = OPS.transform;
-  const paintCode = OPS.paintImageXObject;
-  if (paintCode === undefined) return [];
-
-  let ctm = [1, 0, 0, 1, 0, 0];
-  const stateStack: number[][] = [];
-  const boxes: Rect[] = [];
-
-  for (let i = 0; i < opList.fnArray.length; i++) {
-    const fn = opList.fnArray[i];
-    const args = opList.argsArray[i];
-
-    if (saveCode !== undefined && fn === saveCode) {
-      stateStack.push([...ctm]);
-      continue;
-    }
-    if (restoreCode !== undefined && fn === restoreCode) {
-      ctm = stateStack.pop() || [1, 0, 0, 1, 0, 0];
-      continue;
-    }
-    if (transformCode !== undefined && fn === transformCode) {
-      const nums = toNumberArray(args);
-      if (nums.length >= 6) {
-        ctm = multiplyTransform(ctm, [nums[0], nums[1], nums[2], nums[3], nums[4], nums[5]]);
-      }
-      continue;
-    }
-    if (fn === paintCode) {
-      const corners = [
-        applyTransformPoint(0, 0, ctm),
-        applyTransformPoint(1, 0, ctm),
-        applyTransformPoint(1, 1, ctm),
-        applyTransformPoint(0, 1, ctm),
-      ].map(([px, py]) => applyTransformPoint(px, py, viewport.transform));
-      const xs = corners.map(([px]) => px);
-      const ys = corners.map(([, py]) => py);
-      const x1 = Math.min(...xs);
-      const x2 = Math.max(...xs);
-      const y1 = Math.min(...ys);
-      const y2 = Math.max(...ys);
-      const width = x2 - x1;
-      const height = y2 - y1;
-      if (width < 8 && height < 8) continue;
-      boxes.push({ x: x1, y: y1, width, height });
-    }
-  }
-
-  return boxes;
 }
 
 async function saveEntirePageAsImage(): Promise<void> {
@@ -1711,7 +1520,7 @@ async function extractBibliography() {
         // Match citation start (author-date Harvard format):
         // Split by the start of each bibliography entry if it is merged.
         // Even if not merged, it will find matches.
-        const refStartRegex = /\b([A-Z][a-zA-Z\u00C0-\u017F\-]+),\s+([A-Z]\.(?:\s*[A-Z]\.)*)/g;
+        const refStartRegex = /\b([A-Z][a-zA-Z\u00C0-\u017F-]+),\s+([A-Z]\.(?:\s*[A-Z]\.)*)/g;
         const matches: Array<{ index: number; author: string; initials: string }> = [];
         let match;
         while ((match = refStartRegex.exec(cleanText)) !== null) {

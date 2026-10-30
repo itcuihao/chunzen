@@ -3,7 +3,7 @@ import type { GlossaryEntry } from '../types/models';
 const ENGLISH_TERM = /^[a-zA-Z\s\-_]+$/;
 
 function escapeRegExp(s: string): string {
-  return s.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+  return s.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
 }
 
 /**

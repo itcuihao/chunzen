@@ -146,7 +146,7 @@ export function isReferenceStart(str: string, inReferencesSection: boolean = fal
   }
 
   // Author-date style check
-  const hasAuthorPattern = /^[A-Z][a-zA-Z\u00C0-\u017F\-]+,?\s+[A-Z]\b/.test(text);
+  const hasAuthorPattern = /^[A-Z][a-zA-Z\u00C0-\u017F-]+,?\s+[A-Z]\b/.test(text);
   if (hasAuthorPattern) {
     if (inReferencesSection) {
       if (isHanging === true) {

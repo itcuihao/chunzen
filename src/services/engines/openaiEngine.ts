@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { TranslationEngine, GlossaryEntry } from '../../types';
 import { customFetch } from '../../utils/fetch';
 import { getByPath, renderBodyTemplate } from '../../utils/engineHelpers';
+import { OPENAI_DEFAULT_BASE_URL, OPENAI_DEFAULT_MODEL } from './defaults';
 import { DEFAULT_TRANSLATION_SYSTEM_PROMPT, buildGlossaryPrompt } from './llmPrompt';
 
 /**
@@ -28,8 +29,8 @@ export class OpenAIEngine implements TranslationEngine {
   async complete(systemPrompt: string, userText: string, configOverride?: Record<string, any>): Promise<string> {
     const cfg = vscode.workspace.getConfiguration('chunzen.translation.openai');
     const apiKey = (configOverride?.apiKey ?? cfg.get<string>('apiKey', '')).trim();
-    const baseUrl = (configOverride?.baseUrl ?? cfg.get<string>('baseUrl', 'https://api.openai.com/v1')).trim();
-    const model = (configOverride?.model ?? cfg.get<string>('model', 'gpt-4o-mini')).trim();
+    const baseUrl = (configOverride?.baseUrl ?? cfg.get<string>('baseUrl', OPENAI_DEFAULT_BASE_URL)).trim();
+    const model = (configOverride?.model ?? cfg.get<string>('model', OPENAI_DEFAULT_MODEL)).trim();
 
     if (!apiKey) {
       throw new Error('OpenAI 兼容接口未配置 API Key');

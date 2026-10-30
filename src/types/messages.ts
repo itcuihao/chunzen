@@ -1,7 +1,7 @@
 // All message types for webview ↔ extension host communication
 
 import { GlossaryEntry, JournalInfo, TranslationHistoryEntry, SelectionHighlight } from './models';
-import { EngineConfig, GeneralSettings, JournalSource, LayoutConfig, MineruConfig } from './config';
+import { GeneralSettings, JournalSource, LayoutConfig, MineruConfig } from './config';
 
 // ── PDF Viewer → Extension ──
 
