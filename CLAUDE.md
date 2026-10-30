@@ -60,7 +60,9 @@ src/
     ├── sidePanel/                   # React 18 + zustand + Tailwind (built → dist/panel.js + panel.css)
     │   ├── index.tsx, App.tsx, store.ts (single zustand store), vscode.ts
     │   ├── textProcessing.ts        # Pure: placeholder protect/restore, DOI/URL merge, paragraph role classification (unit-tested)
-    │   └── components/              # TabBar, TranslationTab, JournalTab, GlossaryTab, SettingsTab, ExportButton
+    │   ├── paragraphLayout.ts       # Pure: AnnotatedPara model, role styles (paraClass), block grouping, zh sentence split/align (unit-tested)
+    │   ├── mineruText.ts            # Pure: MinerU markdown → HTML helpers (katex, highlights, jump links) (unit-tested)
+    │   └── components/              # TabBar, TranslationTab (state + layout), TextRenderers (hook-free JSX text helpers), JournalTab, GlossaryTab, SettingsTab, ExportButton
     └── pdfViewer/                   # Vanilla TypeScript (built → dist/pdfViewer.js)
         ├── index.ts, pdfRenderer.ts, selection.ts
         ├── textLayer.ts             # DOM/pdf.js-coupled layout: columns, paragraphs, tables, spans
@@ -110,6 +112,8 @@ All message types in `src/types/messages.ts` (`PdfViewerToExtMessage`, `ExtToPan
 
 ## Known Debt
 
-- Large files remain: `webviews/pdfViewer/textLayer.ts` (~2800 lines, `buildTextLayer` is a ~850-line function whose phases share many local variables), `webviews/sidePanel/components/TranslationTab.tsx` (~2450 lines of JSX + state). Extract pure helpers into `textRules.ts` / `textProcessing.ts`-style modules with tests first; do not restructure `buildTextLayer` without page-level fixtures (none exist yet — `test/*.png` are ignored screenshots).
+- `webviews/pdfViewer/textLayer.ts` (~2770 lines): `buildTextLayer` is a ~850-line function whose phases share many local variables. Extract pure helpers into `textRules.ts`-style modules with tests first; do not restructure it without page-level fixtures (none exist yet — `test/*.png` are ignored screenshots).
+- `webviews/sidePanel/components/TranslationTab.tsx` (~1410 lines) is now the component only (state, effects, layout). Its internal `render*` closures share component state; splitting them means passing props explicitly — do that only with the extension running to verify.
+- `webviews/sidePanel/components/TextRenderers.tsx` (~775 lines) holds the large citation/figure/DOI render functions verbatim; they are hook-free but have no tests (they return React nodes).
 - `GlossaryService` and `journalService` sources are not registry-driven like engines.
 - No webview/integration tests; behavior of the PDF layout pipeline is verified manually.
