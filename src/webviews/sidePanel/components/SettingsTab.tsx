@@ -3,6 +3,7 @@ import { useStore, EngineConfigFields } from '../store';
 import { postMessage } from '../vscode';
 import { Database, Sparkles, Trash2, Settings, ChevronDown, ChevronUp, Network, Play, CheckCircle2, XCircle, Info, Eye, EyeOff, Bot, GripVertical } from 'lucide-react';
 import type { JournalSourceType } from '../../../types/config';
+import { DEEPSEEK_EXAMPLE_BASE_URL, DEEPSEEK_EXAMPLE_MODEL } from '../../../services/engines/defaults';
 import { BUILD_INFO } from '../../../build-info';
 
 export const SettingsTab: FunctionComponent = () => {
@@ -38,8 +39,8 @@ const engineFields: Record<string, EngineField[]> = {
   ],
   openai: [
     { key: 'apiKey', label: 'API Key', type: 'password', placeholder: 'API Key' },
-    { key: 'baseUrl', label: 'Base URL', type: 'text', placeholder: '默认 https://api.deepseek.com' },
-    { key: 'model', label: '模型名称', type: 'text', placeholder: '默认 deepseek-flash' },
+    { key: 'baseUrl', label: 'Base URL', type: 'text', placeholder: '必填，如 https://api.deepseek.com' },
+    { key: 'model', label: '模型名称', type: 'text', placeholder: '必填，如 deepseek-flash' },
     { key: 'systemPrompt', label: '系统提示词', type: 'textarea', placeholder: '你是一个学术翻译专家...' }
   ],
   custom: [
@@ -302,11 +303,22 @@ const EngineConfigForm: FunctionComponent<EngineConfigFormProps> = ({
           <p>兼容 OpenAI 格式的服务均可使用，国内可直接访问的以 DeepSeek 为例：</p>
           <div className="grid grid-cols-[65px_1fr] gap-x-2 gap-y-1 mt-1.5 font-mono text-[9px] bg-secondary/10 p-2 rounded border border-border/20">
             <span className="font-sans font-bold text-foreground">Base URL:</span>
-            <code className="font-semibold text-foreground select-all bg-secondary/50 px-1 rounded">https://api.deepseek.com</code>
+            <code className="font-semibold text-foreground select-all bg-secondary/50 px-1 rounded">{DEEPSEEK_EXAMPLE_BASE_URL}</code>
 
             <span className="font-sans font-bold text-foreground">模型:</span>
-            <code className="font-semibold text-foreground select-all bg-secondary/50 px-1 rounded">deepseek-flash</code>
+            <code className="font-semibold text-foreground select-all bg-secondary/50 px-1 rounded">{DEEPSEEK_EXAMPLE_MODEL}</code>
           </div>
+          <p className="mt-1">接口地址和模型名需要您手动填写，API Key 只会发往您填写的地址。</p>
+          <button
+            type="button"
+            onClick={() => {
+              handleChange('baseUrl', DEEPSEEK_EXAMPLE_BASE_URL);
+              handleChange('model', DEEPSEEK_EXAMPLE_MODEL);
+            }}
+            className="self-start mt-1 px-2 py-1 rounded border border-border text-foreground hover:bg-secondary-hover/50 transition-colors"
+          >
+            填入示例（仍需点击保存）
+          </button>
         </div>
       )}
       {engineName === 'custom' && (

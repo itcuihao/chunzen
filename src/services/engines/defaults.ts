@@ -1,27 +1,37 @@
-/** OpenAI 兼容接口默认值 — 须与 package.json 中 chunzen.translation.openai.* 的 default 保持一致 */
-export const OPENAI_DEFAULT_BASE_URL = 'https://api.deepseek.com';
-export const OPENAI_DEFAULT_MODEL = 'deepseek-flash';
+/**
+ * OpenAI 兼容接口的连接设置没有默认值。
+ *
+ * 安全约束：API Key 只会发往用户亲手填写的地址，因此 Base URL 和模型名都必须由用户填写，
+ * 任何一项为空即视为“未配置”，引擎不会发出任何请求。不要给它们加默认值或回退值：
+ * 否则更新默认值时，已保存 Key 的用户会在不知情时把 Key 发往另一家服务商。
+ */
 
-/** 0.1.0 及之前的默认值。迁移时用来固定老用户的行为，见 legacyOpenAiPins */
-export const LEGACY_OPENAI_BASE_URL = 'https://api.openai.com/v1';
-export const LEGACY_OPENAI_MODEL = 'gpt-4o-mini';
-
-export interface OpenAiSettingsState {
-  apiKey: string;
-  /** 用户是否在任一作用域显式设置过该项（而不是依赖默认值） */
-  baseUrlExplicit: boolean;
-  modelExplicit: boolean;
-}
+/** 设置页“填入示例”按钮使用的 DeepSeek 示例：只在用户点击后写入表单，绝不作为回退值 */
+export const DEEPSEEK_EXAMPLE_BASE_URL = 'https://api.deepseek.com';
+export const DEEPSEEK_EXAMPLE_MODEL = 'deepseek-flash';
 
 /**
- * 默认值从 OpenAI 改为 DeepSeek 后，只填了 Key、没填地址/模型的老用户会在不知情时
- * 把 OpenAI 密钥发往 DeepSeek。对这类用户，把旧默认值显式写回设置，行为保持不变。
- * 没有配置 Key 的用户（包括新用户）不受影响，直接使用新默认值。
+ * 规范化并校验用户填写的 Base URL。
+ * 返回 undefined 表示不可用（为空或不是 http/https 地址），调用方必须据此拒绝发送请求。
+ * 末尾斜杠会被去掉，便于拼接 /chat/completions。
  */
-export function legacyOpenAiPins(state: OpenAiSettingsState): { baseUrl?: string; model?: string } {
-  if (!state.apiKey.trim()) return {};
-  const pins: { baseUrl?: string; model?: string } = {};
-  if (!state.baseUrlExplicit) pins.baseUrl = LEGACY_OPENAI_BASE_URL;
-  if (!state.modelExplicit) pins.model = LEGACY_OPENAI_MODEL;
-  return pins;
+export function resolveOpenAiBaseUrl(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const trimmed = raw.trim();
+  if (!trimmed) return undefined;
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    return undefined;
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return undefined;
+  return trimmed.replace(/\/+$/, '');
+}
+
+/** 模型名必须由用户填写；为空返回 undefined，调用方必须据此拒绝发送请求 */
+export function resolveOpenAiModel(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const trimmed = raw.trim();
+  return trimmed || undefined;
 }

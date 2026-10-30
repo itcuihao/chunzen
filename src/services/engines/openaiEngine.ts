@@ -1,8 +1,8 @@
 import * as vscode from 'vscode';
-import { TranslationEngine, GlossaryEntry } from '../../types';
+import type { TranslationEngine, GlossaryEntry } from '../../types';
 import { customFetch } from '../../utils/fetch';
 import { getByPath, renderBodyTemplate } from '../../utils/engineHelpers';
-import { OPENAI_DEFAULT_BASE_URL, OPENAI_DEFAULT_MODEL } from './defaults';
+import { resolveOpenAiBaseUrl, resolveOpenAiModel } from './defaults';
 import { DEFAULT_TRANSLATION_SYSTEM_PROMPT, buildGlossaryPrompt } from './llmPrompt';
 
 /**
@@ -16,7 +16,9 @@ export class OpenAIEngine implements TranslationEngine {
   isConfigured(): boolean {
     const cfg = vscode.workspace.getConfiguration('chunzen.translation.openai');
     const apiKey = (cfg.get<string>('apiKey') || '').trim();
-    return !!apiKey;
+    return !!apiKey
+      && !!resolveOpenAiBaseUrl(cfg.get<string>('baseUrl'))
+      && !!resolveOpenAiModel(cfg.get<string>('model'));
   }
 
   async translate(text: string, _sourceLang?: string, _targetLang?: string, glossary?: GlossaryEntry[], configOverride?: Record<string, any>): Promise<string> {
@@ -29,14 +31,21 @@ export class OpenAIEngine implements TranslationEngine {
   async complete(systemPrompt: string, userText: string, configOverride?: Record<string, any>): Promise<string> {
     const cfg = vscode.workspace.getConfiguration('chunzen.translation.openai');
     const apiKey = (configOverride?.apiKey ?? cfg.get<string>('apiKey', '')).trim();
-    const baseUrl = (configOverride?.baseUrl ?? cfg.get<string>('baseUrl', OPENAI_DEFAULT_BASE_URL)).trim();
-    const model = (configOverride?.model ?? cfg.get<string>('model', OPENAI_DEFAULT_MODEL)).trim();
+    const baseUrl = resolveOpenAiBaseUrl(configOverride?.baseUrl ?? cfg.get<string>('baseUrl'));
+    const model = resolveOpenAiModel(configOverride?.model ?? cfg.get<string>('model'));
 
     if (!apiKey) {
       throw new Error('OpenAI 兼容接口未配置 API Key');
     }
+    // API Key 只发往用户亲手填写的地址；地址为空或非法时在发请求之前就失败
+    if (!baseUrl) {
+      throw new Error('OpenAI 兼容接口未配置 Base URL，API Key 不会被发送。请在设置中填写接口地址');
+    }
+    if (!model) {
+      throw new Error('OpenAI 兼容接口未配置模型名称，API Key 不会被发送。请在设置中填写模型名称');
+    }
 
-    const resp = await customFetch(baseUrl.replace(/\/$/, '') + '/chat/completions', {
+    const resp = await customFetch(baseUrl + '/chat/completions', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,

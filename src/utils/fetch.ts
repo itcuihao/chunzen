@@ -3,7 +3,7 @@ import { HttpsProxyAgent } from 'https-proxy-agent';
 // @ts-ignore
 import { HttpProxyAgent } from 'http-proxy-agent';
 // @ts-ignore
-import nodeFetch, { RequestInit as NodeFetchRequestInit, Response } from 'node-fetch';
+import nodeFetch, { type RequestInit as NodeFetchRequestInit, type Response } from 'node-fetch';
 
 let vscode: any;
 try {

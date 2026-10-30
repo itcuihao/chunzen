@@ -3,7 +3,6 @@ import { GeneralSettings, JournalSourceType, LayoutConfig, MineruConfig } from '
 import { getEngineNames, getEngines, getTranslationPriority } from './engines/registry';
 import { normalizePriority } from './enginePriority';
 import { CACHE_MAX_SIZE, DEFAULT_LAYOUT_ENDPOINT, LAYOUT_TIMEOUT_MS, clampNumber, oneOf } from './settingsNormalize';
-import { OPENAI_DEFAULT_BASE_URL, OPENAI_DEFAULT_MODEL, legacyOpenAiPins } from './engines/defaults';
 
 const HOVER_STYLES = ['overlay', 'bar'] as const;
 const THEMES = ['auto', 'dark', 'light'] as const;
@@ -24,8 +23,8 @@ export class ConfigService {
       },
       openai: {
         apiKey: cfg.get<string>('openai.apiKey', '').trim(),
-        baseUrl: cfg.get<string>('openai.baseUrl', OPENAI_DEFAULT_BASE_URL).trim(),
-        model: cfg.get<string>('openai.model', OPENAI_DEFAULT_MODEL).trim(),
+        baseUrl: cfg.get<string>('openai.baseUrl', '').trim(),
+        model: cfg.get<string>('openai.model', '').trim(),
         systemPrompt: cfg.get<string>('openai.systemPrompt', '').trim()
       },
       custom: {
@@ -89,27 +88,6 @@ export class ConfigService {
     }));
   }
 
-  /**
-   * 一次性迁移：OpenAI 兼容接口默认值改为 DeepSeek 后，把已配置 Key 但依赖旧默认值的用户
-   * 固定在旧值上，避免 Key 被发往另一家服务商。幂等：写入后即为显式设置，不会重复触发。
-   */
-  async pinLegacyOpenAiDefaults(): Promise<void> {
-    const cfg = vscode.workspace.getConfiguration('chunzen.translation.openai');
-    const isExplicit = (key: string): boolean => {
-      const info = cfg.inspect<string>(key);
-      return info?.globalValue !== undefined
-        || info?.workspaceValue !== undefined
-        || info?.workspaceFolderValue !== undefined;
-    };
-    const pins = legacyOpenAiPins({
-      apiKey: cfg.get<string>('apiKey', ''),
-      baseUrlExplicit: isExplicit('baseUrl'),
-      modelExplicit: isExplicit('model')
-    });
-    if (pins.baseUrl) await cfg.update('baseUrl', pins.baseUrl, vscode.ConfigurationTarget.Global);
-    if (pins.model) await cfg.update('model', pins.model, vscode.ConfigurationTarget.Global);
-  }
-
   /** 保存用户拖拽后的引擎优先级（规范化后写入全局设置） */
   async saveEnginePriority(priority: string[]): Promise<void> {
     const normalized = normalizePriority(priority, getEngineNames());
@@ -120,8 +98,8 @@ export class ConfigService {
 
   /**
    * Save engine config to VSCode settings.
-   * Uses workspace settings (settings.json) for non-sensitive values,
-   * and secrets storage for API keys when available.
+   * All values, including API keys, are written to the user's global settings.json
+   * in plain text (SecretStorage is not used).
    */
   async saveEngineConfig(engineName: string, config: Record<string, string>): Promise<void> {
     const cfg = vscode.workspace.getConfiguration('chunzen.translation');

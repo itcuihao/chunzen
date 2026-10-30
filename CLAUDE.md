@@ -48,7 +48,7 @@ src/
 │   ├── settingsNormalize.ts         # Pure: clampNumber/oneOf + ranges shared by config read/save/cache
 │   └── engines/
 │       ├── registry.ts              # SINGLE source of truth for engine list + priority
-│       ├── defaults.ts              # OpenAI-compatible defaults (DeepSeek: api.deepseek.com / deepseek-flash, must match package.json) + legacyOpenAiPins migration rule
+│       ├── defaults.ts              # No defaults for OpenAI-compatible baseUrl/model (security); resolveOpenAiBaseUrl/Model validators; DeepSeek example constants used only by the settings button
 │       ├── llmPrompt.ts             # Shared default system prompt + glossary prompt builder
 │       ├── baiduEngine.ts / deeplEngine.ts / openaiEngine.ts (also CustomHttpEngine)
 ├── types/                           # messages.ts (all webview↔ext messages), models.ts, config.ts, index.ts re-export
@@ -98,7 +98,8 @@ scripts/                             # build.sh, release.js, update.sh, layout_e
 - Defaults live in exactly one code place: `engines/defaults.ts` (OpenAI), `settingsNormalize.ts` (numeric ranges, layout endpoint). Numeric/enum constraints are also declared in `package.json` (`minimum`/`maximum`/`enum`) — keep both in sync.
 - Do not add user-facing settings for features that are disabled. MinerU is disabled (`getMineruConfig()` returns `enable: false`, no `chunzen.mineru.*` settings, UI entry commented out); re-enabling means restoring settings + UI together.
 - Only OpenAI-compatible chat-completions format is supported for LLM engines (intentional).
-- Changing a default that existing users may rely on needs a migration, not just a new literal. Example: the OpenAI-compatible default moved from OpenAI to DeepSeek, so `ConfigService.pinLegacyOpenAiDefaults()` (run at activation) writes the old values back for users who already set an API key but never set baseUrl/model. Keep the decision logic pure (`legacyOpenAiPins`) so it stays testable.
+- **API keys only go to an address the user typed themselves.** `openai.baseUrl` and `openai.model` have NO default and no fallback anywhere; if either (or the key) is empty/invalid the engine reports "not configured" and `complete()` throws before any request. Never add a default endpoint, a hardcoded provider host, or a code path that sends a key elsewhere. `DEEPSEEK_EXAMPLE_*` exist only so the settings page can fill the form when the user clicks the button; `tests/engineDefaults.test.ts` fails if a provider address appears in the request path or in `package.json` defaults.
+- Do not log, post to the webview for any purpose other than the settings form, or include in error messages any API key / secret / token / auth header.
 
 ### Communication Protocol
 
