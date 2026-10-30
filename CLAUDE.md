@@ -13,7 +13,8 @@ npm run compile          # webpack multi-target build → dist/{extension,panel,
 npm run watch            # webpack --watch
 npm run package          # production build (for vsce package)
 npm run typecheck        # tsc --noEmit (src only)
-npm test                 # node --test tests/*.test.ts (pure-logic unit tests, no vscode needed)
+npm test                 # unit tests + PDF page layout snapshots (no vscode needed)
+UPDATE_SNAPSHOTS=1 npm test   # regenerate tests/__snapshots__/*.json after an intentional layout change — review the diff before committing
 npm run deploy           # scripts/build.sh local — generate src/build-info.ts, build, package, install
 npm run release          # scripts/release.js — bump versions & tag
 ```
@@ -68,7 +69,7 @@ src/
         ├── textLayer.ts             # DOM/pdf.js-coupled layout: columns, paragraphs, tables, spans
         └── textRules.ts             # Pure: normalizeText, splitIntoSentences, isMathArtifact, isReferenceStart, computeParagraphMetrics (unit-tested)
         └── styles/pdfViewer.css
-tests/                               # node:test unit tests for the pure modules above
+tests/                               # node:test: unit tests for pure modules + pageLayout.test.ts (snapshots in __snapshots__/, harness in support/pageHarness.ts)
 scripts/                             # build.sh, release.js, update.sh, layout_endpoint.py (optional layout model server)
 ```
 
@@ -104,16 +105,17 @@ All message types in `src/types/messages.ts` (`PdfViewerToExtMessage`, `ExtToPan
 
 ## Key Technical Details
 
-- **PDF.js 3.11.174 is loaded from cdnjs** (CSP allows `cdnjs.cloudflare.com`), not bundled. `pdfjs-dist` in devDependencies is currently unused by the source.
+- **PDF.js 3.11.174 is loaded from cdnjs** (CSP allows `cdnjs.cloudflare.com`), not bundled. `pdfjs-dist` is pinned to the same `3.11.174` in devDependencies and used **only** by `tests/support/pageHarness.ts`; keep both versions in sync when upgrading (layout differs between PDF.js majors, e.g. 5.x finds no horizontal rules).
 - **CSP nonce** per webview HTML via `utils/nonce.ts`; `retainContextWhenHidden: true`; `supportsMultipleEditorsPerDocument: false`
 - Network calls go through `utils/fetch.ts` `customFetch` (proxy aware) — use it for new HTTP code
-- **Tests**: only pure modules (no `vscode` import) are unit-tested, via `node --test` with Node's native TypeScript stripping (Node ≥ 22.6). Keep new logic in pure modules to keep it testable; relative imports in tests use the `.ts` extension.
+- **Tests**: only modules without a `vscode` import are tested, via `node --test` with Node's native TypeScript stripping (Node ≥ 22.6) plus `tests/support/resolve-ts.mjs` for extensionless imports. Use `import type` for type-only imports in modules the tests load. Keep new logic in pure modules to keep it testable.
+- **Page layout snapshots** (`tests/pageLayout.test.ts`): run the real `getPageText` + `buildTextLayer` on pages of the PDFs in `pdf/` and compare a fingerprint (block type, column, rounded box, sentence count, text hash — no prose) with the committed snapshot. They skip if the sample PDFs are absent. A failing snapshot means layout output changed: decide whether that is intended, then regenerate.
 - **tsconfig**: `jsx: "react-jsx"`, `jsxImportSource: "react"`, `include: ["src"]`
 
 ## Known Debt
 
-- `webviews/pdfViewer/textLayer.ts` (~2770 lines): `buildTextLayer` is a ~850-line function whose phases share many local variables. Extract pure helpers into `textRules.ts`-style modules with tests first; do not restructure it without page-level fixtures (none exist yet — `test/*.png` are ignored screenshots).
-- `webviews/sidePanel/components/TranslationTab.tsx` (~1410 lines) is now the component only (state, effects, layout). Its internal `render*` closures share component state; splitting them means passing props explicitly — do that only with the extension running to verify.
+- `webviews/pdfViewer/textLayer.ts` (~2770 lines): `buildTextLayer` is a ~850-line function whose phases share many local variables. It is now covered by page-level snapshots (2 papers, 11 pages), so extract pure helpers out of it incrementally and let the snapshots catch regressions. Snapshots only cover these two papers' layouts (no tables-with-rules, sidebars or 3-column pages).
+- `webviews/sidePanel/components/TranslationTab.tsx` (~1410 lines) is the component only (state, effects, layout). Its internal `render*` closures share component state; splitting them means passing props explicitly — do that only with the extension running to verify.
 - `webviews/sidePanel/components/TextRenderers.tsx` (~775 lines) holds the large citation/figure/DOI render functions verbatim; they are hook-free but have no tests (they return React nodes).
 - `GlossaryService` and `journalService` sources are not registry-driven like engines.
-- No webview/integration tests; behavior of the PDF layout pipeline is verified manually.
+- No webview/integration tests beyond the layout snapshots.

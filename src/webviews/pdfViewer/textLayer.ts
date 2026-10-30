@@ -1,7 +1,7 @@
 // Text layer: extracts text items, detects columns, filters math, dehyphenates, renders span overlay
 
 import { normalizeText, splitIntoSentences, isMathArtifact, isReferenceStart, computeParagraphMetrics } from './textRules';
-import { TextItem, PdfViewport, RichTextContent, ParagraphBoundary, HorizontalRule } from './pdfRenderer';
+import type { TextItem, PdfViewport, RichTextContent, ParagraphBoundary, HorizontalRule } from './pdfRenderer';
 
 declare const pdfjsLib: {
   Util: { transform(transform: number[], viewportTransform: number[]): number[] };
