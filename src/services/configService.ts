@@ -1,11 +1,12 @@
 import * as vscode from 'vscode';
 import { GeneralSettings, LayoutConfig, MineruConfig } from '../types/config';
+import { getEngines, getTranslationPriority } from './engines/registry';
 
 export class ConfigService {
   getTranslationConfig() {
     const cfg = vscode.workspace.getConfiguration('chunzen.translation');
     return {
-      priority: cfg.get<string[]>('priority', ['baidu', 'deepl', 'openai', 'custom']),
+      priority: getTranslationPriority(),
       baidu: {
         appId: cfg.get<string>('baidu.appId', '').trim(),
         secretKey: cfg.get<string>('baidu.secretKey', '').trim()
@@ -25,6 +26,12 @@ export class ConfigService {
         headers: cfg.get<Record<string, string>>('custom.headers', {}),
         bodyTemplate: cfg.get<string>('custom.bodyTemplate', '{"text": "{{text}}", "target_lang": "ZH"}'),
         responsePath: cfg.get<string>('custom.responsePath', 'result').trim()
+      },
+      anthropic: {
+        apiKey: cfg.get<string>('anthropic.apiKey', '').trim(),
+        baseUrl: cfg.get<string>('anthropic.baseUrl', '').trim(),
+        model: cfg.get<string>('anthropic.model', 'mimo-v2.5-pro').trim(),
+        systemPrompt: cfg.get<string>('anthropic.systemPrompt', '').trim()
       }
     };
   }
@@ -76,18 +83,18 @@ export class ConfigService {
       baidu: { appId: tc.baidu.appId, secretKey: tc.baidu.secretKey },
       deepl: { apiKey: tc.deepl.apiKey, freeApi: String(tc.deepl.freeApi) },
       openai: { apiKey: tc.openai.apiKey, baseUrl: tc.openai.baseUrl, model: tc.openai.model, systemPrompt: tc.openai.systemPrompt },
-      custom: { url: tc.custom.url, headers: JSON.stringify(tc.custom.headers), bodyTemplate: tc.custom.bodyTemplate, responsePath: tc.custom.responsePath }
+      custom: { url: tc.custom.url, headers: JSON.stringify(tc.custom.headers), bodyTemplate: tc.custom.bodyTemplate, responsePath: tc.custom.responsePath },
+      anthropic: { apiKey: tc.anthropic.apiKey, baseUrl: tc.anthropic.baseUrl, model: tc.anthropic.model, systemPrompt: tc.anthropic.systemPrompt }
     };
   }
 
   getEngineStatuses(): Array<{ name: string; displayName: string; configured: boolean }> {
-    const cfg = this.getTranslationConfig();
-    return [
-      { name: 'baidu', displayName: '百度翻译', configured: !!(cfg.baidu.appId && cfg.baidu.secretKey) },
-      { name: 'deepl', displayName: 'DeepL', configured: !!cfg.deepl.apiKey },
-      { name: 'openai', displayName: 'OpenAI 兼容接口', configured: !!cfg.openai.apiKey },
-      { name: 'custom', displayName: '自定义接口', configured: !!cfg.custom.url }
-    ];
+    // 状态直接取自引擎注册表，新增引擎无需在此处登记
+    return getEngines().map(e => ({
+      name: e.name,
+      displayName: e.displayName,
+      configured: e.isConfigured()
+    }));
   }
 
   /**

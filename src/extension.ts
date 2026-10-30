@@ -11,9 +11,9 @@ export function activate(context: vscode.ExtensionContext) {
   console.log('春蝉插件已激活');
 
   // 初始化服务
-  const translationService = new TranslationService(context);
-  const journalService = new JournalService();
   const glossaryService = new GlossaryService(context);
+  const translationService = new TranslationService(context, glossaryService);
+  const journalService = new JournalService();
   const historyService = new HistoryService(context);
   const configService = new ConfigService();
   const sidePanel = new SidePanelProvider(

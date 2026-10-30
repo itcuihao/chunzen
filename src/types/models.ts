@@ -9,6 +9,8 @@ export interface TranslationResult {
 export interface TranslationEngine {
   name: string;
   displayName: string;
+  /** 为 true 时引擎自行通过 prompt 应用术语表，无需本地后处理 */
+  usesGlossaryPrompt?: boolean;
   isConfigured(): boolean;
   translate(text: string, sourceLang?: string, targetLang?: string, glossary?: GlossaryEntry[], configOverride?: Record<string, any>): Promise<string>;
 }

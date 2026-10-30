@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
 import { TranslationEngine, GlossaryEntry } from '../../types';
 import { customFetch } from '../../utils/fetch';
+import { getByPath, renderBodyTemplate } from '../../utils/engineHelpers';
+import { DEFAULT_TRANSLATION_SYSTEM_PROMPT, buildGlossaryPrompt } from './llmPrompt';
 
 /**
  * OpenAI / Gemini / 自定义兼容接口翻译引擎
@@ -8,6 +10,7 @@ import { customFetch } from '../../utils/fetch';
 export class OpenAIEngine implements TranslationEngine {
   name = 'openai';
   displayName = 'OpenAI 兼容接口';
+  usesGlossaryPrompt = true;
 
   isConfigured(): boolean {
     const cfg = vscode.workspace.getConfiguration('chunzen.translation.openai');
@@ -20,19 +23,11 @@ export class OpenAIEngine implements TranslationEngine {
     const apiKey = (configOverride?.apiKey ?? cfg.get<string>('apiKey', '')).trim();
     const baseUrl = (configOverride?.baseUrl ?? cfg.get<string>('baseUrl', 'https://api.openai.com/v1')).trim();
     const model = (configOverride?.model ?? cfg.get<string>('model', 'gpt-4o-mini')).trim();
-    const systemPrompt = (configOverride?.systemPrompt ?? cfg.get<string>(
-      'systemPrompt',
-      '你是一个学术论文翻译专家。请将以下英文学术句子翻译成中文，保持专业术语准确，语言简洁流畅。只输出翻译结果，不要解释。'
-    )).trim();
+    const systemPrompt = (configOverride?.systemPrompt ?? cfg.get<string>('systemPrompt', '')).trim()
+      || DEFAULT_TRANSLATION_SYSTEM_PROMPT;
 
     if (!apiKey) {
       throw new Error('OpenAI 兼容接口未配置 API Key');
-    }
-
-    let glossaryPrompt = '';
-    if (glossary && glossary.length > 0) {
-      glossaryPrompt = '\n\n在翻译时，请严格遵守以下学术专有名词/术语对照表：\n' +
-        glossary.map(g => `- ${g.source} -> ${g.target}`).join('\n');
     }
 
     const url = baseUrl.replace(/\/$/, '') + '/chat/completions';
@@ -46,7 +41,7 @@ export class OpenAIEngine implements TranslationEngine {
       body: JSON.stringify({
         model,
         messages: [
-          { role: 'system', content: systemPrompt + glossaryPrompt },
+          { role: 'system', content: systemPrompt + buildGlossaryPrompt(glossary) },
           { role: 'user', content: text }
         ],
         temperature: 0.3,
@@ -117,7 +112,7 @@ export class CustomHttpEngine implements TranslationEngine {
       throw new Error('自定义接口未配置 URL');
     }
 
-    const body = bodyTemplate.replace('{{text}}', JSON.stringify(text).slice(1, -1));
+    const body = renderBodyTemplate(bodyTemplate, text);
 
     const resp = await customFetch(url, {
       method: 'POST',
@@ -136,12 +131,7 @@ export class CustomHttpEngine implements TranslationEngine {
     const data = (await resp.json()) as Record<string, unknown>;
 
     // 按路径提取结果，如 "data.translation"
-    const result = responsePath.split('.').reduce((obj: any, key: string) => {
-      if (obj && typeof obj === 'object') {
-        return (obj as Record<string, unknown>)[key];
-      }
-      return undefined;
-    }, data);
+    const result = getByPath(data, responsePath);
 
     if (typeof result !== 'string') {
       throw new Error(`自定义接口响应路径 "${responsePath}" 未找到字符串结果`);
