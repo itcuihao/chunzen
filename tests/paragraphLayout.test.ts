@@ -76,3 +76,22 @@ test('groupParagraphsIntoBlocks: 相邻同类合并，单栏/多栏交替切块'
   ]);
   assert.deepEqual(groupParagraphsIntoBlocks([], 2), []);
 });
+
+import { splitChineseSentences, alignSentences, paraClass } from '../src/webviews/sidePanel/paragraphLayout.ts';
+
+test('paraClass: 按角色与模式取样式；正文粗体追加 font-bold，标题不重复', () => {
+  const body = para({ id: 'b', role: 'body', bold: true });
+  assert.ok(paraClass(body, 'en').includes('font-bold'));
+  assert.ok(paraClass(body, 'en').includes('indent-4'));
+  assert.ok(paraClass(body, 'zh').includes('indent-8'));
+  assert.ok(!paraClass(body, 'bi-zh').includes('indent'));
+  const title = para({ id: 't', role: 'title', bold: true });
+  assert.equal(paraClass(title, 'en').match(/font-bold/g)?.length, 1);
+});
+
+test('paraClass: 标题续行使用更小的下边距', () => {
+  const prev = para({ id: 'a', text: 'Deep Learning for', role: 'heading' });
+  const cur = para({ id: 'b', text: 'Medical Imaging', role: 'heading' });
+  assert.ok(paraClass(cur, 'en', prev).includes('mb-1'));
+  assert.ok(paraClass(cur, 'en').includes('mb-3'));
+});

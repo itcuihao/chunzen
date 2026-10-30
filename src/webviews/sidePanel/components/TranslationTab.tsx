@@ -19,12 +19,12 @@ import {
 import {
   AnnotatedPara,
   LayoutBlock,
-  EN_STYLES, ZH_STYLES, BI_EN_STYLES, BI_ZH_STYLES, PARA_SPACING, ZH_INDENT, EN_INDENT,
-  isHeadingContinuation,
   isCollapsibleNoiseSkip,
   previousSemanticParagraph,
   getParagraphColumnIndex,
-  groupParagraphsIntoBlocks
+  groupParagraphsIntoBlocks,
+  alignSentences,
+  paraClass
 } from '../paragraphLayout';
 import { renderMathInText, applyHighlightsToMineruText, applyJumpLinksToMineruText } from '../mineruText';
 import { renderTextWithHighlightsAndCitations, renderTextWithPlaceholders } from './TextRenderers';
@@ -490,47 +490,6 @@ export const TranslationTab: FunctionComponent = () => {
     });
   };
 
-  const splitChineseSentences = (text: string): string[] => {
-    const results: string[] = [];
-    const re = /[^。！？]*[。！？]+(?:\s|$)/g;
-    let m: RegExpExecArray | null;
-    let last = 0;
-    while ((m = re.exec(text)) !== null) {
-      results.push(m[0]);
-      last = re.lastIndex;
-    }
-    if (last < text.length) {
-      const rest = text.slice(last).trim();
-      if (rest) results.push(rest);
-    }
-    return results.filter(s => s.trim().length > 0);
-  };
-
-  const alignSentences = (
-    englishSentences: Array<{ id: string; text: string }> | undefined,
-    translatedText: string
-  ): Array<{ id: string; text: string }> => {
-    if (!translatedText) return [];
-    if (!englishSentences || englishSentences.length === 0) {
-      return [{ id: '', text: translatedText }];
-    }
-
-    const chineseSentences = splitChineseSentences(translatedText);
-
-    if (chineseSentences.length === englishSentences.length) {
-      return englishSentences.map((eng, idx) => ({
-        id: eng.id,
-        text: chineseSentences[idx]
-      }));
-    }
-
-    if (englishSentences.length === 1) {
-      return [{ id: englishSentences[0].id, text: translatedText }];
-    }
-
-    return [{ id: englishSentences[0].id, text: translatedText }];
-  };
-
   const renderEnglishParagraph = (para: AnnotatedPara) => {
     if (para.sentences && para.sentences.length > 0) {
       return para.sentences.map((sent) => (
@@ -619,27 +578,6 @@ export const TranslationTab: FunctionComponent = () => {
         useStore.setState({ mineruStatus: 'parsing', mineruProgress: 0 });
       }
     }
-  };
-
-  const paraClass = (
-    para: AnnotatedPara,
-    mode: 'en' | 'zh' | 'bi-en' | 'bi-zh',
-    prevPara?: AnnotatedPara
-  ): string => {
-    const role = para.role;
-    const styles = mode === 'en' ? EN_STYLES
-      : mode === 'zh' ? ZH_STYLES
-      : mode === 'bi-en' ? BI_EN_STYLES
-      : BI_ZH_STYLES;
-    const indent = (mode === 'en') ? EN_INDENT[role]
-      : (mode === 'zh') ? ZH_INDENT[role]
-      : '';
-    // Add font-bold from PDF data when role doesn't already include bold
-    const boldClass = (para.bold && role !== 'title' && role !== 'heading') ? 'font-bold' : '';
-    const spacing = (role === 'heading' && isHeadingContinuation(prevPara, para))
-      ? 'mb-1'
-      : PARA_SPACING[role];
-    return `${styles[role]} ${indent} ${boldClass} ${spacing}`;
   };
 
   const renderTableRow = (id: string, text: string, className: string) => {

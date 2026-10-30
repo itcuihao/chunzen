@@ -24,49 +24,49 @@ export interface AnnotatedPara {
 
 // ── Role-based style maps ──
 
-export const EN_STYLES: Record<ParagraphRole, string> = {
+const EN_STYLES: Record<ParagraphRole, string> = {
   title: 'font-serif text-[16px] font-bold text-center leading-[1.4] tracking-wide',
   heading: 'font-serif text-[12px] font-bold leading-[1.5]',
   body: 'font-serif text-[11px] leading-[1.65] text-justify',
   small: 'font-serif text-[9.5px] leading-[1.5] text-secondary-foreground/80',
 };
 
-export const ZH_STYLES: Record<ParagraphRole, string> = {
+const ZH_STYLES: Record<ParagraphRole, string> = {
   title: 'font-zhSerif text-[18px] font-bold text-center leading-[1.6] tracking-wider',
   heading: 'font-zhSerif text-[15px] font-bold leading-[1.7]',
   body: 'font-zhSerif text-[14px] font-medium leading-[2.0] tracking-wide text-justify',
   small: 'font-zhSerif text-[12px] leading-[1.7]',
 };
 
-export const BI_EN_STYLES: Record<ParagraphRole, string> = {
+const BI_EN_STYLES: Record<ParagraphRole, string> = {
   title: 'font-serif text-[13px] font-bold text-center leading-[1.4] italic',
   heading: 'font-serif text-[11px] font-bold leading-[1.4] italic',
   body: 'font-serif text-[11px] leading-[1.5] italic text-secondary-foreground',
   small: 'font-serif text-[9.5px] leading-[1.4] italic text-secondary-foreground/60',
 };
 
-export const BI_ZH_STYLES: Record<ParagraphRole, string> = {
+const BI_ZH_STYLES: Record<ParagraphRole, string> = {
   title: 'font-zhSerif text-[16px] font-bold text-center leading-[1.6] tracking-wide',
   heading: 'font-zhSerif text-[14px] font-bold leading-[1.8] tracking-wide',
   body: 'font-zhSerif text-[14px] leading-[2.0] font-medium tracking-wide text-foreground',
   small: 'font-zhSerif text-[12px] leading-[1.7] text-secondary-foreground',
 };
 
-export const PARA_SPACING: Record<ParagraphRole, string> = {
+const PARA_SPACING: Record<ParagraphRole, string> = {
   title: 'mb-5',
   heading: 'mb-3 mt-4 para-heading',
   body: 'mb-3',
   small: 'mb-2',
 };
 
-export const ZH_INDENT: Record<ParagraphRole, string> = {
+const ZH_INDENT: Record<ParagraphRole, string> = {
   title: '',
   heading: '',
   body: 'indent-8',
   small: '',
 };
 
-export const EN_INDENT: Record<ParagraphRole, string> = {
+const EN_INDENT: Record<ParagraphRole, string> = {
   title: '',
   heading: '',
   body: 'indent-4',
@@ -139,4 +139,66 @@ export function groupParagraphsIntoBlocks(paragraphs: AnnotatedPara[], columnsCo
     }
   }
   return blocks;
+}
+
+export function splitChineseSentences(text: string): string[] {
+  const results: string[] = [];
+  const re = /[^。！？]*[。！？]+(?:\s|$)/g;
+  let m: RegExpExecArray | null;
+  let last = 0;
+  while ((m = re.exec(text)) !== null) {
+    results.push(m[0]);
+    last = re.lastIndex;
+  }
+  if (last < text.length) {
+    const rest = text.slice(last).trim();
+    if (rest) results.push(rest);
+  }
+  return results.filter(s => s.trim().length > 0);
+}
+
+export function alignSentences(
+  englishSentences: Array<{ id: string; text: string }> | undefined,
+  translatedText: string
+): Array<{ id: string; text: string }> {
+  if (!translatedText) return [];
+  if (!englishSentences || englishSentences.length === 0) {
+    return [{ id: '', text: translatedText }];
+  }
+
+  const chineseSentences = splitChineseSentences(translatedText);
+
+  if (chineseSentences.length === englishSentences.length) {
+    return englishSentences.map((eng, idx) => ({
+      id: eng.id,
+      text: chineseSentences[idx]
+    }));
+  }
+
+  if (englishSentences.length === 1) {
+    return [{ id: englishSentences[0].id, text: translatedText }];
+  }
+
+  return [{ id: englishSentences[0].id, text: translatedText }];
+}
+
+export function paraClass(
+  para: AnnotatedPara,
+  mode: 'en' | 'zh' | 'bi-en' | 'bi-zh',
+  prevPara?: AnnotatedPara
+): string {
+  const role = para.role;
+  const styles = mode === 'en' ? EN_STYLES
+    : mode === 'zh' ? ZH_STYLES
+    : mode === 'bi-en' ? BI_EN_STYLES
+    : BI_ZH_STYLES;
+  const indent = (mode === 'en') ? EN_INDENT[role]
+    : (mode === 'zh') ? ZH_INDENT[role]
+    : '';
+  // Add font-bold from PDF data when role doesn't already include bold
+  const boldClass = (para.bold && role !== 'title' && role !== 'heading') ? 'font-bold' : '';
+  const spacing = (role === 'heading' && isHeadingContinuation(prevPara, para))
+    ? 'mb-1'
+    : PARA_SPACING[role];
+  return `${styles[role]} ${indent} ${boldClass} ${spacing}`;
 }
