@@ -534,7 +534,7 @@ function runKMeans1d(values: number[], k: number): { centroids: number[]; sse: n
     centroids.push(sorted[idx]);
   }
 
-  let assignments = new Array(values.length).fill(0);
+  const assignments = new Array(values.length).fill(0);
   for (let iter = 0; iter < 10; iter++) {
     // assign
     for (let i = 0; i < values.length; i++) {
@@ -1460,7 +1460,7 @@ window.addEventListener('message', event => {
           return paragraphs;
         };
 
-        let regex = buildRegex(num);
+        const regex = buildRegex(num);
         console.log(`[PDF Viewer] Searching for caption query: "${message.query}" -> regex: ${regex}`);
 
         let matchedPage = -1;

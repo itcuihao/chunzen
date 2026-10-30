@@ -283,7 +283,7 @@
     "deploy": "bash scripts/build.sh local",
     "release": "node scripts/release.js",
     "compile-tests": "tsc -p . --outDir out",
-    "lint": "eslint src --ext ts",
+    "lint": "eslint src --ext ts,tsx",
     "typecheck": "tsc -p . --noEmit",
     "test": "node --test tests/*.test.ts"
   },
