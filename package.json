@@ -130,13 +130,13 @@
         },
         "chunzen.translation.openai.baseUrl": {
           "type": "string",
-          "default": "https://api.openai.com/v1",
-          "description": "OpenAI 兼容接口 Base URL（如 DeepSeek：https://api.deepseek.com/v1）"
+          "default": "https://api.deepseek.com",
+          "description": "OpenAI 兼容接口 Base URL（默认 DeepSeek；其他兼容服务填其地址，如 https://api.openai.com/v1）"
         },
         "chunzen.translation.openai.model": {
           "type": "string",
-          "default": "gpt-4o-mini",
-          "description": "使用的模型名称（如 deepseek-chat）"
+          "default": "deepseek-flash",
+          "description": "使用的模型名称（默认 deepseek-flash）"
         },
         "chunzen.translation.openai.systemPrompt": {
           "type": "string",

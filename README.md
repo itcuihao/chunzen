@@ -92,13 +92,13 @@
 | 设置项 | 说明 | 默认值 |
 |--------|------|--------|
 | API Key | 对应平台的密钥 | — |
-| Base URL | API 端点地址 | `https://api.openai.com/v1` |
-| 模型名称 | 使用的模型 | `gpt-4o-mini` |
+| Base URL | API 端点地址 | `https://api.deepseek.com` |
+| 模型名称 | 使用的模型 | `deepseek-flash` |
 | 系统提示词 | 翻译风格指令 | 学术翻译专家提示词 |
 
 **DeepSeek 示例配置：**
-- Base URL: `https://api.deepseek.com/v1`
-- Model: `deepseek-chat`
+- Base URL: `https://api.deepseek.com`
+- Model: `deepseek-flash`
 - API Key: 在 [DeepSeek 开放平台](https://platform.deepseek.com) 获取
 
 ### 百度翻译

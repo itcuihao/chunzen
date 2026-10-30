@@ -16,6 +16,7 @@ export function activate(context: vscode.ExtensionContext) {
   const journalService = new JournalService();
   const historyService = new HistoryService(context);
   const configService = new ConfigService();
+  configService.pinLegacyOpenAiDefaults().catch(err => console.warn('[ChunZen] 迁移 OpenAI 默认值失败:', err));
   const sidePanel = new SidePanelProvider(
     context,
     translationService,

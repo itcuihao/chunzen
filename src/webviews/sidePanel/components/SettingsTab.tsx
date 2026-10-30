@@ -38,8 +38,8 @@ const engineFields: Record<string, EngineField[]> = {
   ],
   openai: [
     { key: 'apiKey', label: 'API Key', type: 'password', placeholder: 'API Key' },
-    { key: 'baseUrl', label: 'Base URL', type: 'text', placeholder: '默认 https://api.openai.com/v1' },
-    { key: 'model', label: '模型名称', type: 'text', placeholder: '如 deepseek-chat' },
+    { key: 'baseUrl', label: 'Base URL', type: 'text', placeholder: '默认 https://api.deepseek.com' },
+    { key: 'model', label: '模型名称', type: 'text', placeholder: '默认 deepseek-flash' },
     { key: 'systemPrompt', label: '系统提示词', type: 'textarea', placeholder: '你是一个学术翻译专家...' }
   ],
   custom: [
@@ -302,10 +302,10 @@ const EngineConfigForm: FunctionComponent<EngineConfigFormProps> = ({
           <p>兼容 OpenAI 格式的服务均可使用，国内可直接访问的以 DeepSeek 为例：</p>
           <div className="grid grid-cols-[65px_1fr] gap-x-2 gap-y-1 mt-1.5 font-mono text-[9px] bg-secondary/10 p-2 rounded border border-border/20">
             <span className="font-sans font-bold text-foreground">Base URL:</span>
-            <code className="font-semibold text-foreground select-all bg-secondary/50 px-1 rounded">https://api.deepseek.com/v1</code>
+            <code className="font-semibold text-foreground select-all bg-secondary/50 px-1 rounded">https://api.deepseek.com</code>
 
             <span className="font-sans font-bold text-foreground">模型:</span>
-            <code className="font-semibold text-foreground select-all bg-secondary/50 px-1 rounded">deepseek-chat</code>
+            <code className="font-semibold text-foreground select-all bg-secondary/50 px-1 rounded">deepseek-flash</code>
           </div>
         </div>
       )}
