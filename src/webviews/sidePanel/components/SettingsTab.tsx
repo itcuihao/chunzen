@@ -37,9 +37,9 @@ const engineFields: Record<string, EngineField[]> = {
     { key: 'freeApi', label: '使用免费版 API', type: 'toggle' }
   ],
   openai: [
-    { key: 'apiKey', label: 'API Key', type: 'password', placeholder: 'API Key (支持 DeepSeek / Gemini / OpenAI 等)' },
+    { key: 'apiKey', label: 'API Key', type: 'password', placeholder: 'API Key' },
     { key: 'baseUrl', label: 'Base URL', type: 'text', placeholder: '默认 https://api.openai.com/v1' },
-    { key: 'model', label: '模型名称', type: 'text', placeholder: '如 gpt-4o-mini 或 deepseek-chat' },
+    { key: 'model', label: '模型名称', type: 'text', placeholder: '如 deepseek-chat' },
     { key: 'systemPrompt', label: '系统提示词', type: 'textarea', placeholder: '你是一个学术翻译专家...' }
   ],
   custom: [
@@ -298,22 +298,15 @@ const EngineConfigForm: FunctionComponent<EngineConfigFormProps> = ({
     <div className="p-4 border-t border-border bg-card/5 flex flex-col gap-3.5 animate-in slide-in-from-top-1 duration-150">
       {engineName === 'openai' && (
         <div className="text-[10px] text-secondary-foreground/75 bg-secondary/20 p-2.5 rounded border border-border/40 leading-relaxed flex flex-col gap-1 font-sans">
-          <div className="font-bold text-accent">适配说明与推荐：</div>
-          <p>此通道完全兼容支持 OpenAI 格式协议的各大平台服务商。若没有官方 API Key，推荐申请以下国内直接访问的极速/低成本源并填入下方：</p>
-          <ul className="list-disc pl-4 flex flex-col gap-1 mt-1 font-mono">
-            <li>
-              <span className="font-sans font-semibold text-foreground">DeepSeek (推荐)</span>: Base URL 填 <code className="font-semibold text-foreground select-all bg-secondary/50 px-1 rounded">https://api.deepseek.com/v1</code>，模型填 <code className="font-semibold text-foreground select-all bg-secondary/50 px-1 rounded">deepseek-chat</code>
-            </li>
-            <li>
-              <span className="font-sans font-semibold text-foreground">硅基流动 (送大额免费试用)</span>: Base URL 填 <code className="font-semibold text-foreground select-all bg-secondary/50 px-1 rounded">https://api.siliconflow.cn/v1</code>，模型填 <code className="font-semibold text-foreground select-all bg-secondary/50 px-1 rounded">deepseek-ai/DeepSeek-V3</code>
-            </li>
-            <li>
-              <span className="font-sans font-semibold text-foreground">智谱 GLM (送超大免费试用)</span>: Base URL 填 <code className="font-semibold text-foreground select-all bg-secondary/50 px-1 rounded">https://open.bigmodel.cn/api/paas/v4</code>，模型填 <code className="font-semibold text-foreground select-all bg-secondary/50 px-1 rounded">glm-4-flash</code>
-            </li>
-            <li>
-              <span className="font-sans font-semibold text-foreground">本地大模型 (Ollama)</span>: Base URL 填 <code className="font-semibold text-foreground select-all bg-secondary/50 px-1 rounded">http://localhost:11434/v1</code>，模型填你本地拉取的名称
-            </li>
-          </ul>
+          <div className="font-bold text-accent">配置示例（DeepSeek）：</div>
+          <p>兼容 OpenAI 格式的服务均可使用，国内可直接访问的以 DeepSeek 为例：</p>
+          <div className="grid grid-cols-[65px_1fr] gap-x-2 gap-y-1 mt-1.5 font-mono text-[9px] bg-secondary/10 p-2 rounded border border-border/20">
+            <span className="font-sans font-bold text-foreground">Base URL:</span>
+            <code className="font-semibold text-foreground select-all bg-secondary/50 px-1 rounded">https://api.deepseek.com/v1</code>
+
+            <span className="font-sans font-bold text-foreground">模型:</span>
+            <code className="font-semibold text-foreground select-all bg-secondary/50 px-1 rounded">deepseek-chat</code>
+          </div>
         </div>
       )}
       {engineName === 'custom' && (

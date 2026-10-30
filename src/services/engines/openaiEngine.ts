@@ -6,7 +6,7 @@ import { OPENAI_DEFAULT_BASE_URL, OPENAI_DEFAULT_MODEL } from './defaults';
 import { DEFAULT_TRANSLATION_SYSTEM_PROMPT, buildGlossaryPrompt } from './llmPrompt';
 
 /**
- * OpenAI / Gemini / 自定义兼容接口翻译引擎
+ * OpenAI 兼容接口翻译引擎（DeepSeek 等遵循 chat/completions 格式的服务均可）
  */
 export class OpenAIEngine implements TranslationEngine {
   name = 'openai';

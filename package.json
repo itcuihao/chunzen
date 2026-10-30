@@ -126,17 +126,17 @@
         "chunzen.translation.openai.apiKey": {
           "type": "string",
           "default": "",
-          "description": "OpenAI / MiniMax / 兼容接口 API Key"
+          "description": "OpenAI 兼容接口 API Key（如 DeepSeek）"
         },
         "chunzen.translation.openai.baseUrl": {
           "type": "string",
           "default": "https://api.openai.com/v1",
-          "description": "OpenAI 兼容接口 Base URL（可填 MiniMax、Gemini 等代理地址）"
+          "description": "OpenAI 兼容接口 Base URL（如 DeepSeek：https://api.deepseek.com/v1）"
         },
         "chunzen.translation.openai.model": {
           "type": "string",
           "default": "gpt-4o-mini",
-          "description": "使用的模型名称（如 gpt-4o-mini、MiniMax-M2.7 等）"
+          "description": "使用的模型名称（如 deepseek-chat）"
         },
         "chunzen.translation.openai.systemPrompt": {
           "type": "string",

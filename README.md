@@ -25,7 +25,7 @@
 - **整页翻译** — 一键翻译当前页面所有段落，支持原文/译文/双语对照三种视图
 - **多引擎自动切换** — 按优先级依次尝试，首个成功即返回：
   - 百度翻译
-  - AI 翻译（OpenAI 兼容接口，支持 DeepSeek、SiliconFlow、Gemini 等）
+  - AI 翻译（OpenAI 兼容接口，推荐 DeepSeek）
   - DeepL（免费/专业版；未配置时在设置中折叠，已有账号可展开配置）
   - 自定义 HTTP 接口
 - **拖拽排序引擎优先级** — 在设置面板中拖拽调整引擎顺序
@@ -87,7 +87,7 @@
 
 ### AI 翻译（OpenAI 兼容接口）
 
-支持任何 OpenAI 兼容的 API，包括 MiniMax、Gemini、本地模型等：
+支持任何 OpenAI 兼容的 API，推荐使用 DeepSeek：
 
 | 设置项 | 说明 | 默认值 |
 |--------|------|--------|
@@ -96,10 +96,10 @@
 | 模型名称 | 使用的模型 | `gpt-4o-mini` |
 | 系统提示词 | 翻译风格指令 | 学术翻译专家提示词 |
 
-**MiniMax 示例配置：**
-- Base URL: `https://api.minimaxi.com/v1`
-- Model: `MiniMax-M2.7`
-- API Key: 在 [MiniMax 开放平台](https://platform.minimaxi.com) 获取
+**DeepSeek 示例配置：**
+- Base URL: `https://api.deepseek.com/v1`
+- Model: `deepseek-chat`
+- API Key: 在 [DeepSeek 开放平台](https://platform.deepseek.com) 获取
 
 ### 百度翻译
 
