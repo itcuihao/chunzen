@@ -1059,7 +1059,7 @@ export const TranslationTab: FunctionComponent = () => {
         <div className="bg-error/5 border border-error/20 rounded-lg p-2.5 flex flex-col gap-1.5 text-[10px] text-error font-semibold animate-in slide-in-from-top duration-200">
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-1">
-              ⚠️ AI 排版重构失败，已自动使用标准排版
+              AI 排版重构失败，已自动使用标准排版
             </span>
             <div className="flex items-center gap-2">
               <button 

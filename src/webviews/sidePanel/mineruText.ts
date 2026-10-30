@@ -50,7 +50,7 @@ export function applyHighlightsToMineruText(
       purple: 'bg-purple-100 dark:bg-purple-950/40 border-b-2 border-purple-400/80 text-foreground'
     };
     const colorClass = colorsMap[hl.color] || colorsMap.yellow;
-    const noteBadge = hl.note ? '<span class="inline-flex items-center ml-0.5 select-none text-[9px] bg-amber-500/20 border border-amber-500/40 text-amber-600 rounded px-0.5 font-sans leading-none transform scale-90 origin-left">✍️</span>' : '';
+    const noteBadge = hl.note ? '<span class="inline-flex items-center ml-0.5 select-none text-[9px] bg-amber-500/20 border border-amber-500/40 text-amber-600 rounded px-0.5 font-sans leading-none transform scale-90 origin-left">注</span>' : '';
 
     result = result.replace(regex, `<span class="${colorClass} cursor-pointer hover:opacity-90 transition-all px-0.5 rounded-sm relative inline" data-highlight-id="${hl.id}" title="${hl.note ? `批注: ${hl.note}` : '点击查看/修改高亮'}">${hl.text}${noteBadge}</span>`);
   }

@@ -657,8 +657,8 @@ export class SidePanelProvider {
     try {
       const transResult = await this.translationService.translate(text);
       return llmError
-        ? `⚠️ [API 错误: ${llmError instanceof Error ? llmError.message : String(llmError)}]\n\n已自动为您降级到机器翻译：\n\n${transResult.text}`
-        : `💡 [提示] 请在设置中配置 **OpenAI 兼容接口**，以获得大模型驱动的深度学术释义。以下为机器翻译结果：\n\n${transResult.text}`;
+        ? `[API 错误: ${llmError instanceof Error ? llmError.message : String(llmError)}]\n\n已自动为您降级到机器翻译：\n\n${transResult.text}`
+        : `[提示] 请在设置中配置 **OpenAI 兼容接口**，以获得大模型驱动的深度学术释义。以下为机器翻译结果：\n\n${transResult.text}`;
     } catch (transErr) {
       if (llmError) throw llmError;
       throw new Error('未配置大模型接口，且机器翻译不可用: ' + (transErr instanceof Error ? transErr.message : String(transErr)));

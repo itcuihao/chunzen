@@ -298,7 +298,7 @@ const EngineConfigForm: FunctionComponent<EngineConfigFormProps> = ({
     <div className="p-4 border-t border-border bg-card/5 flex flex-col gap-3.5 animate-in slide-in-from-top-1 duration-150">
       {engineName === 'openai' && (
         <div className="text-[10px] text-secondary-foreground/75 bg-secondary/20 p-2.5 rounded border border-border/40 leading-relaxed flex flex-col gap-1 font-sans">
-          <div className="font-bold text-accent">💡 适配说明与推荐：</div>
+          <div className="font-bold text-accent">适配说明与推荐：</div>
           <p>此通道完全兼容支持 OpenAI 格式协议的各大平台服务商。若没有官方 API Key，推荐申请以下国内直接访问的极速/低成本源并填入下方：</p>
           <ul className="list-disc pl-4 flex flex-col gap-1 mt-1 font-mono">
             <li>
@@ -318,7 +318,7 @@ const EngineConfigForm: FunctionComponent<EngineConfigFormProps> = ({
       )}
       {engineName === 'custom' && (
         <div className="text-[10px] text-secondary-foreground/75 bg-secondary/20 p-2.5 rounded border border-border/40 leading-relaxed flex flex-col gap-1 font-sans">
-          <div className="font-bold text-accent">💡 自定义接口配置示例：</div>
+          <div className="font-bold text-accent">自定义接口配置示例：</div>
           <p>用于对接任何第三方或自建的 POST 翻译接口。以下是一个典型的配置示例：</p>
           <div className="grid grid-cols-[65px_1fr] gap-x-2 gap-y-1 mt-1.5 font-mono text-[9px] bg-secondary/10 p-2 rounded border border-border/20">
             <span className="font-sans font-bold text-foreground">接口 URL:</span>

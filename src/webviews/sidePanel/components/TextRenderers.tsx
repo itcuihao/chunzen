@@ -350,7 +350,7 @@ export function renderTextWithHighlightsAndCitations(
           {renderFormattedContent(part)}
           {matchedHl.note && (
             <span className="inline-flex items-center ml-0.5 select-none text-[9px] bg-amber-500/20 border border-amber-500/40 text-amber-600 rounded px-0.5 font-sans leading-none transform scale-90 origin-left">
-              ✍️
+              注
             </span>
           )}
         </span>
