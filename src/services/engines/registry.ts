@@ -4,7 +4,6 @@ import { normalizePriority } from '../enginePriority';
 import { BaiduEngine } from './baiduEngine';
 import { DeepLEngine } from './deeplEngine';
 import { OpenAIEngine, CustomHttpEngine } from './openaiEngine';
-import { AnthropicEngine } from './anthropicEngine';
 
 /**
  * 翻译引擎注册表 — 引擎列表的唯一来源（同时决定默认优先级顺序）。
@@ -15,7 +14,6 @@ const ENGINES: readonly TranslationEngine[] = [
   new BaiduEngine(),
   new DeepLEngine(),
   new OpenAIEngine(),
-  new AnthropicEngine(),
   new CustomHttpEngine()
 ];
 

@@ -26,12 +26,6 @@ export class ConfigService {
         headers: cfg.get<Record<string, string>>('custom.headers', {}),
         bodyTemplate: cfg.get<string>('custom.bodyTemplate', '{"text": "{{text}}", "target_lang": "ZH"}'),
         responsePath: cfg.get<string>('custom.responsePath', 'result').trim()
-      },
-      anthropic: {
-        apiKey: cfg.get<string>('anthropic.apiKey', '').trim(),
-        baseUrl: cfg.get<string>('anthropic.baseUrl', '').trim(),
-        model: cfg.get<string>('anthropic.model', 'mimo-v2.5-pro').trim(),
-        systemPrompt: cfg.get<string>('anthropic.systemPrompt', '').trim()
       }
     };
   }
@@ -83,8 +77,7 @@ export class ConfigService {
       baidu: { appId: tc.baidu.appId, secretKey: tc.baidu.secretKey },
       deepl: { apiKey: tc.deepl.apiKey, freeApi: String(tc.deepl.freeApi) },
       openai: { apiKey: tc.openai.apiKey, baseUrl: tc.openai.baseUrl, model: tc.openai.model, systemPrompt: tc.openai.systemPrompt },
-      custom: { url: tc.custom.url, headers: JSON.stringify(tc.custom.headers), bodyTemplate: tc.custom.bodyTemplate, responsePath: tc.custom.responsePath },
-      anthropic: { apiKey: tc.anthropic.apiKey, baseUrl: tc.anthropic.baseUrl, model: tc.anthropic.model, systemPrompt: tc.anthropic.systemPrompt }
+      custom: { url: tc.custom.url, headers: JSON.stringify(tc.custom.headers), bodyTemplate: tc.custom.bodyTemplate, responsePath: tc.custom.responsePath }
     };
   }
 

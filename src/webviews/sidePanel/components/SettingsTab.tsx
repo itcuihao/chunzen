@@ -42,12 +42,6 @@ const engineFields: Record<string, EngineField[]> = {
     { key: 'model', label: '模型名称', type: 'text', placeholder: '如 gpt-4o-mini 或 deepseek-chat' },
     { key: 'systemPrompt', label: '系统提示词', type: 'textarea', placeholder: '你是一个学术翻译专家...' }
   ],
-  anthropic: [
-    { key: 'apiKey', label: 'API Key', type: 'password', placeholder: 'Anthropic 兼容接口 API Key' },
-    { key: 'baseUrl', label: 'Base URL', type: 'text', placeholder: '如 https://api.anthropic.com（不含 /v1/messages）' },
-    { key: 'model', label: '模型名称', type: 'text', placeholder: '模型名称' },
-    { key: 'systemPrompt', label: '系统提示词', type: 'textarea', placeholder: '留空使用默认学术翻译提示词' }
-  ],
   custom: [
     { key: 'url', label: '接口 URL', type: 'text', placeholder: 'https://example.com/translate' },
     { key: 'headers', label: '请求头 (JSON)', type: 'textarea', placeholder: '{"Authorization": "Bearer xxx"}' },

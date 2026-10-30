@@ -45,7 +45,7 @@ src/
 │   └── engines/
 │       ├── registry.ts              # SINGLE source of truth for engine list + priority
 │       ├── llmPrompt.ts             # Shared default system prompt + glossary prompt builder
-│       ├── baiduEngine.ts / deeplEngine.ts / openaiEngine.ts (also CustomHttpEngine) / anthropicEngine.ts
+│       ├── baiduEngine.ts / deeplEngine.ts / openaiEngine.ts (also CustomHttpEngine)
 ├── types/                           # messages.ts (all webview↔ext messages), models.ts, config.ts, index.ts re-export
 ├── utils/
 │   ├── fetch.ts                     # customFetch: VSCode/env proxy aware, falls back to direct
@@ -79,7 +79,7 @@ scripts/                             # build.sh, release.js, update.sh, layout_e
 
 ### Translation Engines
 
-- Engines implement `TranslationEngine` (`types/models.ts`); LLM-style engines also implement `complete(system, user)`, which `TranslationService.completeWithLlm` uses for AI explain. `usesGlossaryPrompt: true` means the engine applies the glossary via prompt; otherwise `TranslationService` post-processes with `applyGlossary`.
+- Engines implement `TranslationEngine` (`types/models.ts`); LLM-style engines (only OpenAI-compatible; Anthropic's format is intentionally unsupported) also implement `complete(system, user)`, which `TranslationService.completeWithLlm` uses for AI explain. `usesGlossaryPrompt: true` means the engine applies the glossary via prompt; otherwise `TranslationService` post-processes with `applyGlossary`.
 - `engines/registry.ts` owns the engine list. Priority = user's `chunzen.translation.priority`, normalized (unknown/duplicate dropped, newly added engines appended), so adding an engine never requires users to edit settings.
 - **Adding an engine**: implement the class → add to `ENGINES` in `registry.ts` → add `chunzen.translation.<name>.*` to `package.json` → add the field set to `ConfigService.getTranslationConfig/getEngineConfigs` and `engineFields` in `SettingsTab.tsx`. `getEngineStatuses()` and fallback need no change.
 - Engine config accepts a `configOverride` (used by "test connection" with unsaved inputs).

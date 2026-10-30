@@ -2,14 +2,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizePriority } from '../src/services/enginePriority.ts';
 
-const known = ['baidu', 'deepl', 'openai', 'anthropic', 'custom'];
+const known = ['baidu', 'deepl', 'openai', 'custom'];
 
 test('保留用户顺序，并把缺失的新引擎追加到末尾', () => {
-  assert.deepEqual(normalizePriority(['openai', 'baidu'], known), ['openai', 'baidu', 'deepl', 'anthropic', 'custom']);
+  assert.deepEqual(normalizePriority(['openai', 'baidu'], known), ['openai', 'baidu', 'deepl', 'custom']);
 });
 
 test('去除未知、重复与非字符串项', () => {
-  assert.deepEqual(normalizePriority(['x', 'baidu', 'baidu', 3, null], known), ['baidu', 'deepl', 'openai', 'anthropic', 'custom']);
+  assert.deepEqual(normalizePriority(['x', 'baidu', 'baidu', 3, null], known), ['baidu', 'deepl', 'openai', 'custom']);
 });
 
 test('配置不是数组时回落到默认顺序', () => {
