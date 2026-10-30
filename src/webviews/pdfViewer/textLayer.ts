@@ -1,6 +1,6 @@
 // Text layer: extracts text items, detects columns, filters math, dehyphenates, renders span overlay
 
-import { normalizeText, splitIntoSentences, isMathArtifact, isReferenceStart } from './textRules';
+import { normalizeText, splitIntoSentences, isMathArtifact, isReferenceStart, computeParagraphMetrics } from './textRules';
 import { TextItem, PdfViewport, RichTextContent, ParagraphBoundary, HorizontalRule } from './pdfRenderer';
 
 declare const pdfjsLib: {
@@ -986,25 +986,11 @@ export function buildTextLayer(
   for (const para of mergedLogicalParas) {
     if (!para.items.length) continue;
 
-    // Compute bounding box
-    const xs = para.items.map(it => it.x);
-    const ys = para.items.map(it => it.y);
-    const xMaxs = para.items.map(it => it.x + it.width);
-    const yMaxs = para.items.map(it => it.y + it.height);
-    const x = Math.min(...xs);
-    const y = Math.min(...ys);
-    const width = Math.max(...xMaxs) - x;
-    const height = Math.max(...yMaxs) - y;
-    const fontSize = para.items.reduce((sum, it) => sum + it.height, 0) / para.items.length;
+    const { x, y, width, height, fontSize } = computeParagraphMetrics(para.items);
     const skipReason = shouldSkipParagraphForTranslation(para, viewport.width, viewport.height, firstBodyY, hasSidebar);
     const shouldSkip = skipReason !== null;
 
-    // Detect bold: check if majority of items (by text length) use a bold font
-    const boldScore = para.items.reduce((score, it) => {
-      return isBoldFont(it.fontName) ? score + it.str.length : score;
-    }, 0);
-    const totalLen = para.items.reduce((sum, it) => sum + it.str.length, 0);
-    const isBold = totalLen > 0 && (boldScore / totalLen) > 0.5;
+    const isBold = isMostlyBold(para.items);
 
     const sentsList: Array<{ id: string; text: string }> = [];
     emitRuleMarkersBefore(y);
@@ -1067,6 +1053,17 @@ export function buildTextLayer(
     paragraphs,
     columnsCount: detectedColumnsCount
   };
+}
+
+/** 按字符数加权，超过一半使用粗体字体即视为粗体段落 */
+function isMostlyBold(items: Array<{ str: string; fontName: string }>): boolean {
+  let bold = 0;
+  let total = 0;
+  for (const it of items) {
+    total += it.str.length;
+    if (isBoldFont(it.fontName)) bold += it.str.length;
+  }
+  return total > 0 && bold / total > 0.5;
 }
 
 // ── Block detection predicates ──

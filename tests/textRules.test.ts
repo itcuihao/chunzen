@@ -59,3 +59,20 @@ test('isReferenceStart: 参考文献区内的 hanging 缩进决定作者-年份�
   assert.equal(isReferenceStart('Smith, J. Title of paper', true, true), true);
   assert.equal(isReferenceStart('Smith, J. Title of paper 2020', true, false), false);
 });
+
+import { computeParagraphMetrics } from '../src/webviews/pdfViewer/textRules.ts';
+
+test('computeParagraphMetrics: 外接框与平均字号', () => {
+  const m = computeParagraphMetrics([
+    { x: 10, y: 20, width: 50, height: 10 },
+    { x: 30, y: 35, width: 100, height: 12 }
+  ]);
+  assert.deepEqual(m, { x: 10, y: 20, width: 120, height: 27, fontSize: 11 });
+});
+
+test('computeParagraphMetrics: 单个 item', () => {
+  assert.deepEqual(
+    computeParagraphMetrics([{ x: 5, y: 6, width: 7, height: 8 }]),
+    { x: 5, y: 6, width: 7, height: 8, fontSize: 8 }
+  );
+});

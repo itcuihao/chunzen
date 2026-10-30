@@ -163,3 +163,32 @@ export function isReferenceStart(str: string, inReferencesSection: boolean = fal
 
   return false;
 }
+
+export interface ParagraphMetrics {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  fontSize: number;
+}
+
+/** 段落外接框与平均字号（纯计算，items 坐标已是视口像素） */
+export function computeParagraphMetrics(
+  items: Array<{ x: number; y: number; width: number; height: number }>
+): ParagraphMetrics {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity, heightSum = 0;
+  for (const it of items) {
+    minX = Math.min(minX, it.x);
+    minY = Math.min(minY, it.y);
+    maxX = Math.max(maxX, it.x + it.width);
+    maxY = Math.max(maxY, it.y + it.height);
+    heightSum += it.height;
+  }
+  return {
+    x: minX,
+    y: minY,
+    width: maxX - minX,
+    height: maxY - minY,
+    fontSize: heightSum / items.length
+  };
+}
