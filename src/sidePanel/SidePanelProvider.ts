@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import * as fs from 'fs';
 import { ExtToPanelMessage, PanelToExtMessage } from '../types/messages';
 import { JournalInfo } from '../types/models';
 import { getNonce } from '../utils/nonce';
@@ -9,7 +8,7 @@ import { HistoryService } from '../services/historyService';
 import { ConfigService } from '../services/configService';
 import { HighlightService } from '../services/highlightService';
 import { LayoutConfig } from '../types/config';
-import { MineruService } from '../services/mineruService';
+import { MineruCoordinator } from './mineruCoordinator';
 import { AI_EXPLAIN_SYSTEM_PROMPT } from '../services/engines/llmPrompt';
 
 export class SidePanelProvider {
@@ -22,9 +21,7 @@ export class SidePanelProvider {
   private configService: ConfigService;
   private highlightService: HighlightService;
   private layoutTerminal: vscode.Terminal | undefined;
-  private mineruService = new MineruService();
-  private mineruCache = new Map<string, string>();
-  private activeMineruTaskUri: string | null = null;
+  private mineru: MineruCoordinator;
 
   public onTranslatePageRequested?: (pageNumber: number, paragraphs: Array<{ id: string; text: string }>) => Promise<void>;
   public onGetPdfPagesTextRequested?: (scope: 'read' | 'all' | 'custom', customRange?: string) => void;
@@ -63,6 +60,11 @@ export class SidePanelProvider {
     this.historyService = historyService;
     this.configService = configService;
     this.highlightService = new HighlightService(context);
+    this.mineru = new MineruCoordinator(
+      () => this.configService.getMineruConfig(),
+      msg => this.postMessage(msg),
+      () => this.activePdfUri
+    );
 
     vscode.window.onDidCloseTerminal((terminal) => {
       if (this.layoutTerminal === terminal) {
@@ -80,166 +82,7 @@ export class SidePanelProvider {
         pdfUri: uriStr
       });
       this.syncHighlights();
-      this.triggerMineruParse(uriStr);
-    }
-  }
-
-  private async triggerMineruParse(uriStr: string, force: boolean = false) {
-    const config = this.configService.getMineruConfig();
-    if (!config.enable && !force) return;
-
-    if (force) {
-      this.activeMineruTaskUri = null;
-      this.mineruCache.delete(uriStr);
-    }
-
-    if (this.mineruCache.has(uriStr)) {
-      const cachedMd = this.mineruCache.get(uriStr)!;
-      this.postMessage({
-        type: 'mineru-complete',
-        markdown: cachedMd
-      });
-      return;
-    }
-
-    if (this.activeMineruTaskUri === uriStr) {
-      return;
-    }
-
-    this.activeMineruTaskUri = uriStr;
-    this.postMessage({
-      type: 'mineru-status',
-      status: 'parsing',
-      progress: 0,
-      message: '正在初始化 MinerU AI 解析...'
-    });
-
-    try {
-      const uri = vscode.Uri.parse(uriStr);
-      let targetPath = uri.fsPath;
-
-      if (uri.scheme !== 'file') {
-        targetPath = uri.toString();
-      }
-
-      const apiType = config.apiType || 'agent';
-      const token = config.token || '';
-
-      // If standard mode is enabled, token exists, and local file size is <= 10MB, run dual-path progressive parsing
-      const runDual = apiType === 'standard' && token && uri.scheme === 'file' && fs.existsSync(targetPath) && (fs.statSync(targetPath).size / (1024 * 1024) <= 10);
-
-      if (runDual) {
-        console.log(`[ChunZen] 启动“渐进式双路解析”机制: 同时并发请求 Agent (免Token极速版) 与 Standard (VLM高精度版)`);
-
-        let agentCompleted = false;
-        let standardCompleted = false;
-
-        // Route 1: Free Agent API (Fast preview)
-        const agentPromise = this.mineruService.parsePdf(
-          targetPath,
-          { ...config, apiType: 'agent' },
-          (status, progress, message) => {
-            if (!standardCompleted) {
-              this.postMessage({
-                type: 'mineru-status',
-                status: 'parsing',
-                progress: Math.min(60, Math.round(progress * 0.6)), // Scale down agent progress
-                message: `[极速通道] ${message}`
-              });
-            }
-          }
-        ).then(markdown => {
-          agentCompleted = true;
-          if (!standardCompleted) {
-            console.log(`[ChunZen] 极速通道 (Agent API) 率先解析完成，渲染临时 AI 增强视图`);
-            this.mineruCache.set(uriStr, markdown);
-            this.postMessage({
-              type: 'mineru-complete',
-              markdown
-            });
-          }
-        }).catch(err => {
-          console.warn('[ChunZen] 极速通道 (Agent API) 失败，继续等待精度通道...', err.message);
-        });
-
-        // Route 2: Standard API (High precision VLM)
-        const standardPromise = this.mineruService.parsePdf(
-          targetPath,
-          config,
-          (status, progress, message) => {
-            this.postMessage({
-              type: 'mineru-status',
-              status: 'parsing',
-              progress,
-              message: `[精度通道] ${message}`
-            });
-          }
-        ).then(markdown => {
-          standardCompleted = true;
-          console.log(`[ChunZen] 精度通道 (Standard VLM) 解析完成，自动无缝覆盖升级为最高质量版面`);
-          this.mineruCache.set(uriStr, markdown);
-          this.postMessage({
-            type: 'mineru-complete',
-            markdown
-          });
-        }).catch(err => {
-          standardCompleted = true;
-          console.error('[ChunZen] 精度通道 (Standard VLM) 失败:', err);
-          if (!agentCompleted) {
-            this.postMessage({
-              type: 'mineru-status',
-              status: 'failed',
-              error: err.message || '精度通道解析失败'
-            });
-          }
-        });
-
-        Promise.allSettled([agentPromise, standardPromise]).finally(() => {
-          if (this.activeMineruTaskUri === uriStr) {
-            this.activeMineruTaskUri = null;
-          }
-        });
-
-      } else {
-        // Single path execution
-        console.log(`[ChunZen] 启动 MinerU 单路解析 (${apiType} 模式)`);
-        const markdown = await this.mineruService.parsePdf(
-          targetPath,
-          config,
-          (status, progress, message) => {
-            this.postMessage({
-              type: 'mineru-status',
-              status: 'parsing',
-              progress,
-              message
-            });
-          }
-        );
-
-        this.mineruCache.set(uriStr, markdown);
-        if (this.activePdfUri === uriStr) {
-          this.postMessage({
-            type: 'mineru-complete',
-            markdown
-          });
-        }
-        if (this.activeMineruTaskUri === uriStr) {
-          this.activeMineruTaskUri = null;
-        }
-      }
-
-    } catch (err: any) {
-      console.error('[ChunZen] MinerU 解析出错:', err);
-      if (this.activePdfUri === uriStr) {
-        this.postMessage({
-          type: 'mineru-status',
-          status: 'failed',
-          error: err.message || '未知错误'
-        });
-      }
-      if (this.activeMineruTaskUri === uriStr) {
-        this.activeMineruTaskUri = null;
-      }
+      this.mineru.parse(uriStr);
     }
   }
 
@@ -277,155 +120,7 @@ export class SidePanelProvider {
     this.panel.webview.html = this.getHtml(this.panel.webview);
 
     this.panel.webview.onDidReceiveMessage(
-      async (msg: PanelToExtMessage) => {
-        switch (msg.type) {
-          case 'toggle-panel-fullscreen':
-            if (this.panel) {
-              this.panel.reveal(vscode.ViewColumn.Two);
-              await vscode.commands.executeCommand('workbench.action.toggleMaximizeEditorGroup');
-            }
-            break;
-          case 'request-state':
-            this.sendInitState();
-            break;
-          case 'add-term':
-            this.glossaryService.add(msg.source, msg.target, msg.category);
-            this.syncGlossary();
-            break;
-          case 'update-term':
-            this.glossaryService.update(msg.id, msg.source, msg.target, msg.category);
-            this.syncGlossary();
-            break;
-          case 'delete-term':
-            this.glossaryService.delete(msg.id);
-            this.syncGlossary();
-            break;
-          case 'clear-cache':
-            this.translationService.clearCache();
-            this.syncCacheSize();
-            break;
-          case 'clear-history':
-            this.historyService.clear();
-            this.syncHistory();
-            break;
-          case 'test-engine':
-            await this.handleTestEngine(msg.engineName, msg.config);
-            break;
-          case 'save-engine-config':
-            await this.configService.saveEngineConfig(msg.engineName, msg.config);
-            this.postMessage({
-              type: 'engines-status',
-              engines: this.configService.getEngineStatuses()
-            });
-            break;
-          case 'save-general-settings':
-            await this.configService.saveGeneralSettings(msg.settings);
-            this.sendInitState();
-            if (msg.settings.layout && typeof msg.settings.layout.useModel === 'boolean') {
-              if (this.configService.getLayoutConfig().useModel) {
-                await this.ensureLayoutEndpointStarted();
-              } else {
-                this.stopLayoutEndpoint();
-              }
-            }
-            await this.onLayoutConfigChanged?.(this.configService.getLayoutConfig());
-            if (this.activePdfUri) {
-              const mineruConfig = this.configService.getMineruConfig();
-              if (mineruConfig.enable) {
-                this.triggerMineruParse(this.activePdfUri);
-              } else {
-                this.postMessage({
-                  type: 'mineru-status',
-                  status: 'idle'
-                });
-              }
-            }
-            break;
-          case 'trigger-mineru-parse': {
-            if (msg.pdfUri) {
-              this.triggerMineruParse(msg.pdfUri, true);
-            }
-            break;
-          }
-          case 'import-glossary':
-            await this.handleImportGlossary(msg.defaultCategory);
-            break;
-          case 'restore-default-glossary':
-            this.glossaryService.restoreDefaults();
-            this.syncGlossary();
-            vscode.window.showInformationMessage('已成功恢复默认学术常用术语库');
-            break;
-          case 'export-translations':
-            await this.handleExport(msg.format);
-            break;
-          case 'export-doc':
-            this.currentExportConfig = {
-              untranslatedPolicy: msg.untranslatedPolicy,
-              format: msg.format,
-              documentName: msg.documentName
-            };
-            this.postMessage({
-              type: 'export-progress',
-              current: 0,
-              total: 100,
-              stage: 'extracting'
-            });
-            this.onGetPdfPagesTextRequested?.(msg.scope, msg.customRange);
-            break;
-          case 'translate-page':
-            await this.onTranslatePageRequested?.(msg.pageNumber, msg.paragraphs);
-            break;
-          case 'refresh-page-text':
-            await this.onRefreshPageTextRequested?.();
-            break;
-          case 'add-highlight':
-            this.highlightService.add({
-              id: msg.id,
-              pdfUri: msg.pdfUri,
-              pageNumber: msg.pageNumber,
-              paragraphId: msg.paragraphId,
-              text: msg.text,
-              color: msg.color,
-              note: msg.note
-            });
-            this.syncHighlights();
-            break;
-          case 'delete-highlight':
-            this.highlightService.delete(msg.id);
-            this.syncHighlights();
-            break;
-          case 'update-highlight-note':
-            this.highlightService.updateNote(msg.id, msg.note);
-            this.syncHighlights();
-            break;
-          case 'ai-explain':
-            try {
-              const explanation = await this.handleAiExplain(msg.text);
-              this.postMessage({
-                type: 'ai-explain-result',
-                text: msg.text,
-                explanation
-              });
-            } catch (err) {
-              this.postMessage({
-                type: 'ai-explain-result',
-                text: msg.text,
-                error: err instanceof Error ? err.message : String(err)
-              });
-            }
-            break;
-          case 'panel-hover':
-            console.log('[Extension] SidePanelProvider received panel-hover from side panel webview with id:', msg.id);
-            await this.onPanelHoverRequested?.(msg.id);
-            break;
-          case 'jump-to-page':
-            this.onJumpToPageRequested?.(msg.pageNumber);
-            break;
-          case 'find-and-jump-to-caption':
-            this.onFindAndJumpToCaptionRequested?.(msg.query);
-            break;
-        }
-      },
+      (msg: PanelToExtMessage) => this.handleMessage(msg),
       undefined,
       this.context.subscriptions
     );
@@ -433,6 +128,156 @@ export class SidePanelProvider {
     this.panel.onDidDispose(() => {
       this.panel = undefined;
     });
+  }
+
+  private async handleMessage(msg: PanelToExtMessage): Promise<void> {
+    switch (msg.type) {
+      case 'toggle-panel-fullscreen':
+        if (this.panel) {
+          this.panel.reveal(vscode.ViewColumn.Two);
+          await vscode.commands.executeCommand('workbench.action.toggleMaximizeEditorGroup');
+        }
+        break;
+      case 'request-state':
+        this.sendInitState();
+        break;
+      case 'add-term':
+        this.glossaryService.add(msg.source, msg.target, msg.category);
+        this.syncGlossary();
+        break;
+      case 'update-term':
+        this.glossaryService.update(msg.id, msg.source, msg.target, msg.category);
+        this.syncGlossary();
+        break;
+      case 'delete-term':
+        this.glossaryService.delete(msg.id);
+        this.syncGlossary();
+        break;
+      case 'clear-cache':
+        this.translationService.clearCache();
+        this.syncCacheSize();
+        break;
+      case 'clear-history':
+        this.historyService.clear();
+        this.syncHistory();
+        break;
+      case 'test-engine':
+        await this.handleTestEngine(msg.engineName, msg.config);
+        break;
+      case 'save-engine-config':
+        await this.configService.saveEngineConfig(msg.engineName, msg.config);
+        this.postMessage({
+          type: 'engines-status',
+          engines: this.configService.getEngineStatuses()
+        });
+        break;
+      case 'save-general-settings':
+        await this.configService.saveGeneralSettings(msg.settings);
+        this.sendInitState();
+        if (msg.settings.layout && typeof msg.settings.layout.useModel === 'boolean') {
+          if (this.configService.getLayoutConfig().useModel) {
+            await this.ensureLayoutEndpointStarted();
+          } else {
+            this.stopLayoutEndpoint();
+          }
+        }
+        await this.onLayoutConfigChanged?.(this.configService.getLayoutConfig());
+        if (this.activePdfUri) {
+          const mineruConfig = this.configService.getMineruConfig();
+          if (mineruConfig.enable) {
+            this.mineru.parse(this.activePdfUri);
+          } else {
+            this.postMessage({
+              type: 'mineru-status',
+              status: 'idle'
+            });
+          }
+        }
+        break;
+      case 'trigger-mineru-parse': {
+        if (msg.pdfUri) {
+          this.mineru.parse(msg.pdfUri, true);
+        }
+        break;
+      }
+      case 'import-glossary':
+        await this.handleImportGlossary(msg.defaultCategory);
+        break;
+      case 'restore-default-glossary':
+        this.glossaryService.restoreDefaults();
+        this.syncGlossary();
+        vscode.window.showInformationMessage('已成功恢复默认学术常用术语库');
+        break;
+      case 'export-translations':
+        await this.handleExport(msg.format);
+        break;
+      case 'export-doc':
+        this.currentExportConfig = {
+          untranslatedPolicy: msg.untranslatedPolicy,
+          format: msg.format,
+          documentName: msg.documentName
+        };
+        this.postMessage({
+          type: 'export-progress',
+          current: 0,
+          total: 100,
+          stage: 'extracting'
+        });
+        this.onGetPdfPagesTextRequested?.(msg.scope, msg.customRange);
+        break;
+      case 'translate-page':
+        await this.onTranslatePageRequested?.(msg.pageNumber, msg.paragraphs);
+        break;
+      case 'refresh-page-text':
+        await this.onRefreshPageTextRequested?.();
+        break;
+      case 'add-highlight':
+        this.highlightService.add({
+          id: msg.id,
+          pdfUri: msg.pdfUri,
+          pageNumber: msg.pageNumber,
+          paragraphId: msg.paragraphId,
+          text: msg.text,
+          color: msg.color,
+          note: msg.note
+        });
+        this.syncHighlights();
+        break;
+      case 'delete-highlight':
+        this.highlightService.delete(msg.id);
+        this.syncHighlights();
+        break;
+      case 'update-highlight-note':
+        this.highlightService.updateNote(msg.id, msg.note);
+        this.syncHighlights();
+        break;
+      case 'ai-explain':
+        try {
+          const explanation = await this.handleAiExplain(msg.text);
+          this.postMessage({
+            type: 'ai-explain-result',
+            text: msg.text,
+            explanation
+          });
+        } catch (err) {
+          this.postMessage({
+            type: 'ai-explain-result',
+            text: msg.text,
+            error: err instanceof Error ? err.message : String(err)
+          });
+        }
+        break;
+      case 'panel-hover':
+        console.log('[Extension] SidePanelProvider received panel-hover from side panel webview with id:', msg.id);
+        await this.onPanelHoverRequested?.(msg.id);
+        break;
+      case 'jump-to-page':
+        this.onJumpToPageRequested?.(msg.pageNumber);
+        break;
+      case 'find-and-jump-to-caption':
+        this.onFindAndJumpToCaptionRequested?.(msg.query);
+        break;
+    }
   }
 
   isVisible(): boolean {
@@ -560,7 +405,7 @@ export class SidePanelProvider {
         pdfUri: this.activePdfUri
       });
       this.syncHighlights();
-      this.triggerMineruParse(this.activePdfUri);
+      this.mineru.parse(this.activePdfUri);
     }
   }
 
