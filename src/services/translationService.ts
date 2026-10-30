@@ -78,6 +78,20 @@ export class TranslationService {
     return this.runEngine(engine, trimmed, matchingTerms, configOverride);
   }
 
+  /**
+   * 用第一个已配置且支持对话的引擎（按优先级）完成自定义 prompt 的请求。
+   * 没有任何大模型引擎可用时返回 undefined，由调用方决定降级策略。
+   */
+  async completeWithLlm(systemPrompt: string, userText: string): Promise<string | undefined> {
+    for (const engineName of getTranslationPriority()) {
+      const engine = this.engines.get(engineName);
+      if (engine?.complete && engine.isConfigured()) {
+        return engine.complete(systemPrompt, userText);
+      }
+    }
+    return undefined;
+  }
+
   getCachedTranslation(text: string): string | undefined {
     const trimmed = text.trim();
     if (!trimmed) return undefined;

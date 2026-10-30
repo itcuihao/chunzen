@@ -19,11 +19,16 @@ export class AnthropicEngine implements TranslationEngine {
 
   async translate(text: string, _sourceLang?: string, _targetLang?: string, glossary?: GlossaryEntry[], configOverride?: Record<string, any>): Promise<string> {
     const cfg = vscode.workspace.getConfiguration('chunzen.translation.anthropic');
+    const systemPrompt = (configOverride?.systemPrompt ?? cfg.get<string>('systemPrompt', '')).trim()
+      || DEFAULT_TRANSLATION_SYSTEM_PROMPT;
+    return this.complete(systemPrompt + buildGlossaryPrompt(glossary), text, configOverride);
+  }
+
+  async complete(systemPrompt: string, userText: string, configOverride?: Record<string, any>): Promise<string> {
+    const cfg = vscode.workspace.getConfiguration('chunzen.translation.anthropic');
     const apiKey = (configOverride?.apiKey ?? cfg.get<string>('apiKey', '')).trim();
     const baseUrl = (configOverride?.baseUrl ?? cfg.get<string>('baseUrl', '')).trim().replace(/\/$/, '');
     const model = (configOverride?.model ?? cfg.get<string>('model', 'mimo-v2.5-pro')).trim();
-    const systemPrompt = (configOverride?.systemPrompt ?? cfg.get<string>('systemPrompt', '')).trim()
-      || DEFAULT_TRANSLATION_SYSTEM_PROMPT;
 
     if (!apiKey || !baseUrl) {
       throw new Error('Anthropic API 未配置');
@@ -39,8 +44,8 @@ export class AnthropicEngine implements TranslationEngine {
       body: JSON.stringify({
         model,
         max_tokens: 1024,
-        system: systemPrompt + buildGlossaryPrompt(glossary),
-        messages: [{ role: 'user', content: text }]
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userText }]
       }),
       signal: AbortSignal.timeout(30000)
     });

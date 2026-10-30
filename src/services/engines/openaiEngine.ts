@@ -18,21 +18,24 @@ export class OpenAIEngine implements TranslationEngine {
     return !!apiKey;
   }
 
-  async translate(text: string, sourceLang?: string, targetLang?: string, glossary?: GlossaryEntry[], configOverride?: Record<string, any>): Promise<string> {
+  async translate(text: string, _sourceLang?: string, _targetLang?: string, glossary?: GlossaryEntry[], configOverride?: Record<string, any>): Promise<string> {
+    const cfg = vscode.workspace.getConfiguration('chunzen.translation.openai');
+    const systemPrompt = (configOverride?.systemPrompt ?? cfg.get<string>('systemPrompt', '')).trim()
+      || DEFAULT_TRANSLATION_SYSTEM_PROMPT;
+    return this.complete(systemPrompt + buildGlossaryPrompt(glossary), text, configOverride);
+  }
+
+  async complete(systemPrompt: string, userText: string, configOverride?: Record<string, any>): Promise<string> {
     const cfg = vscode.workspace.getConfiguration('chunzen.translation.openai');
     const apiKey = (configOverride?.apiKey ?? cfg.get<string>('apiKey', '')).trim();
     const baseUrl = (configOverride?.baseUrl ?? cfg.get<string>('baseUrl', 'https://api.openai.com/v1')).trim();
     const model = (configOverride?.model ?? cfg.get<string>('model', 'gpt-4o-mini')).trim();
-    const systemPrompt = (configOverride?.systemPrompt ?? cfg.get<string>('systemPrompt', '')).trim()
-      || DEFAULT_TRANSLATION_SYSTEM_PROMPT;
 
     if (!apiKey) {
       throw new Error('OpenAI 兼容接口未配置 API Key');
     }
 
-    const url = baseUrl.replace(/\/$/, '') + '/chat/completions';
-
-    const resp = await customFetch(url, {
+    const resp = await customFetch(baseUrl.replace(/\/$/, '') + '/chat/completions', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -41,8 +44,8 @@ export class OpenAIEngine implements TranslationEngine {
       body: JSON.stringify({
         model,
         messages: [
-          { role: 'system', content: systemPrompt + buildGlossaryPrompt(glossary) },
-          { role: 'user', content: text }
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userText }
         ],
         temperature: 0.3,
         max_tokens: 1024

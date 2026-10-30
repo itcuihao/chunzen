@@ -3,7 +3,6 @@ import * as fs from 'fs';
 import { ExtToPanelMessage, PanelToExtMessage } from '../types/messages';
 import { JournalInfo } from '../types/models';
 import { getNonce } from '../utils/nonce';
-import { customFetch } from '../utils/fetch';
 import { TranslationService } from '../services/translationService';
 import { GlossaryService } from '../services/glossaryService';
 import { HistoryService } from '../services/historyService';
@@ -11,6 +10,7 @@ import { ConfigService } from '../services/configService';
 import { HighlightService } from '../services/highlightService';
 import { LayoutConfig } from '../types/config';
 import { MineruService } from '../services/mineruService';
+import { AI_EXPLAIN_SYSTEM_PROMPT } from '../services/engines/llmPrompt';
 
 export class SidePanelProvider {
   public static readonly viewType = 'chunzen.sidePanel';
@@ -803,69 +803,23 @@ export class SidePanelProvider {
   }
 
   private async handleAiExplain(text: string): Promise<string> {
-    const config = this.configService.getTranslationConfig();
-    const apiKey = config.openai.apiKey;
-    const baseUrl = config.openai.baseUrl;
-    const model = config.openai.model;
-
-    if (!apiKey) {
-      try {
-        const transResult = await this.translationService.translate(text);
-        return `💡 [提示] 请在设置中配置 **OpenAI 兼容接口**，以获得大模型驱动的深度学术释义。以下为机器翻译结果：\n\n${transResult.text}`;
-      } catch (err) {
-        throw new Error('未配置 OpenAI 接口，且机器翻译不可用: ' + (err instanceof Error ? err.message : String(err)));
-      }
+    let llmError: unknown;
+    try {
+      const explained = await this.translationService.completeWithLlm(AI_EXPLAIN_SYSTEM_PROMPT, text);
+      if (explained) return explained;
+    } catch (err) {
+      llmError = err;
     }
 
-    const systemPrompt = "你是一个资深的学术论文导师。请用中文简明扼要地解释用户提供的学术词汇、术语或句子，指出其在论文中的含义、背景以及常见的学术用途。要求回答清晰、专业、直白，字数控制在150字以内。";
-    const url = baseUrl.replace(/\/$/, '') + '/chat/completions';
-
+    // 无可用大模型或调用失败：降级到机器翻译
     try {
-      const resp = await customFetch(url, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: text }
-          ],
-          temperature: 0.3,
-          max_tokens: 1024
-        }),
-        signal: AbortSignal.timeout(30000)
-      });
-
-      if (!resp.ok) {
-        const errText = await resp.text();
-        throw new Error(`请求失败 ${resp.status}: ${errText.slice(0, 200)}`);
-      }
-
-      const data = (await resp.json()) as {
-        choices?: Array<{ message?: { content?: string } }>;
-        error?: { message: string };
-      };
-
-      if (data.error) {
-        throw new Error(`接口错误: ${data.error.message}`);
-      }
-
-      const content = data.choices?.[0]?.message?.content;
-      if (!content) {
-        throw new Error('返回了空的结果');
-      }
-
-      return content.trim();
-    } catch (err) {
-      try {
-        const transResult = await this.translationService.translate(text);
-        return `⚠️ [API 错误: ${err instanceof Error ? err.message : String(err)}]\n\n已自动为您降级到机器翻译：\n\n${transResult.text}`;
-      } catch (transErr) {
-        throw err;
-      }
+      const transResult = await this.translationService.translate(text);
+      return llmError
+        ? `⚠️ [API 错误: ${llmError instanceof Error ? llmError.message : String(llmError)}]\n\n已自动为您降级到机器翻译：\n\n${transResult.text}`
+        : `💡 [提示] 请在设置中配置 **OpenAI 兼容接口** 或 **Anthropic API**，以获得大模型驱动的深度学术释义。以下为机器翻译结果：\n\n${transResult.text}`;
+    } catch (transErr) {
+      if (llmError) throw llmError;
+      throw new Error('未配置大模型接口，且机器翻译不可用: ' + (transErr instanceof Error ? transErr.message : String(transErr)));
     }
   }
 

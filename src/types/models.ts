@@ -12,6 +12,8 @@ export interface TranslationEngine {
   /** 为 true 时引擎自行通过 prompt 应用术语表，无需本地后处理 */
   usesGlossaryPrompt?: boolean;
   isConfigured(): boolean;
+  /** 仅大模型类引擎实现：以任意 system prompt 完成一次对话（用于 AI 释义等非翻译场景） */
+  complete?(systemPrompt: string, userText: string, configOverride?: Record<string, any>): Promise<string>;
   translate(text: string, sourceLang?: string, targetLang?: string, glossary?: GlossaryEntry[], configOverride?: Record<string, any>): Promise<string>;
 }
 
