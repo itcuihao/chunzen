@@ -99,6 +99,7 @@
             "baidu",
             "deepl",
             "openai",
+            "anthropic",
             "custom"
           ],
           "description": "翻译引擎优先级顺序（从高到低）"
@@ -142,6 +143,26 @@
           "type": "string",
           "default": "你是一个学术论文翻译专家。请将以下英文学术句子翻译成中文，保持专业术语准确，语言简洁流畅。只输出翻译结果，不要解释。",
           "description": "OpenAI 兼容接口的系统提示词（可自定义）"
+        },
+        "chunzen.translation.anthropic.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "Anthropic 兼容接口 API Key"
+        },
+        "chunzen.translation.anthropic.baseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Anthropic 兼容接口 Base URL（不含 /v1/messages），如 https://api.anthropic.com"
+        },
+        "chunzen.translation.anthropic.model": {
+          "type": "string",
+          "default": "mimo-v2.5-pro",
+          "description": "Anthropic 兼容接口模型名称"
+        },
+        "chunzen.translation.anthropic.systemPrompt": {
+          "type": "string",
+          "default": "",
+          "description": "自定义系统提示词（留空使用默认学术翻译提示词）"
         },
         "chunzen.translation.custom.url": {
           "type": "string",
@@ -262,7 +283,9 @@
     "deploy": "bash scripts/build.sh local",
     "release": "node scripts/release.js",
     "compile-tests": "tsc -p . --outDir out",
-    "lint": "eslint src --ext ts"
+    "lint": "eslint src --ext ts",
+    "typecheck": "tsc -p . --noEmit",
+    "test": "node --test tests/*.test.ts"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
