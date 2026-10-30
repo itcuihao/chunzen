@@ -95,3 +95,17 @@ test('paraClass: 标题续行使用更小的下边距', () => {
   assert.ok(paraClass(cur, 'en', prev).includes('mb-1'));
   assert.ok(paraClass(cur, 'en').includes('mb-3'));
 });
+
+test('splitChineseSentences: 中文句末标点后无空白也能断句，保留无标点尾句', () => {
+  assert.deepEqual(splitChineseSentences('第一句。第二句！第三句？结尾'), ['第一句。', '第二句！', '第三句？', '结尾']);
+  assert.deepEqual(splitChineseSentences('带空白。 下一句。'), ['带空白。 ', '下一句。']);
+  assert.deepEqual(splitChineseSentences(''), []);
+});
+
+test('alignSentences: 句数一致时逐句对齐，否则整段挂到第一句', () => {
+  const en = [{ id: 's1', text: 'A.' }, { id: 's2', text: 'B.' }];
+  assert.deepEqual(alignSentences(en, '甲。乙。'), [{ id: 's1', text: '甲。' }, { id: 's2', text: '乙。' }]);
+  assert.deepEqual(alignSentences(en, '只有一句。'), [{ id: 's1', text: '只有一句。' }]);
+  assert.deepEqual(alignSentences(undefined, '译文'), [{ id: '', text: '译文' }]);
+  assert.deepEqual(alignSentences(en, ''), []);
+});

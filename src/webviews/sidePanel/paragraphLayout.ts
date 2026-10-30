@@ -143,7 +143,8 @@ export function groupParagraphsIntoBlocks(paragraphs: AnnotatedPara[], columnsCo
 
 export function splitChineseSentences(text: string): string[] {
   const results: string[] = [];
-  const re = /[^。！？]*[。！？]+(?:\s|$)/g;
+  // 中文句末标点后通常不跟空白，不能要求空白才断句
+  const re = /[^。！？]*[。！？]+\s*/g;
   let m: RegExpExecArray | null;
   let last = 0;
   while ((m = re.exec(text)) !== null) {
