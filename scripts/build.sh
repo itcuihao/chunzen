@@ -40,6 +40,7 @@ node -e "
 const vsce = require('@vscode/vsce');
 vsce
   .createVSIX({
+    dependencies: false,
     useYarn: false,
     allowMissingRepository: true,
     baseContentUrl: 'https://github.com/itcuihao/chunzen/tree/main',
