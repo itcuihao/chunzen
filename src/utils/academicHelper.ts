@@ -115,3 +115,59 @@ export function parseCitationKeys(citationStr: string): string[] {
 
   return keys;
 }
+
+export interface AuthorYearCitation {
+  author: string;
+  year: string;
+  key: string;
+  rawText: string;
+}
+
+/**
+ * Parses author-year citation strings, including multiple years or suffix letters.
+ * E.g., "Smith et al., 2020, 2021" -> key: "smith-2020", "smith-2021"
+ * E.g., "Smith, 2020a, b" -> key: "smith-2020a", "smith-2020b"
+ */
+export function parseAuthorYearCitations(text: string): AuthorYearCitation[] {
+  const result: AuthorYearCitation[] = [];
+  const authorMatch = text.match(/\b([A-Z][a-zA-Z\u00C0-\u017F-]+)(?:\s+et\s+al\.|\s+等|\s+and\s+[A-Z][a-zA-Z\u00C0-\u017F-]+)?(?:,\s*|，\s*)/i);
+  if (!authorMatch) return result;
+
+  const author = authorMatch[1].toLowerCase();
+  const rest = text.slice((authorMatch.index ?? 0) + authorMatch[0].length);
+
+  const yearRegex = /\b(18\d{2}|19\d{2}|20\d{2})([a-z])?\b/gi;
+  let m: RegExpExecArray | null;
+  let lastYear = '';
+
+  while ((m = yearRegex.exec(rest)) !== null) {
+    const yearBase = m[1];
+    const suffix = m[2] || '';
+    lastYear = yearBase;
+    const year = `${yearBase}${suffix}`.toLowerCase();
+    result.push({
+      author,
+      year,
+      key: `${author}-${year}`,
+      rawText: m[0]
+    });
+  }
+
+  if (lastYear) {
+    const shortSuffixRegex = /(?:,\s*|\s+)([a-z])\b/gi;
+    let sm: RegExpExecArray | null;
+    while ((sm = shortSuffixRegex.exec(rest)) !== null) {
+      const suffix = sm[1].toLowerCase();
+      if (suffix.length === 1 && !result.some(r => r.year === `${lastYear}${suffix}`)) {
+        result.push({
+          author,
+          year: `${lastYear}${suffix}`,
+          key: `${author}-${lastYear}${suffix}`,
+          rawText: sm[1]
+        });
+      }
+    }
+  }
+
+  return result;
+}

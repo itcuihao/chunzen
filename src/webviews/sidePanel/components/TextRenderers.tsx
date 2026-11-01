@@ -4,7 +4,7 @@
 import { ReactNode } from 'react';
 import { postMessage } from '../vscode';
 import { SelectionHighlight } from '../../../types/models';
-import { convertSupTagsToUnicode, parseCitationKeys } from '../../../utils/academicHelper';
+import { convertSupTagsToUnicode, parseCitationKeys, parseAuthorYearCitations } from '../../../utils/academicHelper';
 import { mapHtmlToPlain, preprocessLinks } from '../textProcessing';
 import type { AnnotatedPara } from '../paragraphLayout';
 
@@ -41,7 +41,7 @@ function renderTextSegmentWithJumps(
   const { plainText, mapIdx } = mapHtmlToPlain(preprocessed);
 
   // Appended Group 12 for unicode superscript citations
-  const jumpRegex = /\[(\d+(?:\s*[-–,]\s*\d+)*)\]|\[((?:Figure|Fig\.|Table|图|表)\s*(?:S\d+|s\d+|\d+)(?:\s*[a-zA-Z])?)\]|\b((?:Figure|Fig\.|Table)\s*(?:S\d+|s\d+|\d+)(?:\s*[a-zA-Z])?)\b|((?:图|表)\s*(?:S\d+|s\d+|\d+)(?:\s*[a-zA-Z])?)|\b([A-Z][a-zA-Z\u00C0-\u017F-]+)(?:\s+et\s+al\.|\s+等|\s+and\s+[A-Z][a-zA-Z\u00C0-\u017F-]+)?\s*\((18\d{2}|19\d{2}|20\d{2})([a-z])?\)|(\(((?:[A-Z][a-zA-Z\u00C0-\u017F-]+(?:\s+et\s+al\.|\s+等|\s+and\s+[A-Z][a-zA-Z\u00C0-\u017F-]+)?(?:,\s*|，\s*)\d{4}[a-z]?(?:\s*[;；]\s*)?)+)\))|\b(https?:\/\/[^\s()<>]+[^\s()<>.,;:!?"'])\b|\b(10\.\d{4,9}\/[-._;()/:A-Z0-9]+)\b|(?<!\d)([⁰¹²³⁴⁵⁶⁷⁸⁹]+(?:\s*[,⁻–-]\s*[⁰¹²³⁴⁵⁶⁷⁸⁹]+)*)(?!\d)/gi;
+  const jumpRegex = /\[(\d+(?:\s*[-–,]\s*\d+)*)\]|\[((?:Figure|Fig\.|Table|图|表)\s*(?:S\d+|s\d+|\d+)(?:\s*[a-zA-Z])?)\]|\b((?:Figure|Fig\.|Table)\s*(?:S\d+|s\d+|\d+)(?:\s*[a-zA-Z])?)\b|((?:图|表)\s*(?:S\d+|s\d+|\d+)(?:\s*[a-zA-Z])?)|\b([A-Z][a-zA-Z\u00C0-\u017F-]+)(?:\s+et\s+al\.|\s+等|\s+and\s+[A-Z][a-zA-Z\u00C0-\u017F-]+)?\s*\((18\d{2}|19\d{2}|20\d{2})([a-z])?\)|(\(((?:[A-Z][a-zA-Z\u00C0-\u017F-]+(?:\s+et\s+al\.|\s+等|\s+and\s+[A-Z][a-zA-Z\u00C0-\u017F-]+)?(?:,\s*|，\s*)\d{4}[a-z]?(?:(?:,\s*|，\s*)(?:\d{4}[a-z]?|[a-z]))*(?:\s*[;；]\s*)?)+)\))|\b(https?:\/\/[^\s()<>]+[^\s()<>.,;:!?"'])\b|\b(10\.\d{4,9}\/[-._;()/:A-Z0-9]+)\b|(?<!\d)([⁰¹²³⁴⁵⁶⁷⁸⁹]+(?:\s*[,⁻–-]\s*[⁰¹²³⁴⁵⁶⁷⁸⁹]+)*)(?!\d)/gi;
   const parts: ReactNode[] = [];
   let lastPlainIndex = 0;
   let match;
@@ -156,8 +156,6 @@ function renderTextSegmentWithJumps(
         const itemEndPlain = itemStartPlain + item.length;
         currentPlainOffset = itemEndPlain + 1;
 
-        const itemMatch = item.match(/\b([A-Z][a-zA-Z\u00C0-\u017F-]+)(?:\s+et\s+al\.|\s+等|\s+and\s+[A-Z][a-zA-Z\u00C0-\u017F-]+)?(?:,\s*|，\s*)(\d{4})([a-z])?/i);
-        
         if (i > 0) {
           renderedItems.push('; ');
         }
@@ -165,18 +163,55 @@ function renderTextSegmentWithJumps(
         const itemTaggedStart = mapIdx[itemStartPlain];
         const itemTaggedEnd = mapIdx[itemEndPlain];
         const itemTaggedText = preprocessed.substring(itemTaggedStart, itemTaggedEnd);
-        
-        if (itemMatch) {
-          const author = itemMatch[1].toLowerCase();
-          const year = (itemMatch[2] + (itemMatch[3] || '')).toLowerCase();
-          const key = `${author}-${year}`;
+
+        const parsedCites = parseAuthorYearCitations(item);
+
+        if (parsedCites.length > 1) {
+          let lastIdx = 0;
+          for (let ci = 0; ci < parsedCites.length; ci++) {
+            const cite = parsedCites[ci];
+            const found = itemTaggedText.indexOf(cite.rawText, lastIdx);
+            if (found !== -1) {
+              if (found > lastIdx) {
+                renderedItems.push(renderFormattedContent(itemTaggedText.substring(lastIdx, found)));
+              }
+              const hasRef = bibliography[cite.key];
+              renderedItems.push(
+                <span
+                  key={`parenthetical-multi-${i}-${ci}`}
+                  className={hasRef
+                    ? "text-blue-600 dark:text-blue-400 hover:underline cursor-pointer font-bold px-0.5"
+                    : "text-zinc-600 dark:text-zinc-400 px-0.5"}
+                  onClick={(e) => {
+                    if (hasRef) {
+                      e.stopPropagation();
+                      window.getSelection()?.removeAllRanges();
+                      postMessage({
+                        type: 'jump-to-page',
+                        pageNumber: bibliography[cite.key].pageNumber
+                      });
+                    }
+                  }}
+                  title={hasRef ? `跳转到文献 [${cite.key}]` : undefined}
+                >
+                  {cite.rawText}
+                </span>
+              );
+              lastIdx = found + cite.rawText.length;
+            }
+          }
+          if (lastIdx < itemTaggedText.length) {
+            renderedItems.push(renderFormattedContent(itemTaggedText.substring(lastIdx)));
+          }
+        } else if (parsedCites.length === 1) {
+          const key = parsedCites[0].key;
           const hasRef = bibliography[key];
-          
+
           renderedItems.push(
-            <span 
+            <span
               key={`parenthetical-item-${i}`}
-              className={hasRef 
-                ? "text-blue-600 dark:text-blue-400 hover:underline cursor-pointer font-bold px-0.5" 
+              className={hasRef
+                ? "text-blue-600 dark:text-blue-400 hover:underline cursor-pointer font-bold px-0.5"
                 : "text-zinc-600 dark:text-zinc-400 px-0.5"}
               onClick={(e) => {
                 if (hasRef) {

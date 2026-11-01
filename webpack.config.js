@@ -1,6 +1,8 @@
 //@ts-check
 'use strict';
 
+process.env.BROWSERSLIST_IGNORE_OLD_DATA = 'true';
+
 const path = require('path');
 const CopyPlugin = require('copy-webpack-plugin');
 const MiniCssExtractPlugin = require('mini-css-extract-plugin');

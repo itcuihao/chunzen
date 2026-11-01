@@ -13,8 +13,8 @@ import { OpenAIEngine, CustomHttpEngine } from './openaiEngine';
 const ENGINES: readonly TranslationEngine[] = [
   new BaiduEngine(),
   new OpenAIEngine(),
-  new DeepLEngine(),
-  new CustomHttpEngine()
+  new CustomHttpEngine(),
+  new DeepLEngine()
 ];
 
 export function getEngines(): readonly TranslationEngine[] {

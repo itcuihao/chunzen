@@ -29,5 +29,5 @@ test('package.json 声明的默认优先级与注册表顺序一致', async () =
   const { readFileSync } = await import('node:fs');
   const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
   const declared = pkg.contributes.configuration.properties['chunzen.translation.priority'].default;
-  assert.deepEqual(declared, ['baidu', 'openai', 'deepl', 'custom']);
+  assert.deepEqual(declared, ['baidu', 'openai', 'custom', 'deepl']);
 });

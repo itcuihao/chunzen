@@ -45,44 +45,67 @@ export class OpenAIEngine implements TranslationEngine {
       throw new Error('OpenAI 兼容接口未配置模型名称，API Key 不会被发送。请在设置中填写模型名称');
     }
 
-    const resp = await customFetch(baseUrl + '/chat/completions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userText }
-        ],
-        temperature: 0.3,
-        max_tokens: 1024
-      }),
-      signal: AbortSignal.timeout(30000)
-    });
+    const maxRetries = 2;
+    let lastError: Error | null = null;
 
-    if (!resp.ok) {
-      const errText = await resp.text();
-      throw new Error(`OpenAI 兼容接口请求失败 ${resp.status}: ${errText.slice(0, 200)}`);
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      if (attempt > 0) {
+        const delayMs = attempt * 1500;
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+
+      try {
+        const resp = await customFetch(baseUrl + '/chat/completions', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userText }
+            ],
+            temperature: 0.3,
+            max_tokens: 1024
+          }),
+          signal: AbortSignal.timeout(30000)
+        });
+
+        if (!resp.ok) {
+          const errText = await resp.text().catch(() => '');
+          if ((resp.status === 429 || resp.status === 503) && attempt < maxRetries) {
+            console.warn(`[OpenAIEngine] 触发频率限制或服务暂不可用 (${resp.status})，准备重试 (${attempt + 1}/${maxRetries})...`);
+            continue;
+          }
+          throw new Error(`OpenAI 兼容接口请求失败 ${resp.status}: ${errText.slice(0, 200)}`);
+        }
+
+        const data = (await resp.json()) as {
+          choices?: Array<{ message?: { content?: string } }>;
+          error?: { message: string };
+        };
+
+        if (data.error) {
+          throw new Error(`OpenAI 兼容接口错误: ${data.error.message}`);
+        }
+
+        const content = data.choices?.[0]?.message?.content;
+        if (!content) {
+          throw new Error('OpenAI 兼容接口返回空结果');
+        }
+
+        return content.trim();
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+        if (attempt >= maxRetries) {
+          throw lastError;
+        }
+      }
     }
 
-    const data = (await resp.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-      error?: { message: string };
-    };
-
-    if (data.error) {
-      throw new Error(`OpenAI 兼容接口错误: ${data.error.message}`);
-    }
-
-    const content = data.choices?.[0]?.message?.content;
-    if (!content) {
-      throw new Error('OpenAI 兼容接口返回空结果');
-    }
-
-    return content.trim();
+    throw lastError || new Error('OpenAI 兼容接口请求失败');
   }
 }
 

@@ -1,7 +1,7 @@
 import { FunctionComponent, useEffect, useState } from 'react';
 import { useStore, EngineConfigFields } from '../store';
 import { postMessage } from '../vscode';
-import { Database, Sparkles, Trash2, Settings, ChevronDown, ChevronUp, Network, Play, CheckCircle2, XCircle, Info, Eye, EyeOff, Bot, GripVertical } from 'lucide-react';
+import { Database, Sparkles, Trash2, Settings, ChevronDown, ChevronUp, Network, Play, CheckCircle2, XCircle, Info, Eye, EyeOff, Bot, GripVertical, ArrowUp, ArrowDown, ArrowUpToLine } from 'lucide-react';
 import type { JournalSourceType } from '../../../types/config';
 import { DEEPSEEK_EXAMPLE_BASE_URL, DEEPSEEK_EXAMPLE_MODEL } from '../../../services/engines/defaults';
 import { BUILD_INFO } from '../../../build-info';
@@ -103,6 +103,20 @@ const EngineSettings: FunctionComponent = () => {
     setOverIndex(null);
   };
 
+  const handleMove = (index: number, direction: 'up' | 'down' | 'top') => {
+    if (direction === 'top' && index === 0) return;
+    if (direction === 'up' && index === 0) return;
+    if (direction === 'down' && index === enginePriority.length - 1) return;
+
+    const newPriority = [...enginePriority];
+    const [moved] = newPriority.splice(index, 1);
+    const targetIndex = direction === 'top' ? 0 : direction === 'up' ? index - 1 : index + 1;
+    newPriority.splice(targetIndex, 0, moved);
+
+    setEnginePriority(newPriority);
+    postMessage({ type: 'set-engine-priority', priority: newPriority });
+  };
+
   const handleTest = (engineName: string, config?: Record<string, string>) => {
     setTesting(engineName);
     postMessage({ type: 'test-engine', engineName, config });
@@ -175,7 +189,39 @@ const EngineSettings: FunctionComponent = () => {
                     </div>
                   </div>
                   
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+                      {i > 0 && (
+                        <button
+                          type="button"
+                          title="置顶该引擎"
+                          onClick={() => handleMove(i, 'top')}
+                          className="p-1 rounded text-secondary-foreground/60 hover:text-foreground hover:bg-secondary/40 transition-colors"
+                        >
+                          <ArrowUpToLine className="w-3 h-3" />
+                        </button>
+                      )}
+                      {i > 0 && (
+                        <button
+                          type="button"
+                          title="上移一位"
+                          onClick={() => handleMove(i, 'up')}
+                          className="p-1 rounded text-secondary-foreground/60 hover:text-foreground hover:bg-secondary/40 transition-colors"
+                        >
+                          <ArrowUp className="w-3 h-3" />
+                        </button>
+                      )}
+                      {i < enginePriority.length - 1 && (
+                        <button
+                          type="button"
+                          title="下移一位"
+                          onClick={() => handleMove(i, 'down')}
+                          className="p-1 rounded text-secondary-foreground/60 hover:text-foreground hover:bg-secondary/40 transition-colors"
+                        >
+                          <ArrowDown className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
                     <span className={`inline-block text-[9px] font-bold px-2 py-0.5 rounded-full border ${
                       status?.configured 
                         ? 'bg-success/10 border-success/30 text-success' 
@@ -298,27 +344,54 @@ const EngineConfigForm: FunctionComponent<EngineConfigFormProps> = ({
   return (
     <div className="p-4 border-t border-border bg-card/5 flex flex-col gap-3.5 animate-in slide-in-from-top-1 duration-150">
       {engineName === 'openai' && (
-        <div className="text-[10px] text-secondary-foreground/75 bg-secondary/20 p-2.5 rounded border border-border/40 leading-relaxed flex flex-col gap-1 font-sans">
-          <div className="font-bold text-accent">配置示例（DeepSeek）：</div>
-          <p>兼容 OpenAI 格式的服务均可使用，国内可直接访问的以 DeepSeek 为例：</p>
-          <div className="grid grid-cols-[65px_1fr] gap-x-2 gap-y-1 mt-1.5 font-mono text-[9px] bg-secondary/10 p-2 rounded border border-border/20">
+        <div className="text-[10px] text-secondary-foreground/75 bg-secondary/20 p-2.5 rounded border border-border/40 leading-relaxed flex flex-col gap-1.5 font-sans">
+          <div className="font-bold text-accent">常用服务商一键填入：</div>
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                handleChange('baseUrl', DEEPSEEK_EXAMPLE_BASE_URL);
+                handleChange('model', DEEPSEEK_EXAMPLE_MODEL);
+              }}
+              className="px-2 py-0.5 text-[9px] rounded border border-border bg-card/60 text-foreground hover:bg-secondary-hover/50 hover:border-accent/40 transition-colors font-mono"
+            >
+              DeepSeek (官方)
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                handleChange('baseUrl', 'https://api.siliconflow.cn/v1');
+                handleChange('model', 'deepseek-ai/DeepSeek-V3');
+              }}
+              className="px-2 py-0.5 text-[9px] rounded border border-border bg-card/60 text-foreground hover:bg-secondary-hover/50 hover:border-accent/40 transition-colors font-mono"
+            >
+              硅基流动 (SiliconFlow)
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                handleChange('baseUrl', 'http://localhost:11434/v1');
+                handleChange('model', 'qwen2.5:7b');
+              }}
+              className="px-2 py-0.5 text-[9px] rounded border border-border bg-card/60 text-foreground hover:bg-secondary-hover/50 hover:border-accent/40 transition-colors font-mono"
+            >
+              本地 Ollama
+            </button>
+          </div>
+          <div className="grid grid-cols-[65px_1fr] gap-x-2 gap-y-1 mt-1 font-mono text-[9px] bg-secondary/10 p-2 rounded border border-border/20">
             <span className="font-sans font-bold text-foreground">Base URL:</span>
-            <code className="font-semibold text-foreground select-all bg-secondary/50 px-1 rounded">{DEEPSEEK_EXAMPLE_BASE_URL}</code>
+            <code className="font-semibold text-foreground select-all bg-secondary/50 px-1 rounded truncate">
+              {String(formValues.baseUrl || DEEPSEEK_EXAMPLE_BASE_URL)}
+            </code>
 
             <span className="font-sans font-bold text-foreground">模型:</span>
-            <code className="font-semibold text-foreground select-all bg-secondary/50 px-1 rounded">{DEEPSEEK_EXAMPLE_MODEL}</code>
+            <code className="font-semibold text-foreground select-all bg-secondary/50 px-1 rounded truncate">
+              {String(formValues.model || DEEPSEEK_EXAMPLE_MODEL)}
+            </code>
           </div>
-          <p className="mt-1">接口地址和模型名需要您手动填写，API Key 只会发往您填写的地址。</p>
-          <button
-            type="button"
-            onClick={() => {
-              handleChange('baseUrl', DEEPSEEK_EXAMPLE_BASE_URL);
-              handleChange('model', DEEPSEEK_EXAMPLE_MODEL);
-            }}
-            className="self-start mt-1 px-2 py-1 rounded border border-border text-foreground hover:bg-secondary-hover/50 transition-colors"
-          >
-            填入示例（仍需点击保存）
-          </button>
+          <p className="mt-0.5 text-[9px] text-secondary-foreground/70">
+            点击上方按钮可快速填入接口地址与模型。填写您的 API Key 后点击“保存配置”生效。
+          </p>
         </div>
       )}
       {engineName === 'custom' && (
