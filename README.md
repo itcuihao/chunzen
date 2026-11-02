@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.1.0-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.1.5-blue" alt="Version" />
   <img src="https://img.shields.io/badge/VSCode-≥1.85.0-blue" alt="VSCode" />
 </p>
 
@@ -87,7 +87,7 @@
 
 ### AI 翻译（OpenAI 兼容接口）
 
-支持任何 OpenAI 兼容的 API，推荐使用 DeepSeek：
+支持任何遵循 OpenAI `chat/completions` 格式的模型服务，侧边栏内置一键配置预设：
 
 | 设置项 | 说明 | 默认值 |
 |--------|------|--------|
@@ -96,10 +96,22 @@
 | 模型名称 | 使用的模型，**必填** | 无 |
 | 系统提示词 | 翻译风格指令 | 学术翻译专家提示词 |
 
-**DeepSeek 示例配置：**
-- Base URL: `https://api.deepseek.com`
-- Model: `deepseek-flash`
-- API Key: 在 [DeepSeek 开放平台](https://platform.deepseek.com) 获取
+#### 常用服务商推荐与一键预设：
+
+- **智谱 GLM (BigModel)**
+  - Base URL: `https://open.bigmodel.cn/api/paas/v4`
+  - 默认推荐模型: `GLM-5.3-Flash`
+  - **新用户福利**：通过 [专属邀请链接](https://www.bigmodel.cn/invite?icode=PJ048yz3Fl63Urk70glapiUjscDI85ErLfUl7XNb00w%3D)（邀请码：`PJ048yz3Fl63Urk70glapiUjscDI85ErLfUl7XNb00w=`）注册，免费领取 2000 万 Tokens 大礼包。
+
+- **硅基流动 (SiliconFlow)**
+  - Base URL: `https://api.siliconflow.cn/v1`
+  - 推荐模型: `Pro/deepseek-ai/DeepSeek-V3`
+  - **新用户福利**：通过 [专属邀请链接](https://cloud.siliconflow.cn/i/CZLEQUh5)（邀请码：`CZLEQUh5`）注册，免费获赠 2000 万 Tokens（14 元算力额度）。
+
+- **DeepSeek 官方开放平台**
+  - Base URL: `https://api.deepseek.com`
+  - 推荐模型: `deepseek-chat`
+  - API Key: 在 [DeepSeek 开放平台](https://platform.deepseek.com) 控制台获取。
 
 ### 百度翻译
 
