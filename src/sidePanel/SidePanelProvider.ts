@@ -682,6 +682,7 @@ export class SidePanelProvider {
     content="default-src 'none';
              style-src ${webview.cspSource} 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net;
              font-src https://fonts.gstatic.com https://cdn.jsdelivr.net;
+             img-src ${webview.cspSource} blob: data: https:;
              script-src 'nonce-${nonce}';">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="${panelCssUri}">

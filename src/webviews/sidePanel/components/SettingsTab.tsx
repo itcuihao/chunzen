@@ -1,10 +1,13 @@
 import { FunctionComponent, useEffect, useState } from 'react';
 import { useStore, EngineConfigFields } from '../store';
 import { postMessage } from '../vscode';
-import { Database, Sparkles, Trash2, Settings, ChevronDown, ChevronUp, Network, Play, CheckCircle2, XCircle, Info, Eye, EyeOff, Bot, GripVertical, ArrowUp, ArrowDown, ArrowUpToLine } from 'lucide-react';
+import { Database, Sparkles, Trash2, Settings, ChevronDown, ChevronUp, Network, Play, CheckCircle2, XCircle, Info, Eye, EyeOff, Bot, GripVertical, ArrowUp, ArrowDown, ArrowUpToLine, QrCode, ExternalLink, Copy, Check } from 'lucide-react';
 import type { JournalSourceType } from '../../../types/config';
 import { DEEPSEEK_EXAMPLE_BASE_URL, DEEPSEEK_EXAMPLE_MODEL } from '../../../services/engines/defaults';
 import { BUILD_INFO } from '../../../build-info';
+import { BIGMODEL_INVITE_URL, BIGMODEL_INVITE_CODE } from '../assets/bigmodelQr';
+import { SILICONFLOW_INVITE_URL, SILICONFLOW_INVITE_CODE } from '../assets/siliconflowQr';
+import { QrCodeSvg } from './QrCodeSvg';
 
 export const SettingsTab: FunctionComponent = () => {
   return (
@@ -284,6 +287,15 @@ interface EngineConfigFormProps {
   testResult: { success: boolean; message: string } | null | undefined;
 }
 
+type ProviderPreset = 'glm' | 'siliconflow' | 'deepseek';
+
+const detectProvider = (url?: string | boolean): ProviderPreset => {
+  const u = String(url || '').toLowerCase();
+  if (u.includes('siliconflow.cn')) return 'siliconflow';
+  if (u.includes('deepseek.com')) return 'deepseek';
+  return 'glm';
+};
+
 const EngineConfigForm: FunctionComponent<EngineConfigFormProps> = ({
   engineName,
   config,
@@ -296,6 +308,8 @@ const EngineConfigForm: FunctionComponent<EngineConfigFormProps> = ({
   const [formState, setFormState] = useState<Record<string, string | boolean>>({});
   const [saved, setSaved] = useState(false);
   const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
+  const [showQr, setShowQr] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
 
   // Initialize form state
   const formValues: Record<string, string | boolean> = {};
@@ -304,6 +318,10 @@ const EngineConfigForm: FunctionComponent<EngineConfigFormProps> = ({
       ? formState[field.key]
       : (config as Record<string, string | boolean>)[field.key] ?? (field.type === 'toggle' ? false : '');
   }
+
+  const [activeProvider, setActiveProvider] = useState<ProviderPreset>(() =>
+    detectProvider(formValues.baseUrl)
+  );
 
   const handleChange = (key: string, value: string | boolean) => {
     setFormState((prev) => ({ ...prev, [key]: value }));
@@ -341,6 +359,50 @@ const EngineConfigForm: FunctionComponent<EngineConfigFormProps> = ({
     onTest(values);
   };
 
+  const promo = activeProvider === 'siliconflow' ? {
+    title: '还没有 API Key？注册硅基流动领免费额度',
+    desc: (
+      <span>
+        新用户注册实名认证即送 <strong className="text-foreground">14~20 元算力额度</strong>，可免费翻译百万字，支持 Qwen、DeepSeek 等全系列开源模型。
+      </span>
+    ),
+    buttonText: '前往注册领免费额度',
+    inviteUrl: SILICONFLOW_INVITE_URL,
+    inviteCode: SILICONFLOW_INVITE_CODE,
+    qrType: 'siliconflow' as const,
+    qrTip: '使用手机微信或浏览器扫码，注册即领免费额度'
+  } : activeProvider === 'deepseek' ? {
+    title: '前往 DeepSeek 官方开放平台获取 API Key',
+    desc: (
+      <span>
+        DeepSeek 官方提供超高性价比的 <strong className="text-foreground">deepseek-chat</strong> 与 <strong className="text-foreground">deepseek-reasoner</strong> 模型接口。
+      </span>
+    ),
+    buttonText: '前往 DeepSeek 开放平台',
+    inviteUrl: 'https://platform.deepseek.com',
+    inviteCode: '',
+    qrType: null,
+    qrTip: ''
+  } : {
+    title: '还没有 API Key？注册智谱 BigModel 领 2000万 Tokens',
+    desc: (
+      <span>
+        智谱新一代旗舰模型 <strong className="text-foreground">GLM-5.3-Flash</strong> 已上线，在推理、代码、智能体能力达到开源 SOTA 水平。通过专属链接注册即可获得 <strong className="text-accent">2000万 Tokens 大礼包</strong>！
+      </span>
+    ),
+    buttonText: '前往注册领 2000万 Tokens',
+    inviteUrl: BIGMODEL_INVITE_URL,
+    inviteCode: BIGMODEL_INVITE_CODE,
+    qrType: 'bigmodel' as const,
+    qrTip: '使用手机微信或浏览器扫码，注册即享 2000万 Tokens'
+  };
+
+  const getButtonClass = (p: ProviderPreset) => {
+    return activeProvider === p
+      ? "px-2.5 py-1 text-[9.5px] rounded border border-accent bg-accent text-accent-foreground font-semibold shadow-sm transition-all"
+      : "px-2.5 py-1 text-[9.5px] rounded border border-border bg-card/60 text-secondary-foreground hover:bg-secondary-hover/50 hover:text-foreground transition-all";
+  };
+
   return (
     <div className="p-4 border-t border-border bg-card/5 flex flex-col gap-3.5 animate-in slide-in-from-top-1 duration-150">
       {engineName === 'openai' && (
@@ -350,48 +412,129 @@ const EngineConfigForm: FunctionComponent<EngineConfigFormProps> = ({
             <button
               type="button"
               onClick={() => {
-                handleChange('baseUrl', DEEPSEEK_EXAMPLE_BASE_URL);
-                handleChange('model', DEEPSEEK_EXAMPLE_MODEL);
+                setActiveProvider('glm');
+                handleChange('baseUrl', 'https://open.bigmodel.cn/api/paas/v4');
+                handleChange('model', 'GLM-5.3-Flash');
               }}
-              className="px-2 py-0.5 text-[9px] rounded border border-border bg-card/60 text-foreground hover:bg-secondary-hover/50 hover:border-accent/40 transition-colors font-mono"
+              className={getButtonClass('glm')}
             >
-              DeepSeek (官方)
+              智谱 GLM (BigModel)
             </button>
             <button
               type="button"
               onClick={() => {
+                setActiveProvider('siliconflow');
                 handleChange('baseUrl', 'https://api.siliconflow.cn/v1');
                 handleChange('model', 'deepseek-ai/DeepSeek-V3');
               }}
-              className="px-2 py-0.5 text-[9px] rounded border border-border bg-card/60 text-foreground hover:bg-secondary-hover/50 hover:border-accent/40 transition-colors font-mono"
+              className={getButtonClass('siliconflow')}
             >
               硅基流动 (SiliconFlow)
             </button>
             <button
               type="button"
               onClick={() => {
-                handleChange('baseUrl', 'http://localhost:11434/v1');
-                handleChange('model', 'qwen2.5:7b');
+                setActiveProvider('deepseek');
+                handleChange('baseUrl', DEEPSEEK_EXAMPLE_BASE_URL);
+                handleChange('model', DEEPSEEK_EXAMPLE_MODEL);
               }}
-              className="px-2 py-0.5 text-[9px] rounded border border-border bg-card/60 text-foreground hover:bg-secondary-hover/50 hover:border-accent/40 transition-colors font-mono"
+              className={getButtonClass('deepseek')}
             >
-              本地 Ollama
+              DeepSeek (官方)
             </button>
           </div>
           <div className="grid grid-cols-[65px_1fr] gap-x-2 gap-y-1 mt-1 font-mono text-[9px] bg-secondary/10 p-2 rounded border border-border/20">
             <span className="font-sans font-bold text-foreground">Base URL:</span>
             <code className="font-semibold text-foreground select-all bg-secondary/50 px-1 rounded truncate">
-              {String(formValues.baseUrl || DEEPSEEK_EXAMPLE_BASE_URL)}
+              {String(formValues.baseUrl || (activeProvider === 'siliconflow' ? 'https://api.siliconflow.cn/v1' : activeProvider === 'deepseek' ? DEEPSEEK_EXAMPLE_BASE_URL : 'https://open.bigmodel.cn/api/paas/v4'))}
             </code>
 
             <span className="font-sans font-bold text-foreground">模型:</span>
             <code className="font-semibold text-foreground select-all bg-secondary/50 px-1 rounded truncate">
-              {String(formValues.model || DEEPSEEK_EXAMPLE_MODEL)}
+              {String(formValues.model || (activeProvider === 'siliconflow' ? 'deepseek-ai/DeepSeek-V3' : activeProvider === 'deepseek' ? DEEPSEEK_EXAMPLE_MODEL : 'GLM-5.3-Flash'))}
             </code>
           </div>
           <p className="mt-0.5 text-[9px] text-secondary-foreground/70">
             点击上方按钮可快速填入接口地址与模型。填写您的 API Key 后点击“保存配置”生效。
           </p>
+
+          <div className="mt-2 pt-2 border-t border-border/30 flex flex-col gap-1.5 animate-in fade-in duration-150">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1 font-bold text-accent text-[9.5px]">
+                <Sparkles className="w-3 h-3 text-accent shrink-0" />
+                <span>{promo.title}</span>
+              </div>
+              {promo.qrType && (
+                <button
+                  type="button"
+                  onClick={() => setShowQr(!showQr)}
+                  className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded border border-border/60 bg-secondary/40 text-foreground hover:bg-secondary transition-colors"
+                  title="手机微信扫码注册"
+                >
+                  <QrCode className="w-3 h-3 text-accent" />
+                  <span>{showQr ? '收起二维码' : '扫码注册'}</span>
+                </button>
+              )}
+            </div>
+
+            <p className="text-[9px] text-secondary-foreground/80 leading-relaxed">
+              {promo.desc}
+            </p>
+
+            <div className="flex items-center flex-wrap gap-2 pt-0.5">
+              <a
+                href={promo.inviteUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 px-2.5 py-1 text-[9px] font-semibold rounded bg-accent text-accent-foreground hover:opacity-90 transition-opacity shadow-sm"
+              >
+                <span>{promo.buttonText}</span>
+                <ExternalLink className="w-2.5 h-2.5" />
+              </a>
+
+              {promo.inviteCode && (
+                <div className="flex items-center gap-1 text-[9px] bg-secondary/50 border border-border/40 px-1.5 py-0.5 rounded font-mono">
+                  <span className="text-secondary-foreground/70 font-sans">邀请码:</span>
+                  <code className="font-bold text-foreground select-all text-[8.5px] max-w-[140px] truncate" title={promo.inviteCode}>
+                    {promo.inviteCode}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(promo.inviteCode);
+                      setCopiedCode(true);
+                      setTimeout(() => setCopiedCode(false), 2000);
+                    }}
+                    className="ml-0.5 text-accent hover:underline flex items-center gap-0.5 font-sans"
+                    title="复制邀请码"
+                  >
+                    {copiedCode ? <Check className="w-2.5 h-2.5 text-success" /> : <Copy className="w-2.5 h-2.5" />}
+                    <span>{copiedCode ? '已复制' : '复制'}</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {showQr && promo.qrType && (
+              <div className="mt-1.5 p-2.5 bg-background/95 rounded border border-border flex flex-col items-center gap-1.5 animate-in fade-in zoom-in-95 duration-150 shadow-sm">
+                <div className="w-32 h-32 bg-white rounded border border-border p-1.5 shadow-sm flex items-center justify-center">
+                  <QrCodeSvg type={promo.qrType} className="w-full h-full" />
+                </div>
+                <div className="text-[8.5px] text-secondary-foreground text-center">
+                  {promo.qrTip}
+                </div>
+                <a
+                  href={promo.inviteUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[8.5px] text-accent underline flex items-center gap-0.5 hover:opacity-80"
+                >
+                  <span>若无法扫码，点击此处直接在网页打开注册</span>
+                  <ExternalLink className="w-2 h-2" />
+                </a>
+              </div>
+            )}
+          </div>
         </div>
       )}
       {engineName === 'custom' && (
