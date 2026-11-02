@@ -17,7 +17,10 @@ npm test                 # unit tests + PDF page layout snapshots (no vscode nee
 UPDATE_SNAPSHOTS=1 npm test   # regenerate tests/__snapshots__/*.json after an intentional layout change — review the diff before committing
 npm run deploy           # scripts/build.sh local — generate src/build-info.ts, build, package, install
 npm run release          # scripts/release.js — bump versions & tag
+npm run vsix             # build production assets and package into *.vsix
 ```
+
+See `PUBLISH.md` for the complete guide on publishing to the VS Code Marketplace and GitHub Releases.
 
 Press F5 in VSCode to launch the Extension Development Host.
 `npm run lint` uses `.eslintrc.json` (eslint:recommended + @typescript-eslint/recommended) and is currently clean (0 errors, 0 warnings) — keep it that way.
