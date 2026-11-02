@@ -5,6 +5,8 @@ import { getByPath, renderBodyTemplate } from '../../utils/engineHelpers';
 import { resolveOpenAiBaseUrl, resolveOpenAiModel } from './defaults';
 import { DEFAULT_TRANSLATION_SYSTEM_PROMPT, buildGlossaryPrompt } from './llmPrompt';
 
+class NonRetryableError extends Error {}
+
 /**
  * OpenAI 兼容接口翻译引擎（DeepSeek 等遵循 chat/completions 格式的服务均可）
  */
@@ -79,7 +81,7 @@ export class OpenAIEngine implements TranslationEngine {
             console.warn(`[OpenAIEngine] 触发频率限制或服务暂不可用 (${resp.status})，准备重试 (${attempt + 1}/${maxRetries})...`);
             continue;
           }
-          throw new Error(`OpenAI 兼容接口请求失败 ${resp.status}: ${errText.slice(0, 200)}`);
+          throw new NonRetryableError(`OpenAI 兼容接口请求失败 ${resp.status}: ${errText.slice(0, 200)}`);
         }
 
         const data = (await resp.json()) as {
@@ -88,16 +90,19 @@ export class OpenAIEngine implements TranslationEngine {
         };
 
         if (data.error) {
-          throw new Error(`OpenAI 兼容接口错误: ${data.error.message}`);
+          throw new NonRetryableError(`OpenAI 兼容接口错误: ${data.error.message}`);
         }
 
         const content = data.choices?.[0]?.message?.content;
         if (!content) {
-          throw new Error('OpenAI 兼容接口返回空结果');
+          throw new NonRetryableError('OpenAI 兼容接口返回空结果');
         }
 
         return content.trim();
       } catch (err) {
+        if (err instanceof NonRetryableError) {
+          throw err;
+        }
         lastError = err instanceof Error ? err : new Error(String(err));
         if (attempt >= maxRetries) {
           throw lastError;
