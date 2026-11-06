@@ -2,7 +2,7 @@
   "name": "chunzen",
   "displayName": "春蝉 — 学术论文沉浸式阅读",
   "description": "春蝉 — 在 VSCode 中沉浸式阅读学术 PDF，支持划词翻译、双语对照翻译、期刊信息查询（IF、中科院分区）",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "publisher": "HaoC",
   "repository": {
     "type": "git",
@@ -243,7 +243,7 @@
     "compile": "webpack",
     "watch": "webpack --watch",
     "package": "webpack --mode production --devtool hidden-source-map",
-    "vsix": "npm run package && ./node_modules/.bin/vsce package --no-dependencies",
+    "vsix": "npm run package && vsce package --no-dependencies",
     "deploy": "bash scripts/build.sh local",
     "release": "node scripts/release.js",
     "compile-tests": "tsc -p . --outDir out",
