@@ -9,7 +9,10 @@ import { ConfigService } from '../services/configService';
 import { HighlightService } from '../services/highlightService';
 import { LayoutConfig } from '../types/config';
 import { MineruCoordinator } from './mineruCoordinator';
-import { AI_EXPLAIN_SYSTEM_PROMPT } from '../services/engines/llmPrompt';
+import { buildExplainSystemPrompt, parseExplainOutput } from '../services/engines/llmPrompt';
+import type { AiExplainResultMessage } from '../types/messages';
+
+type AiExplainPayload = Pick<AiExplainResultMessage, 'translation' | 'explanation' | 'notice'>;
 
 export class SidePanelProvider {
   public static readonly viewType = 'chunzen.sidePanel';
@@ -256,11 +259,11 @@ export class SidePanelProvider {
         break;
       case 'ai-explain':
         try {
-          const explanation = await this.handleAiExplain(msg.text);
+          const payload = await this.handleAiExplain(msg.text);
           this.postMessage({
             type: 'ai-explain-result',
             text: msg.text,
-            explanation
+            ...payload
           });
         } catch (err) {
           this.postMessage({
@@ -644,26 +647,32 @@ export class SidePanelProvider {
     await vscode.window.showTextDocument(doc);
   }
 
-  private async handleAiExplain(text: string): Promise<string> {
+  private async handleAiExplain(text: string): Promise<AiExplainPayload> {
     let llmError: unknown;
     try {
-      const explained = await this.translationService.completeWithLlm(AI_EXPLAIN_SYSTEM_PROMPT, text);
-      if (explained) return explained;
+      const prompt = buildExplainSystemPrompt(this.glossaryService.getMatchingTerms(text));
+      const raw = await this.translationService.completeWithLlm(prompt, text);
+      if (raw) {
+        const parsed = parseExplainOutput(raw);
+        if (parsed.translation || parsed.explanation) return parsed;
+      }
     } catch (err) {
       llmError = err;
     }
 
-    // 无可用大模型或调用失败：降级到机器翻译
+    // 无可用大模型或调用失败：降级到机器翻译，只给译文，并单独给出提示
     try {
       const transResult = await this.translationService.translate(text);
-      return llmError
-        ? `[API 错误: ${llmError instanceof Error ? llmError.message : String(llmError)}]\n\n已自动为您降级到机器翻译：\n\n${transResult.text}`
-        : `[提示] 请在设置中配置 **OpenAI 兼容接口**，以获得大模型驱动的深度学术释义。以下为机器翻译结果：\n\n${transResult.text}`;
+      const notice = llmError
+        ? `大模型调用失败（${llmError instanceof Error ? llmError.message : String(llmError)}），请检查 Base URL、API Key 与网络/代理设置。已降级为机器翻译。`
+        : '未配置大模型接口，仅提供机器翻译。在设置中配置 OpenAI 兼容接口后可获得学术释义。';
+      return { translation: transResult.text, notice };
     } catch (transErr) {
       if (llmError) throw llmError;
       throw new Error('未配置大模型接口，且机器翻译不可用: ' + (transErr instanceof Error ? transErr.message : String(transErr)));
     }
   }
+
 
   private getHtml(webview: vscode.Webview): string {
     const panelJsUri = webview.asWebviewUri(

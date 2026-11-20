@@ -7,23 +7,6 @@ import { GeneralSettings, JournalSource, LayoutConfig, MineruConfig } from './co
 
 export interface ReadyMessage { type: 'ready'; }
 
-export interface SentenceHoverMessage {
-  type: 'sentence-hover';
-  sentenceId: string;
-  text: string;
-}
-
-export interface SentenceClickMessage {
-  type: 'sentence-click';
-  sentenceId: string;
-  text: string;
-}
-
-export interface TextSelectMessage {
-  type: 'text-select';
-  text: string;
-}
-
 export interface DoiFoundMessage {
   type: 'doi-found';
   doi?: string;
@@ -103,9 +86,6 @@ export interface PdfBibliographyExtractedMessage {
 
 export type PdfViewerToExtMessage =
   | ReadyMessage
-  | SentenceHoverMessage
-  | SentenceClickMessage
-  | TextSelectMessage
   | DoiFoundMessage
   | TranslatePageParagraphsMessage
   | PageTextLoadedMessage
@@ -259,7 +239,12 @@ export interface AiExplainMessage {
 export interface AiExplainResultMessage {
   type: 'ai-explain-result';
   text: string;
+  /** 原文的中文译文 */
+  translation?: string;
+  /** 术语/句子的学术解释 */
   explanation?: string;
+  /** 降级、未配置等非致命提示 */
+  notice?: string;
   error?: string;
 }
 

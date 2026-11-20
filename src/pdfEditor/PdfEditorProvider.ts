@@ -110,18 +110,6 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
             this.sidePanel.postMessage({ type: 'pdf-hover', id: msg.id });
             break;
 
-          case 'sentence-hover':
-            await this.handleSentenceHover(msg.text);
-            break;
-
-          case 'sentence-click':
-            await this.handleSentenceHover(msg.text);
-            break;
-
-          case 'text-select':
-            await this.handleSentenceHover(msg.text);
-            break;
-
           case 'doi-found':
             await this.handleDoiFound(msg.doi, msg.issn, msg.journal);
             break;
@@ -205,22 +193,6 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
       panel = Array.from(this.webviews.values())[0];
     }
     return panel;
-  }
-
-  private async handleSentenceHover(text: string): Promise<void> {
-    if (!text.trim() || text.trim().length < 5) return;
-
-    this.sidePanel.show();
-    this.sidePanel.showLoading('翻译中…');
-
-    try {
-      const result = await this.translationService.translate(text);
-      this.sidePanel.updateTranslation(text, result.text, result.engine, result.cached);
-      this.historyService.add(text, result.text, result.engine);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      this.sidePanel.showError(msg);
-    }
   }
 
   private async handleDoiFound(

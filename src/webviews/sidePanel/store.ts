@@ -103,7 +103,7 @@ interface PanelState {
   setActivePdfUri: (uri: string | null) => void;
   highlights: SelectionHighlight[];
   setHighlights: (highlights: SelectionHighlight[]) => void;
-  aiExplainResult: { text: string; explanation?: string; error?: string } | null;
+  aiExplainResult: { text: string; translation?: string; explanation?: string; notice?: string; error?: string } | null;
   setAiExplainResult: (result: PanelState['aiExplainResult']) => void;
   mineruConfig: MineruConfig;
   setMineruConfig: (config: MineruConfig) => void;

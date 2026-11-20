@@ -110,7 +110,7 @@ export const TranslationTab: FunctionComponent = () => {
   const [glossaryCategory, setGlossaryCategory] = useState('学术词汇');
 
   // Local state for highlights, notes, and AI explanation
-  const [aiExplanation, setAiExplanation] = useState<{ text: string; result?: string; error?: string; loading: boolean } | null>(null);
+  const [aiExplanation, setAiExplanation] = useState<{ text: string; translation?: string; result?: string; notice?: string; error?: string; loading: boolean } | null>(null);
   const [activeHighlightAction, setActiveHighlightAction] = useState<{ highlight: SelectionHighlight; rect: { x: number; y: number; width: number; height: number } } | null>(null);
   const [noteEditingHlId, setNoteEditingHlId] = useState<string | null>(null);
   const [noteText, setNoteText] = useState('');
@@ -126,7 +126,9 @@ export const TranslationTab: FunctionComponent = () => {
       if (aiExplanation && aiExplanation.text === aiExplainResult.text) {
         setAiExplanation({
           text: aiExplainResult.text,
+          translation: aiExplainResult.translation,
           result: aiExplainResult.explanation,
+          notice: aiExplainResult.notice,
           error: aiExplainResult.error,
           loading: false
         });
@@ -1357,7 +1359,7 @@ export const TranslationTab: FunctionComponent = () => {
               </button>
             </div>
             
-            <div className="max-h-40 overflow-y-auto mb-3">
+            <div className="max-h-56 overflow-y-auto mb-3">
               <p className="text-[10px] text-zinc-400 italic mb-2 font-serif border-l-2 border-zinc-800 pl-2">
                 原文: "{aiExplanation.text}"
               </p>
@@ -1369,8 +1371,28 @@ export const TranslationTab: FunctionComponent = () => {
               ) : aiExplanation.error ? (
                 <div className="text-red-400 text-xs py-2 font-mono">{aiExplanation.error}</div>
               ) : (
-                <div className="text-[11.5px] leading-relaxed font-serif whitespace-pre-wrap">
-                  {aiExplanation.result}
+                <div className="flex flex-col gap-2.5">
+                  {aiExplanation.notice && (
+                    <div className="text-[10.5px] leading-relaxed text-amber-400/90 font-sans border border-amber-500/30 bg-amber-500/10 rounded px-2 py-1.5">
+                      {aiExplanation.notice}
+                    </div>
+                  )}
+                  {aiExplanation.translation && (
+                    <div>
+                      <div className="text-[10px] text-zinc-500 font-sans mb-0.5">译文</div>
+                      <div className="text-[12px] leading-relaxed font-zhSerif whitespace-pre-wrap">
+                        {aiExplanation.translation}
+                      </div>
+                    </div>
+                  )}
+                  {aiExplanation.result && (
+                    <div>
+                      <div className="text-[10px] text-zinc-500 font-sans mb-0.5">解释</div>
+                      <div className="text-[11.5px] leading-relaxed font-serif whitespace-pre-wrap">
+                        {aiExplanation.result}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1379,7 +1401,8 @@ export const TranslationTab: FunctionComponent = () => {
               <div className="flex gap-2 justify-end border-t border-zinc-900 pt-2">
                 <button
                   onClick={() => {
-                    navigator.clipboard.writeText(aiExplanation.result || '');
+                    const copyText = [aiExplanation.translation, aiExplanation.result].filter(Boolean).join('\n\n');
+                    navigator.clipboard.writeText(copyText);
                   }}
                   className="px-2.5 py-1 text-[10px] bg-zinc-800 hover:bg-zinc-700 rounded text-zinc-300 cursor-pointer border-0 font-sans"
                 >
@@ -1388,9 +1411,9 @@ export const TranslationTab: FunctionComponent = () => {
                 <button
                   onClick={() => {
                     const text = aiExplanation.text;
-                    const explanation = aiExplanation.result || '';
+                    const target = aiExplanation.translation || aiExplanation.result || '';
                     setGlossarySource(text);
-                    setGlossaryTarget(explanation.slice(0, 50));
+                    setGlossaryTarget(target.slice(0, 50));
                     setAddingGlossaryParaId(selectedParaId || '');
                     setAiExplanation(null);
                   }}
