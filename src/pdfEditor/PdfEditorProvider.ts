@@ -410,7 +410,16 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
              worker-src ${webview.cspSource} blob:;
              img-src ${webview.cspSource} blob: data:;">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="${viewerCssUri}">
+  <!--
+    Inter 走 media="print" + onload 非阻塞装载。CSS @import 与普通 <link>
+    都是阻塞渲染的：实测 webview 首屏从 ~250ms 被拖到 1.3–2.7s，断网时
+    更是等到超时才出图。代价是字体可能在首帧后才换上来——比白屏好。
+  -->
+  <link id="font-link" rel="stylesheet" media="print"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;display=swap">
   <title>春蝉 PDF 阅读器</title>
 </head>
 <body>
@@ -475,6 +484,16 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
     <div class="loading-text">加载 PDF 中…</div>
   </div>
 
+  <script nonce="${nonce}">
+    // @import 与普通 <link> 都阻塞首帧：media="print" 让浏览器不把它算作
+    // 渲染阻塞样式表，等真正下载完再切成 all，切换时已无网络等待。
+    // 内联 onload 处理器会被 CSP script-src 拦下，所以用带 nonce 的脚本。
+    (function () {
+      var link = document.getElementById('font-link');
+      if (!link) return;
+      link.addEventListener('load', function () { link.media = 'all'; });
+    })();
+  </script>
   <script nonce="${nonce}" src="${libUri}"></script>
   <script nonce="${nonce}">
     window.PDF_SRC = "${pdfSrc}";

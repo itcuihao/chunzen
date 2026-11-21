@@ -732,13 +732,31 @@ export class SidePanelProvider {
              img-src ${webview.cspSource} blob: data: https:;
              script-src 'nonce-${nonce}';">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="${panelCssUri}">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="${panelCssUri}">
+  <!--
+    KaTeX 与 Inter 都用 media="print" + load 事件切成 all 的方式加载：
+    <link rel="stylesheet"> 会阻塞首次渲染，而 webview 里这两个请求常常要
+    1–3 秒（国内访问 Google Fonts 更久）。media="print" 让浏览器判定为不渲染
+    的样式表从而不阻塞，加载完成后再切回 all；失败就保持 media="print"，
+    公式退化成普通文本而不是白屏。
+  -->
+  <link id="katex-link" rel="stylesheet" media="print"
+        href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <link id="font-link" rel="stylesheet" media="print"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Noto+Serif+SC:wght@400;500&amp;display=swap">
   <title>春蝉面板</title>
 </head>
 <body>
   <div id="app"></div>
+  <script nonce="${nonce}">
+    // 同 PdfEditorProvider：media="print" 不阻塞首帧，下载完再切 all。
+    ['katex-link', 'font-link'].forEach(function (id) {
+      var link = document.getElementById(id);
+      if (link) link.addEventListener('load', function () { link.media = 'all'; });
+    });
+  </script>
   <script nonce="${nonce}" src="${panelJsUri}"></script>
 </body>
 </html>`;

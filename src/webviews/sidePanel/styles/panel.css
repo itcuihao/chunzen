@@ -1,4 +1,6 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Noto+Serif+SC:wght@400;500&display=swap');
+/*
+ * 同 pdfViewer.css：@import 阻塞渲染，改由 webview HTML 非阻塞装载。
+ */
 
 * {
   box-sizing: border-box;

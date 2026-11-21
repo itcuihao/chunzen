@@ -1,4 +1,9 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+/*
+ * Inter 不再用 CSS @import 引入：@import 是阻塞式的，webview 会等 Google Fonts
+ * 响应完才继续解析样式表。实测首屏从 ~250ms 拖到 1.3–2.7s，断网/被墙时更久。
+ * 现在由 PdfEditorProvider 以 <link rel="preload" as="style"> + onload 切换 media
+ * 的方式非阻塞加载（见 getHtml 的 FONT_LINKS）；拿不到就走本地字体栈。
+ */
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -76,7 +81,8 @@ html, body {
   height: 100%;
   background: var(--bg);
   color: var(--text);
-  font-family: 'Inter', sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, 'Noto Sans CJK SC', sans-serif;
   overflow: hidden;
 }
 
