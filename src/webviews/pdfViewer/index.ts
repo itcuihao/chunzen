@@ -88,7 +88,12 @@ async function loadPdfDocument() {
   try {
     repeatCandidateSignaturesByPage.clear();
     repeatSignaturePages.clear();
-    initPdfJs((window as unknown as Record<string, string>).PDFJS_WORKER);
+    const globals = window as unknown as Record<string, string>;
+    initPdfJs({
+      workerSrc: globals.PDFJS_WORKER,
+      cMapUrl: globals.PDFJS_CMAPS,
+      standardFontDataUrl: globals.PDFJS_FONTS,
+    });
     pdfDoc = await loadPdf((window as unknown as Record<string, string>).PDF_SRC);
     totalPages = pdfDoc.numPages;
     const totalPagesText = `/ ${totalPages}`;

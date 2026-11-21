@@ -386,6 +386,15 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
     const viewerCssUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'pdfViewer.css')
     );
+    // PDF.js 随扩展分发（见 webpack.config.js 的 STATIC_ASSETS），版本由 lockfile
+    // 决定，不再从 CDN 拉取。worker 必须独立分发，cmaps/standard_fonts 是
+    // CJK 字形与标准字体回退的数据文件。
+    const assetUri = (relative: string) =>
+      webview.asWebviewUri(vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'pdfjs', relative));
+    const libUri = assetUri('pdf.min.js');
+    const workerUri = assetUri('pdf.worker.min.js');
+    const cmapsUri = assetUri('cmaps');
+    const fontsUri = assetUri('standard_fonts');
     const nonce = getNonce();
 
     return /* html */ `<!DOCTYPE html>
@@ -396,9 +405,9 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
     content="default-src 'none';
              connect-src ${webview.cspSource} https: http:;
              style-src ${webview.cspSource} 'unsafe-inline' https://fonts.googleapis.com;
-             font-src https://fonts.gstatic.com;
-             script-src 'nonce-${nonce}' https://cdnjs.cloudflare.com;
-             worker-src blob:;
+             font-src ${webview.cspSource} https://fonts.gstatic.com;
+             script-src 'nonce-${nonce}' ${webview.cspSource};
+             worker-src ${webview.cspSource} blob:;
              img-src ${webview.cspSource} blob: data:;">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="${viewerCssUri}">
@@ -466,10 +475,12 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
     <div class="loading-text">加载 PDF 中…</div>
   </div>
 
-  <script nonce="${nonce}" src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script nonce="${nonce}" src="${libUri}"></script>
   <script nonce="${nonce}">
     window.PDF_SRC = "${pdfSrc}";
-    window.PDFJS_WORKER = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    window.PDFJS_WORKER = "${workerUri}";
+    window.PDFJS_CMAPS = "${cmapsUri}/";
+    window.PDFJS_FONTS = "${fontsUri}/";
   </script>
   <script nonce="${nonce}" src="${viewerJsUri}"></script>
 </body>

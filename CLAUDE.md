@@ -32,7 +32,7 @@ Press F5 in VSCode to launch the Extension Development Host.
 ```
 src/
 ├── extension.ts                     # Entry: creates services (GlossaryService → TranslationService), wires providers & commands
-├── pdfEditor/PdfEditorProvider.ts   # CustomReadonlyEditorProvider for *.pdf — HTML shell refs dist/pdfViewer.js, loads PDF.js 3.11.174 from cdnjs
+├── pdfEditor/PdfEditorProvider.ts   # CustomReadonlyEditorProvider for *.pdf — HTML shell refs dist/pdfViewer.js and dist/pdfjs/*
 ├── sidePanel/
 │   ├── SidePanelProvider.ts         # WebviewPanel in ViewColumn.Two — `handleMessage` routes all PanelToExt messages
 │   └── mineruCoordinator.ts         # MinerU parse scheduling/cache (feature currently disabled)
@@ -111,7 +111,8 @@ All message types in `src/types/messages.ts` (`PdfViewerToExtMessage`, `ExtToPan
 
 ## Key Technical Details
 
-- **PDF.js 3.11.174 is loaded from cdnjs** (CSP allows `cdnjs.cloudflare.com`), not bundled. `pdfjs-dist` is pinned to the same `3.11.174` in devDependencies and used **only** by `tests/support/pageHarness.ts`; keep both versions in sync when upgrading (layout differs between PDF.js majors, e.g. 5.x finds no horizontal rules).
+- **PDF.js is bundled, not loaded from a CDN.** `webpack.config.js` (`STATIC_ASSETS`) copies `pdf.min.js`, `pdf.worker.min.js`, `cmaps/` and `standard_fonts/` from `node_modules/pdfjs-dist` into `dist/pdfjs/`; `PdfEditorProvider` serves them through `webview.asWebviewUri` and the CSP trusts only `${webview.cspSource}` for `script-src`/`worker-src`/`font-src`. Version therefore has a single source: the `pdfjs-dist` pin in `package.json` (currently exact `3.11.174`, not a range). `src/webviews/pdfViewer/pdfjsRuntime.ts` is the only place that reads the `pdfjsLib` global — `PdfEditorProvider` injects it via `<script src="dist/pdfjs/pdf.min.js">` before `dist/pdfViewer.js`, and `tests/support/pageHarness.ts` injects the legacy build, so runtime and tests share one API surface. `tests/pdfjsAssets.test.ts` enforces the pin, the built artifacts, and the absence of any CDN reference.
+- Upgrading PDF.js across majors is not free: `constructPath`'s argsArray changed shape in 4.x (handled by `pdfViewer/pathDecode.ts`, see its header), and paragraph segmentation differs, so the committed page-layout snapshots are anchored to 3.11.174 by design. Run `npm i pdfjs-dist@5 --no-save` to check decoder compatibility — only the snapshot test should fail.
 - **CSP nonce** per webview HTML via `utils/nonce.ts`; `retainContextWhenHidden: true`; `supportsMultipleEditorsPerDocument: false`
 - Network calls go through `utils/fetch.ts` `customFetch` (proxy aware) — use it for new HTTP code.
   It also calls `net.setDefaultAutoSelectFamily(false)` at load: Node 20+ Happy Eyeballs hangs until the overall timeout on hosts with multiple A records (e.g. `open.bigmodel.cn`), producing a bare `fetch failed` while `curl` works. `tests/fetch.test.ts` asserts this stays off.

@@ -3,9 +3,7 @@
 import { normalizeText, splitIntoSentences, isMathArtifact, isReferenceStart, computeParagraphMetrics } from './textRules';
 import type { TextItem, PdfViewport, RichTextContent, ParagraphBoundary, HorizontalRule } from './pdfRenderer';
 
-declare const pdfjsLib: {
-  Util: { transform(transform: number[], viewportTransform: number[]): number[] };
-};
+import { pdfjs } from './pdfjsRuntime';
 
 // 模块级变量：当前页正文字体（由 buildTextLayer 每次渲染时更新）
 let _bodyFont = '';
@@ -191,7 +189,7 @@ export function buildTextLayer(
   for (const item of items) {
     if (!item.str || !item.str.trim() || !item.fontName) continue;
     if (isRotated(item.transform)) continue;
-    const tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
+    const tx = pdfjs().Util.transform(viewport.transform, item.transform);
     if (!tx || isNaN(tx[4]) || isNaN(tx[5])) continue;
     if (tx[5] < headerY || tx[5] > footerY) continue;
     fontCharCount.set(
@@ -224,7 +222,7 @@ export function buildTextLayer(
   for (const item of items) {
     if (!item.str || !item.str.trim()) continue;
     if (isRotated(item.transform)) continue;
-    const tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
+    const tx = pdfjs().Util.transform(viewport.transform, item.transform);
     if (!tx || isNaN(tx[4]) || isNaN(tx[5])) continue;
 
     // Filter out items that are strictly off-screen to prevent pageWidth/midX contamination
@@ -684,7 +682,7 @@ export function buildTextLayer(
       const transformedItems: ColLayoutItem[] = [];
       for (const item of rangeItems) {
         if (!item.str || !item.str.trim()) continue;
-        const tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
+        const tx = pdfjs().Util.transform(viewport.transform, item.transform);
         if (!tx || isNaN(tx[4]) || isNaN(tx[5])) continue;
         if (isMathArtifact(item.str)) continue;
         if (tx[5] < headerY || tx[5] > footerY) continue;
@@ -2381,7 +2379,7 @@ function detectRightEdgeNoiseZones(items: TextItem[], viewport: PdfViewport): Ri
 
   for (const item of items) {
     if (!item.str || !item.str.trim()) continue;
-    const tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
+    const tx = pdfjs().Util.transform(viewport.transform, item.transform);
     if (!tx || isNaN(tx[4]) || isNaN(tx[5])) continue;
 
     const x = tx[4];

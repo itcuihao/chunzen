@@ -7,13 +7,7 @@ import {
   type PathBox,
   type PathLine,
 } from './pathDecode';
-
-declare const pdfjsLib: {
-  getDocument(config: { url: string; cMapUrl?: string; cMapPacked?: boolean }): { promise: Promise<PdfDocument> };
-  Util: { transform(transform: number[], viewportTransform: number[]): number[] };
-  OPS?: Record<string, number>;
-  GlobalWorkerOptions: { workerSrc: string };
-};
+import { pdfjs } from './pdfjsRuntime';
 
 interface PdfDocument {
   numPages: number;
@@ -130,12 +124,28 @@ function classifyTag(tag: string): ParagraphBoundary['role'] {
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-export function initPdfJs(workerSrc: string): void {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = workerSrc;
+/** 随扩展分发的 PDF.js 静态资源地址（由 PdfEditorProvider 注入到 window） */
+export interface PdfJsAssets {
+  workerSrc: string;
+  cMapUrl?: string;
+  standardFontDataUrl?: string;
+}
+
+let assets: PdfJsAssets = { workerSrc: '' };
+
+export function initPdfJs(config: PdfJsAssets | string): void {
+  assets = typeof config === 'string' ? { workerSrc: config } : config;
+  pdfjs().GlobalWorkerOptions.workerSrc = assets.workerSrc;
 }
 
 export async function loadPdf(url: string): Promise<PdfDocument> {
-  const loadingTask = pdfjsLib.getDocument({ url });
+  const loadingTask = pdfjs().getDocument({
+    url,
+    // 中文字体与标准字体的数据文件同样随扩展分发；缺失时 PDF.js 会退化成
+    // 画不出字形，所以地址必须和 worker 一起给全。
+    ...(assets.cMapUrl ? { cMapUrl: assets.cMapUrl, cMapPacked: true } : {}),
+    ...(assets.standardFontDataUrl ? { standardFontDataUrl: assets.standardFontDataUrl } : {}),
+  });
   return loadingTask.promise;
 }
 
@@ -292,7 +302,7 @@ function isStrokeLikeOp(op: number, OPS: Record<string, number>): boolean {
 }
 
 function mergeTransform(a: number[], b: number[]): number[] {
-  return pdfjsLib.Util.transform(a, b);
+  return pdfjs().Util.transform(a, b);
 }
 
 async function extractHorizontalRules(page: PdfPage, viewport?: PdfViewport): Promise<HorizontalRule[]> {
@@ -308,7 +318,7 @@ async function extractHorizontalRules(page: PdfPage, viewport?: PdfViewport): Pr
 
   const localViewport = viewport || page.getViewport({ scale: 1 });
   const viewportTransform = localViewport.transform;
-  const OPS = pdfjsLib.OPS || {};
+  const OPS = pdfjs().OPS || {};
   const identity = [1, 0, 0, 1, 0, 0];
   const saveCode = OPS.save;
   const restoreCode = OPS.restore;

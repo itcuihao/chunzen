@@ -7,6 +7,19 @@ const path = require('path');
 const CopyPlugin = require('copy-webpack-plugin');
 const MiniCssExtractPlugin = require('mini-css-extract-plugin');
 
+/** 需要随扩展分发、不走 webpack 打理的静态资源 */
+const STATIC_ASSETS = [
+  // PDF.js 本体与 worker。两者都取自 node_modules，版本由 lockfile 唯一决定，
+  // 不再从 CDN 加载（运行时的 3.11.174 与 devDependency 因此永远同源）。
+  { from: 'node_modules/pdfjs-dist/build/pdf.min.js', to: 'pdfjs/pdf.min.js' },
+  { from: 'node_modules/pdfjs-dist/build/pdf.worker.min.js', to: 'pdfjs/pdf.worker.min.js' },
+  // 中文等 CJK 字体的字符映射表，缺失时这些 PDF 的字形抽不出来
+  { from: 'node_modules/pdfjs-dist/cmaps', to: 'pdfjs/cmaps' },
+  // 标准字体，PDF 未内嵌字体时用它回退
+  { from: 'node_modules/pdfjs-dist/standard_fonts', to: 'pdfjs/standard_fonts' },
+  { from: 'src/webviews/pdfViewer/styles/pdfViewer.css', to: 'pdfViewer.css' }
+];
+
 /** @type {import('webpack').Configuration} */
 const extConfig = {
   target: 'node',
@@ -33,11 +46,7 @@ const extConfig = {
     ]
   },
   plugins: [
-    new CopyPlugin({
-      patterns: [
-        { from: 'src/webviews/pdfViewer/styles/pdfViewer.css', to: 'pdfViewer.css' }
-      ]
-    })
+    new CopyPlugin({ patterns: STATIC_ASSETS })
   ],
   devtool: 'nosources-source-map',
   infrastructureLogging: { level: 'log' }

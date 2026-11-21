@@ -166,7 +166,7 @@
 ## 技术栈
 
 - **Preact** + **@preact/signals** — 侧边栏 UI（~5KB）
-- **PDF.js 3.11** — PDF 渲染引擎（CDN 加载）
+- **PDF.js 3.11** — PDF 渲染引擎（随扩展打包，无需联网加载）
 - **Zustand** — 侧边栏状态管理
 - **Tailwind CSS** — 样式系统
 - **Webpack** — 多目标构建（extension / panel / pdfViewer）
