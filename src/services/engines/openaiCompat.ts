@@ -6,13 +6,17 @@
 import { resolveOpenAiBaseUrl } from './defaults';
 import { OPENAI_PRESETS } from './openaiPresets';
 
-export { OPENAI_PRESETS, findPreset, type OpenAiPreset } from './openaiPresets';
+export { OPENAI_PRESETS, findPreset, isConcretePreset, type OpenAiPreset } from './openaiPresets';
 
-/** 根据 Base URL 反查预设（用于表单回显） */
+/**
+ * 根据 Base URL 反查预设（用于表单回显）。
+ * 自定义/中转站预设的 baseUrl 是空串：它表示“不预设”，不能参与匹配，
+ * 否则任何空地址都会命中它。
+ */
 export function detectPreset(baseUrl: unknown): (typeof OPENAI_PRESETS)[number] | undefined {
   const normalized = resolveOpenAiBaseUrl(baseUrl);
   if (!normalized) return undefined;
-  return OPENAI_PRESETS.find((p) => p.baseUrl === normalized);
+  return OPENAI_PRESETS.find((p) => p.baseUrl !== '' && p.baseUrl === normalized);
 }
 
 // ── 地址候选 ──

@@ -10,6 +10,7 @@ import {
   extractModelIds,
   findPreset,
   httpFailureHint,
+  isConcretePreset,
   modelListCandidates,
   parseJson,
   previewText,
@@ -119,23 +120,57 @@ test('OpenAiRequestError: 携带请求地址、状态码与建议', () => {
 
 // ── 服务商预设 ──
 
-test('预设本身是合法地址与合法模型名（模型名不能为空、不能含空格）', () => {
-  assert.ok(OPENAI_PRESETS.length >= 4);
-  for (const preset of OPENAI_PRESETS) {
+test('具体预设本身是合法地址与合法模型名（模型名不能为空、不能含空格）', () => {
+  assert.ok(OPENAI_PRESETS.length >= 3);
+  const concrete = OPENAI_PRESETS.filter(isConcretePreset);
+  assert.ok(concrete.length >= 3, '至少要保留几个开箱可用的服务商');
+  for (const preset of concrete) {
     assert.match(preset.baseUrl, /^https:\/\//, `${preset.id} baseUrl`);
     assert.ok(preset.model.trim() === preset.model && preset.model.length > 0, `${preset.id} model`);
     assert.ok(preset.keyUrl.startsWith('https://'), `${preset.id} keyUrl`);
   }
 });
 
+test('自定义/中转站预设不带任何地址：点了就是交还手填', () => {
+  // 中转站占多数，其地址无法预设。若它带占位地址，用户点一下就会得到一个
+  // 看起来合法、实际打不通的 Base URL，反而比留空更难排查。
+  const custom = OPENAI_PRESETS.filter(p => !isConcretePreset(p));
+  assert.equal(custom.length, 1, '应当恰好有一个自定义预设');
+  for (const preset of custom) {
+    assert.equal(preset.baseUrl, '');
+    assert.equal(preset.model, '');
+    assert.equal(preset.keyUrl, '');
+    assert.ok(preset.note.length > 0, '自定义预设需要说明文案');
+  }
+});
+
+test('不提供 Kimi / OpenAI 官方预设', () => {
+  // 这两家被明确移除：前者按需临时申请，后者国内基本走中转站
+  for (const id of ['moonshot', 'kimi', 'openai']) {
+    assert.equal(findPreset(id), undefined, `不应存在 ${id} 预设`);
+  }
+  const urls = OPENAI_PRESETS.map(p => p.baseUrl).join(' ');
+  assert.ok(!/moonshot|api\.openai\.com/.test(urls), '不应残留 Kimi / OpenAI 官方地址');
+});
+
 test('预设地址互不重复，且 findPreset/detectPreset 可双向对应', () => {
-  assert.equal(new Set(OPENAI_PRESETS.map((p) => p.baseUrl)).size, OPENAI_PRESETS.length);
-  for (const preset of OPENAI_PRESETS) {
+  const concrete = OPENAI_PRESETS.filter(isConcretePreset);
+  assert.equal(new Set(concrete.map((p) => p.baseUrl)).size, concrete.length);
+  for (const preset of concrete) {
     assert.equal(findPreset(preset.id)?.baseUrl, preset.baseUrl);
     assert.equal(detectPreset(preset.baseUrl)?.id, preset.id);
   }
   assert.equal(findPreset('nope'), undefined);
   assert.equal(detectPreset('https://unknown.example.com'), undefined);
+});
+
+test('detectPreset 不会把空地址误判成自定义预设', () => {
+  // 自定义预设 baseUrl 是空串；若参与匹配，任何空/无效地址都会命中它，
+  // 表单就会以为用户“选中了自定义”，从而隐藏手填提示
+  assert.equal(detectPreset(''), undefined);
+  assert.equal(detectPreset('   '), undefined);
+  assert.equal(detectPreset(undefined), undefined);
+  assert.equal(detectPreset(null), undefined);
 });
 
 test('预设只用于表单，不参与引擎的请求路径（引擎不得回退到预设地址）', () => {

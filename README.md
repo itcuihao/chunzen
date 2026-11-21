@@ -127,13 +127,11 @@
   - 推荐模型: `Qwen/Qwen2.5-7B-Instruct`（模型名需带命名空间前缀）
   - **新用户福利**：通过 [专属邀请链接](https://cloud.siliconflow.cn/i/CZLEQUh5)（邀请码：`CZLEQUh5`）注册，免费获赠 2000 万 Tokens（14 元算力额度）。
 
-- **Kimi（Moonshot）**
-  - Base URL: `https://api.moonshot.cn/v1`
-  - 推荐模型: `moonshot-v1-8k`
-
-- **OpenAI 官方 / 任意中转**
-  - Base URL: `https://api.openai.com/v1`（必须带 `/v1`）
-  - 推荐模型: `gpt-4o-mini`
+- **自定义 / 中转站**
+  - Base URL 与模型名按你购买的服务说明填写，例如中转站常见的
+    `https://your-relay.example.com/v1` + `gpt-4o-mini`
+  - 三种填法都能识别：根地址、带 `/v1` 的地址、完整 `/chat/completions` 地址
+  - 填好后可点“测试连接”，失败时结果卡会给出实际请求的地址与原因
 
 
 ### 百度翻译

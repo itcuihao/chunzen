@@ -31,8 +31,8 @@ type OpenAiSettings = {
 };
 
 /**
- * OpenAI 兼容接口翻译引擎（DeepSeek / 智谱 / 硅基流动 / Kimi / Ollama 等遵循
- * chat/completions 格式的服务均可）
+ * OpenAI 兼容接口翻译引擎（DeepSeek / 智谱 / 硅基流动 / Ollama 以及各类
+ * 中转站等遵循 chat/completions 格式的服务均可）
  *
  * 请求链路要点：
  * - Base URL 三种填法（根地址 / 带 /v1 / 完整 endpoint）都自动尝试，避免用户猜路径

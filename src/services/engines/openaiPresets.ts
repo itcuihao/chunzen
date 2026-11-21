@@ -4,6 +4,9 @@
  * 只用于设置页“一键填入表单”，绝不作为回退值：用户不点击就不会写入任何设置，
  * 因此不会出现“更新默认值后已保存的 Key 被发往另一家服务商”的问题。
  * 本模块不 import 任何东西，避免与 defaults/openaiCompat 形成循环依赖。
+ *
+ * 注意“自定义”预设：中转站用户占多数，其地址无法预设，因此 baseUrl/model
+ * 留空——点击它只清空表单、不做任何填入，等于退回到手填状态。
  */
 
 export interface OpenAiPreset {
@@ -11,7 +14,7 @@ export interface OpenAiPreset {
   label: string;
   baseUrl: string;
   model: string;
-  /** 获取 API Key 的页面 */
+  /** 获取 API Key 的页面；空串表示没有控制台（自填/中转站） */
   keyUrl: string;
   /** 表单下方的说明文案 */
   note: string;
@@ -43,24 +46,21 @@ export const OPENAI_PRESETS: readonly OpenAiPreset[] = [
     note: '模型名需带命名空间前缀，例如 Qwen/Qwen2.5-7B-Instruct、deepseek-ai/DeepSeek-V3。'
   },
   {
-    id: 'moonshot',
-    label: 'Kimi（Moonshot）',
-    baseUrl: 'https://api.moonshot.cn/v1',
-    model: 'moonshot-v1-8k',
-    keyUrl: 'https://platform.moonshot.cn/console/api-keys',
-    note: '模型名如 moonshot-v1-8k / moonshot-v1-32k，或 kimi 系列新模型。'
-  },
-  {
-    id: 'openai',
-    label: 'OpenAI 官方',
-    baseUrl: 'https://api.openai.com/v1',
-    model: 'gpt-4o-mini',
-    keyUrl: 'https://platform.openai.com/api-keys',
-    note: 'Base URL 必须带 /v1；也兼容任何遵循 chat/completions 格式的中转服务。'
+    id: 'custom',
+    label: '自定义 / 中转站',
+    baseUrl: '',
+    model: '',
+    keyUrl: '',
+    note: '中转站或自建服务：Base URL 与模型名按你拿到的说明填写。根地址、带 /v1 的地址、完整 /chat/completions 地址都能识别。'
   }
 ];
 
 export function findPreset(id: unknown): OpenAiPreset | undefined {
   if (typeof id !== 'string') return undefined;
   return OPENAI_PRESETS.find((p) => p.id === id);
+}
+
+/** 该预设是否携带具体地址（自定义/中转站为 false） */
+export function isConcretePreset(preset: OpenAiPreset): boolean {
+  return preset.baseUrl.length > 0;
 }

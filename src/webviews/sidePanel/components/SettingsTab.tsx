@@ -3,7 +3,13 @@ import { useStore, EngineConfigFields, EngineTestResult } from '../store';
 import { postMessage } from '../vscode';
 import { Database, Sparkles, Trash2, Settings, ChevronDown, ChevronUp, Network, Play, CheckCircle2, XCircle, Info, Eye, EyeOff, Bot, GripVertical, ArrowUp, ArrowDown, ArrowUpToLine, QrCode, ExternalLink, Copy, Check } from 'lucide-react';
 import type { JournalSourceType } from '../../../types/config';
-import { findPreset, detectPreset, OPENAI_PRESETS, type OpenAiPreset } from '../../../services/engines/openaiCompat';
+import {
+  findPreset,
+  detectPreset,
+  isConcretePreset,
+  OPENAI_PRESETS,
+  type OpenAiPreset
+} from '../../../services/engines/openaiCompat';
 import { BUILD_INFO } from '../../../build-info';
 import { BIGMODEL_INVITE_URL, BIGMODEL_INVITE_CODE } from '../assets/bigmodelQr';
 import { SILICONFLOW_INVITE_URL, SILICONFLOW_INVITE_CODE } from '../assets/siliconflowQr';
@@ -358,6 +364,7 @@ const EngineConfigForm: FunctionComponent<EngineConfigFormProps> = ({
 
   const applyPreset = (preset: OpenAiPreset) => {
     setPresetId(preset.id);
+    // 自定义/中转站预设不带地址：清空表单交还给用户手填，而不是填一堆占位符
     handleChange('baseUrl', preset.baseUrl);
     handleChange('model', preset.model);
   };
@@ -401,7 +408,7 @@ const EngineConfigForm: FunctionComponent<EngineConfigFormProps> = ({
       {engineName === 'openai' && (
         <div className="text-[10px] text-secondary-foreground/75 bg-secondary/20 p-2.5 rounded border border-border/40 leading-relaxed flex flex-col gap-2 font-sans">
           <div className="font-bold text-accent">
-            第 1 步 · 选择服务商（自动填入 Base URL 与模型名）
+            第 1 步 · 选择服务商（前三项会自动填入 Base URL 与模型名；中转站选“自定义”手填）
           </div>
           <div className="flex flex-wrap gap-1.5">
             {OPENAI_PRESETS.map((preset) => (
@@ -415,7 +422,7 @@ const EngineConfigForm: FunctionComponent<EngineConfigFormProps> = ({
               </button>
             ))}
           </div>
-          {activePreset && (
+          {activePreset && isConcretePreset(activePreset) && (
             <div className="flex flex-col gap-1">
               <a
                 href={activePreset.keyUrl}
@@ -429,10 +436,10 @@ const EngineConfigForm: FunctionComponent<EngineConfigFormProps> = ({
               <span className="text-[9px] text-secondary-foreground/70">{activePreset.note}</span>
             </div>
           )}
-          {!activePreset && (
+          {(!activePreset || !isConcretePreset(activePreset)) && (
             <span className="text-[9px] text-secondary-foreground/70">
-              也可以直接填写任意 OpenAI 兼容中转服务的地址；根地址、带 /v1 的地址、完整
-              /chat/completions 地址都能识别。
+              {(activePreset?.note ?? '') ||
+                '也可以直接填写任意 OpenAI 兼容中转服务的地址；根地址、带 /v1 的地址、完整 /chat/completions 地址都能识别。'}
             </span>
           )}
         </div>
