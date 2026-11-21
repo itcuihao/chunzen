@@ -91,27 +91,50 @@
 
 | 设置项 | 说明 | 默认值 |
 |--------|------|--------|
-| API Key | 对应平台的密钥 | — |
-| Base URL | API 端点地址，**必填**（API Key 只会发往此地址） | 无 |
-| 模型名称 | 使用的模型，**必填** | 无 |
+| Base URL | API 端点地址，**必填**（API Key 只会发往此地址）。根地址、带 `/v1` 的地址、完整 `/chat/completions` 地址都能识别 | 无 |
+| API Key | 对应平台的密钥 | 无 |
+| 模型名称 | 使用的模型，**必填**；可点“拉取模型列表”从接口返回的模型里挑 | 无 |
+| 请求超时 | 单次请求超时（毫秒） | 60000 |
 | 系统提示词 | 翻译风格指令 | 学术翻译专家提示词 |
+
+设置面板左上角就是“测试连接”：先用 `GET /models` 校验地址与 Key 并列出可用模型，再发一次真实翻译验证链路。失败时会直接给出实际请求地址、状态码与可执行的下一步。
+
+“拉取模型列表”会把服务商返回的模型渲染成可点选的标签，点一下就填进表单，避免手抄模型 ID 写错。
+
+#### 网络不通时的排查
+
+所有网络请求都走 `src/utils/fetch.ts` 的 `customFetch`，它会：
+
+- 继承 VS Code 的 `http.proxy` 设置或 `HTTPS_PROXY` / `HTTP_PROXY` 环境变量；
+- 当前链路超时或拒绝连接时自动换另一条链路（代理 ↔ 直连、原生 `fetch` ↔ `node-fetch`）再试一次；
+- 关闭 Node 20+ 的 `autoSelectFamily`（Happy Eyeballs）。部分服务商的域名有多条 A 记录，该特性会让请求一直等到整体超时，表现为 `fetch failed`，而 `curl` 正常；
+- 把 `ETIMEDOUT` / `ENOTFOUND` / 自签名证书等底层错误翻译成可操作的中文提示，不再把裸 `fetch failed` 抛给界面。
 
 #### 常用服务商推荐与一键预设：
 
+- **DeepSeek 官方开放平台**
+  - Base URL: `https://api.deepseek.com`
+  - 推荐模型: `deepseek-chat`（推理模型 `deepseek-reasoner` 不支持 `temperature`，引擎会自动降级参数重试）
+  - API Key: 在 [DeepSeek 开放平台](https://platform.deepseek.com/api_keys) 控制台获取。
+
 - **智谱 GLM (BigModel)**
   - Base URL: `https://open.bigmodel.cn/api/paas/v4`
-  - 默认推荐模型: `GLM-5.3-Flash`
+  - 推荐模型: `glm-4-flash`（另有 `glm-4.5`、`glm-5`、`glm-5.3-flash` 等，以控制台为准；点“拉取模型列表”可看到全部 12 个）
   - **新用户福利**：通过 [专属邀请链接](https://www.bigmodel.cn/invite?icode=PJ048yz3Fl63Urk70glapiUjscDI85ErLfUl7XNb00w%3D)（邀请码：`PJ048yz3Fl63Urk70glapiUjscDI85ErLfUl7XNb00w=`）注册，免费领取 2000 万 Tokens 大礼包。
 
 - **硅基流动 (SiliconFlow)**
   - Base URL: `https://api.siliconflow.cn/v1`
-  - 推荐模型: `Pro/deepseek-ai/DeepSeek-V3`
+  - 推荐模型: `Qwen/Qwen2.5-7B-Instruct`（模型名需带命名空间前缀）
   - **新用户福利**：通过 [专属邀请链接](https://cloud.siliconflow.cn/i/CZLEQUh5)（邀请码：`CZLEQUh5`）注册，免费获赠 2000 万 Tokens（14 元算力额度）。
 
-- **DeepSeek 官方开放平台**
-  - Base URL: `https://api.deepseek.com`
-  - 推荐模型: `deepseek-chat`
-  - API Key: 在 [DeepSeek 开放平台](https://platform.deepseek.com) 控制台获取。
+- **Kimi（Moonshot）**
+  - Base URL: `https://api.moonshot.cn/v1`
+  - 推荐模型: `moonshot-v1-8k`
+
+- **OpenAI 官方 / 任意中转**
+  - Base URL: `https://api.openai.com/v1`（必须带 `/v1`）
+  - 推荐模型: `gpt-4o-mini`
+
 
 ### 百度翻译
 

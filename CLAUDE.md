@@ -14,6 +14,7 @@ npm run watch            # webpack --watch
 npm run package          # production build (for vsce package)
 npm run typecheck        # tsc --noEmit (src only)
 npm test                 # unit tests + PDF page layout snapshots (no vscode needed)
+npm run test:live        # only the OpenAI-compat integration suite; set CHUNZEN_LIVE_OPENAI=1 + CHUNZEN_LIVE_BASE_URL/_KEY/_MODEL to hit a real endpoint
 UPDATE_SNAPSHOTS=1 npm test   # regenerate tests/__snapshots__/*.json after an intentional layout change — review the diff before committing
 npm run deploy           # scripts/build.sh local — generate src/build-info.ts, build, package, install
 npm run release          # scripts/release.js — bump versions & tag
@@ -56,7 +57,7 @@ src/
 │       ├── baiduEngine.ts / deeplEngine.ts / openaiEngine.ts (also CustomHttpEngine)
 ├── types/                           # messages.ts (all webview↔ext messages), models.ts, config.ts, index.ts re-export
 ├── utils/
-│   ├── fetch.ts                     # customFetch: VSCode/env proxy aware, falls back to direct
+│   ├── fetch.ts                     # customFetch: proxy aware, link fallback, disables Happy Eyeballs, human-readable errors
 │   ├── engineHelpers.ts             # Pure: getByPath, renderBodyTemplate
 │   ├── academicHelper.ts            # Pure: superscript citation parsing
 │   └── nonce.ts
@@ -112,7 +113,8 @@ All message types in `src/types/messages.ts` (`PdfViewerToExtMessage`, `ExtToPan
 
 - **PDF.js 3.11.174 is loaded from cdnjs** (CSP allows `cdnjs.cloudflare.com`), not bundled. `pdfjs-dist` is pinned to the same `3.11.174` in devDependencies and used **only** by `tests/support/pageHarness.ts`; keep both versions in sync when upgrading (layout differs between PDF.js majors, e.g. 5.x finds no horizontal rules).
 - **CSP nonce** per webview HTML via `utils/nonce.ts`; `retainContextWhenHidden: true`; `supportsMultipleEditorsPerDocument: false`
-- Network calls go through `utils/fetch.ts` `customFetch` (proxy aware) — use it for new HTTP code
+- Network calls go through `utils/fetch.ts` `customFetch` (proxy aware) — use it for new HTTP code.
+  It also calls `net.setDefaultAutoSelectFamily(false)` at load: Node 20+ Happy Eyeballs hangs until the overall timeout on hosts with multiple A records (e.g. `open.bigmodel.cn`), producing a bare `fetch failed` while `curl` works. `tests/fetch.test.ts` asserts this stays off.
 - **Tests**: only modules without a `vscode` import are tested, via `node --test` with Node's native TypeScript stripping (Node ≥ 22.6) plus `tests/support/resolve-ts.mjs` for extensionless imports. Use `import type` for type-only imports in modules the tests load. Keep new logic in pure modules to keep it testable.
 - **Page layout snapshots** (`tests/pageLayout.test.ts`): run the real `getPageText` + `buildTextLayer` on pages of the PDFs in `pdf/` and compare a fingerprint (block type, column, rounded box, sentence count, text hash — no prose) with the committed snapshot. They skip if the sample PDFs are absent. A failing snapshot means layout output changed: decide whether that is intended, then regenerate.
 - **tsconfig**: `jsx: "react-jsx"`, `jsxImportSource: "react"`, `include: ["src"]`
