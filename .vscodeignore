@@ -15,6 +15,7 @@ scripts/**
 out/**
 scratch/**
 test/**
+tests/**
 CLAUDE.md
 README.html
 test-page7.mjs
