@@ -144,6 +144,27 @@ test('自定义/中转站预设不带任何地址：点了就是交还手填', (
   }
 });
 
+test('预设默认模型名是当前官方 ID，不是已下线/版本号', () => {
+  // deepseek-chat / deepseek-reasoner 已从官方文档全站消失；
+  // "DeepSeek-V4.1-Flash-1017" 是 MODEL VERSION，不是可请求的模型 ID——填它必 404。
+  // 文档原文：Use deepseek-flash as the model name.
+  const deepseek = findPreset('deepseek');
+  assert.equal(deepseek?.model, 'deepseek-flash');
+  const deepseekNote = deepseek?.note ?? '';
+  assert.ok(/deepseek-chat/.test(deepseekNote), '应提示旧名已下线，避免用户沿用旧文档');
+
+  // SiliconFlow 是命名空间前缀式，且与智谱直连的模型名不同：
+  // 直连写 glm-4-flash，中转写 zai-org/GLM-5.3-Flash。
+  const silicon = findPreset('siliconflow');
+  assert.equal(silicon?.model, 'zai-org/GLM-5.3-Flash');
+
+  // 所有具体预设的模型名都不能是"看起来像版本号"的写法
+  for (const preset of OPENAI_PRESETS.filter(isConcretePreset)) {
+    assert.ok(!/[A-Z]{2,}.*-\d{4}$/.test(preset.model), `${preset.id} 模型名疑似版本号`);
+    assert.ok(!/^\s|\s$/.test(preset.model), `${preset.id} 模型名含空白`);
+  }
+});
+
 test('不提供 Kimi / OpenAI 官方预设', () => {
   // 这两家被明确移除：前者按需临时申请，后者国内基本走中转站
   for (const id of ['moonshot', 'kimi', 'openai']) {

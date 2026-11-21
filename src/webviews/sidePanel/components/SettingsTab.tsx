@@ -49,7 +49,7 @@ const engineFields: Record<string, EngineField[]> = {
   openai: [
     { key: 'baseUrl', label: 'Base URL', type: 'text', placeholder: '必填，如 https://api.deepseek.com' },
     { key: 'apiKey', label: 'API Key', type: 'password', placeholder: '服务商控制台里的 API Key' },
-    { key: 'model', label: '模型名称', type: 'text', placeholder: '必填，如 deepseek-chat' },
+    { key: 'model', label: '模型名称', type: 'text', placeholder: '必填，如 deepseek-flash' },
     { key: 'timeoutMs', label: '请求超时 (毫秒)', type: 'text', placeholder: '60000' },
     { key: 'systemPrompt', label: '系统提示词', type: 'textarea', placeholder: '你是一个学术翻译专家...' }
   ],

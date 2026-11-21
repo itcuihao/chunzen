@@ -136,7 +136,7 @@
         "chunzen.translation.openai.model": {
           "type": "string",
           "default": "",
-          "description": "使用的模型名称，需手动填写。例如 DeepSeek：deepseek-chat"
+          "description": "使用的模型名称，需手动填写。例如 DeepSeek：deepseek-flash"
         },
         "chunzen.translation.openai.timeoutMs": {
           "type": "number",

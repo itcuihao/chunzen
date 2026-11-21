@@ -84,5 +84,6 @@ test('resolveOpenAiModel: 空/空白/非字符串不可用，其余去空白后�
 
 test('示例常量本身是合法的，且只用于设置页按钮，不是回退值', () => {
   assert.equal(resolveOpenAiBaseUrl(DEEPSEEK_EXAMPLE_BASE_URL), 'https://api.deepseek.com');
-  assert.equal(resolveOpenAiModel(DEEPSEEK_EXAMPLE_MODEL), 'deepseek-chat');
+  // 跟随 deepseek 预设，因此这里与 openaiPresets.ts 是同一个真值来源
+  assert.equal(resolveOpenAiModel(DEEPSEEK_EXAMPLE_MODEL), 'deepseek-flash');
 });

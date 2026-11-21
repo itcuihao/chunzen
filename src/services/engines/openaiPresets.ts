@@ -25,9 +25,11 @@ export const OPENAI_PRESETS: readonly OpenAiPreset[] = [
     id: 'deepseek',
     label: 'DeepSeek 官方',
     baseUrl: 'https://api.deepseek.com',
-    model: 'deepseek-chat',
+    model: 'deepseek-flash',
     keyUrl: 'https://platform.deepseek.com/api_keys',
-    note: '对话模型：deepseek-chat；推理模型：deepseek-reasoner（不支持 temperature，已按兼容方式发送）。'
+    note:
+      'deepseek-flash 即 V4.1-Flash（版本 DeepSeek-V4.1-Flash-1017）；另有 deepseek-v4-pro。' +
+      '旧的 deepseek-chat / deepseek-reasoner 已下线，填了会报模型不存在。'
   },
   {
     id: 'glm',
@@ -35,15 +37,17 @@ export const OPENAI_PRESETS: readonly OpenAiPreset[] = [
     baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
     model: 'glm-4-flash',
     keyUrl: 'https://open.bigmodel.cn/usercenter/apikeys',
-    note: '免费模型如 glm-4-flash、glm-4.5-flash；可用模型以控制台为准。'
+    note: '免费模型如 glm-4-flash、glm-4.5-flash；可用模型以控制台为准，点“拉取模型列表”可看全部 12 个。'
   },
   {
     id: 'siliconflow',
     label: '硅基流动 SiliconFlow',
     baseUrl: 'https://api.siliconflow.cn/v1',
-    model: 'Qwen/Qwen2.5-7B-Instruct',
+    model: 'zai-org/GLM-5.3-Flash',
     keyUrl: 'https://cloud.siliconflow.cn/account/ak',
-    note: '模型名需带命名空间前缀，例如 Qwen/Qwen2.5-7B-Instruct、deepseek-ai/DeepSeek-V3。'
+    note:
+      '模型名需带命名空间前缀，如 zai-org/GLM-5.3-Flash、Qwen/Qwen2.5-7B-Instruct。' +
+      '注意中转名与智谱直连不同：这里写 zai-org/GLM-5.3-Flash，不是 glm-4-flash。'
   },
   {
     id: 'custom',

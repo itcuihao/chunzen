@@ -114,7 +114,8 @@
 
 - **DeepSeek 官方开放平台**
   - Base URL: `https://api.deepseek.com`
-  - 推荐模型: `deepseek-chat`（推理模型 `deepseek-reasoner` 不支持 `temperature`，引擎会自动降级参数重试）
+  - 推荐模型: `deepseek-flash`（即 V4.1-Flash，版本号 `DeepSeek-V4.1-Flash-1017`；另有 `deepseek-v4-pro`）
+  - 注意：旧的 `deepseek-chat` / `deepseek-reasoner` 已下线，填了会报模型不存在
   - API Key: 在 [DeepSeek 开放平台](https://platform.deepseek.com/api_keys) 控制台获取。
 
 - **智谱 GLM (BigModel)**
@@ -124,7 +125,8 @@
 
 - **硅基流动 (SiliconFlow)**
   - Base URL: `https://api.siliconflow.cn/v1`
-  - 推荐模型: `Qwen/Qwen2.5-7B-Instruct`（模型名需带命名空间前缀）
+  - 推荐模型: `zai-org/GLM-5.3-Flash`（模型名需带命名空间前缀，如 `Qwen/Qwen2.5-7B-Instruct`、
+    `zai-org/GLM-5.3`；注意与智谱直连的 `glm-4-flash` 不同）
   - **新用户福利**：通过 [专属邀请链接](https://cloud.siliconflow.cn/i/CZLEQUh5)（邀请码：`CZLEQUh5`）注册，免费获赠 2000 万 Tokens（14 元算力额度）。
 
 - **自定义 / 中转站**

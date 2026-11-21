@@ -183,7 +183,7 @@ export class OpenAIEngine implements TranslationEngine {
         '模型名称为空，API Key 不会被发送',
         undefined,
         undefined,
-        '填写服务商控制台里的模型 ID，例如 deepseek-chat；也可点“拉取模型列表”挑选'
+        '填写服务商控制台里的模型 ID，例如 deepseek-flash；也可点“拉取模型列表”挑选'
       );
     }
 
