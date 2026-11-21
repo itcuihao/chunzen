@@ -1,7 +1,9 @@
 // 在 Node 中用真实 PDF.js + 真实 getPageText/buildTextLayer 处理 PDF 页面，供快照测试使用。
 // 只模拟 buildTextLayer 用到的最小 DOM（document.createElement('span') + container.appendChild）。
 
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { createRequire } from 'node:module';
 import { buildTextLayer } from '../../src/webviews/pdfViewer/textLayer.ts';
 import { getPageText } from '../../src/webviews/pdfViewer/pdfRenderer.ts';
@@ -17,10 +19,18 @@ let pdfjs: PdfjsModule | undefined;
 
 async function loadPdfjs(): Promise<PdfjsModule> {
   if (!pdfjs) {
-    // 插件运行时从 CDN 加载 PDF.js 3.11.174（见 PdfEditorProvider），测试固定同一版本；
-    // 3.x 的 legacy 构建是 CommonJS，经 createRequire 加载。
+    // 插件运行时从 CDN 加载 PDF.js 3.11.174（见 PdfEditorProvider）。devDependency 可以
+    // 升级到更新的 major 来验证 pdfRenderer.ts 的跨版本兼容（constructPath 参数结构在
+    // 4.x 变了），所以这里按实际安装的产物挑入口：
+    //   3.x → legacy/build/pdf.js（CommonJS，createRequire 加载）
+    //   4.x+ → legacy/build/pdf.mjs（ESM，动态 import 加载）
     const require = createRequire(import.meta.url);
-    pdfjs = require('pdfjs-dist/legacy/build/pdf.js') as PdfjsModule;
+    const legacyDir = join(import.meta.dirname, '..', '..', 'node_modules/pdfjs-dist/legacy/build');
+    if (existsSync(join(legacyDir, 'pdf.js'))) {
+      pdfjs = require('pdfjs-dist/legacy/build/pdf.js') as PdfjsModule;
+    } else {
+      pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs') as PdfjsModule;
+    }
     // pdfRenderer.ts / textLayer.ts 在浏览器里依赖全局 pdfjsLib
     (globalThis as any).pdfjsLib = pdfjs;
   }

@@ -1,5 +1,13 @@
 // PDF viewer webview — PDF.js rendering module
 
+import {
+  extractPathLines,
+  isDrawOpsShape,
+  toNumberArray,
+  type PathBox,
+  type PathLine,
+} from './pathDecode';
+
 declare const pdfjsLib: {
   getDocument(config: { url: string; cMapUrl?: string; cMapPacked?: boolean }): { promise: Promise<PdfDocument> };
   Util: { transform(transform: number[], viewportTransform: number[]): number[] };
@@ -270,180 +278,6 @@ function dedupBoundaries(boundaries: ParagraphBoundary[]): ParagraphBoundary[] {
   return result;
 }
 
-type PathLine = { x1: number; y1: number; x2: number; y2: number };
-type PathBox = { minX: number; minY: number; maxX: number; maxY: number };
-
-function applyTransformPoint(x: number, y: number, m: number[]): [number, number] {
-  return [
-    m[0] * x + m[2] * y + m[4],
-    m[1] * x + m[3] * y + m[5],
-  ];
-}
-
-function mergeTransform(a: number[], b: number[]): number[] {
-  return pdfjsLib.Util.transform(a, b);
-}
-
-function toNumberArray(input: unknown): number[] {
-  if (!input) return [];
-  if (Array.isArray(input)) return input.map(Number).filter(Number.isFinite);
-  if (ArrayBuffer.isView(input)) return Array.from(input as unknown as ArrayLike<number>).map(Number).filter(Number.isFinite);
-  return [];
-}
-
-function extractPathLinesFromConstructPathArgs(
-  args: unknown,
-  ctm: number[],
-  viewportTransform: number[]
-): { lines: PathLine[]; boxes: PathBox[] } {
-  const arr = Array.isArray(args) ? args : [];
-  if (arr.length < 2) return { lines: [], boxes: [] };
-
-  const rawOps = arr[0];
-  const rawData = arr[1];
-  const rawMinMax = arr.length > 2 ? arr[2] : undefined;
-
-  const ops = toNumberArray(rawOps);
-  if (ops.length === 0) return { lines: [], boxes: [] };
-
-  const directData = toNumberArray(rawData);
-  const data = directData.length > 0
-    ? directData
-    : (Array.isArray(rawData) && rawData.length > 0 ? toNumberArray(rawData[0]) : []);
-  const minMax = toNumberArray(rawMinMax);
-
-  const rules: { lines: PathLine[]; boxes: PathBox[] } = { lines: [], boxes: [] };
-
-  const OPS = pdfjsLib.OPS || {};
-  const moveToCode = OPS.moveTo;
-  const lineToCode = OPS.lineTo;
-  const curveToCode = OPS.curveTo;
-  const curveTo2Code = OPS.curveTo2;
-  const curveTo3Code = OPS.curveTo3;
-  const closePathCode = OPS.closePath;
-  const rectCode = OPS.rect ?? OPS.rectangle;
-
-  let i = 0;
-  let cx = 0;
-  let cy = 0;
-  let sx = 0;
-  let sy = 0;
-  let hasCurrentPoint = false;
-
-  for (const op of ops) {
-    if (moveToCode !== undefined && op === moveToCode) {
-      if (i + 1 >= data.length) break;
-      cx = data[i++];
-      cy = data[i++];
-      sx = cx;
-      sy = cy;
-      hasCurrentPoint = true;
-      continue;
-    }
-
-    if (lineToCode !== undefined && op === lineToCode) {
-      if (i + 1 >= data.length || !hasCurrentPoint) break;
-      const nx = data[i++];
-      const ny = data[i++];
-      const [px1, py1] = applyTransformPoint(cx, cy, ctm);
-      const [px2, py2] = applyTransformPoint(nx, ny, ctm);
-      const [vx1, vy1] = applyTransformPoint(px1, py1, viewportTransform);
-      const [vx2, vy2] = applyTransformPoint(px2, py2, viewportTransform);
-      rules.lines.push({ x1: vx1, y1: vy1, x2: vx2, y2: vy2 });
-      cx = nx;
-      cy = ny;
-      continue;
-    }
-
-    if (rectCode !== undefined && op === rectCode) {
-      if (i + 3 >= data.length) break;
-      const x = data[i++];
-      const y = data[i++];
-      const w = data[i++];
-      const h = data[i++];
-      const corners = [
-        applyTransformPoint(x, y, ctm),
-        applyTransformPoint(x + w, y, ctm),
-        applyTransformPoint(x + w, y + h, ctm),
-        applyTransformPoint(x, y + h, ctm),
-      ].map(([px, py]) => applyTransformPoint(px, py, viewportTransform));
-      const xs = corners.map(([px]) => px);
-      const ys = corners.map(([, py]) => py);
-      rules.boxes.push({
-        minX: Math.min(...xs),
-        minY: Math.min(...ys),
-        maxX: Math.max(...xs),
-        maxY: Math.max(...ys),
-      });
-      cx = x;
-      cy = y;
-      sx = x;
-      sy = y;
-      hasCurrentPoint = true;
-      continue;
-    }
-
-    if (curveToCode !== undefined && op === curveToCode) {
-      if (i + 5 >= data.length) break;
-      i += 4;
-      cx = data[i++];
-      cy = data[i++];
-      hasCurrentPoint = true;
-      continue;
-    }
-
-    if (curveTo2Code !== undefined && op === curveTo2Code) {
-      if (i + 3 >= data.length) break;
-      i += 2;
-      cx = data[i++];
-      cy = data[i++];
-      hasCurrentPoint = true;
-      continue;
-    }
-
-    if (curveTo3Code !== undefined && op === curveTo3Code) {
-      if (i + 3 >= data.length) break;
-      i += 2;
-      cx = data[i++];
-      cy = data[i++];
-      hasCurrentPoint = true;
-      continue;
-    }
-
-    if (closePathCode !== undefined && op === closePathCode) {
-      if (hasCurrentPoint) {
-        const [px1, py1] = applyTransformPoint(cx, cy, ctm);
-        const [px2, py2] = applyTransformPoint(sx, sy, ctm);
-        const [vx1, vy1] = applyTransformPoint(px1, py1, viewportTransform);
-        const [vx2, vy2] = applyTransformPoint(px2, py2, viewportTransform);
-        rules.lines.push({ x1: vx1, y1: vy1, x2: vx2, y2: vy2 });
-        cx = sx;
-        cy = sy;
-      }
-      continue;
-    }
-  }
-
-  if (minMax.length >= 4) {
-    const [minX, minY, maxX, maxY] = minMax;
-    const corners = [
-      applyTransformPoint(minX, minY, ctm),
-      applyTransformPoint(maxX, minY, ctm),
-      applyTransformPoint(maxX, maxY, ctm),
-      applyTransformPoint(minX, maxY, ctm),
-    ].map(([px, py]) => applyTransformPoint(px, py, viewportTransform));
-    const xs = corners.map(([px]) => px);
-    const ys = corners.map(([, py]) => py);
-    rules.boxes.push({
-      minX: Math.min(...xs),
-      minY: Math.min(...ys),
-      maxX: Math.max(...xs),
-      maxY: Math.max(...ys),
-    });
-  }
-
-  return rules;
-}
 
 function isStrokeLikeOp(op: number, OPS: Record<string, number>): boolean {
   const strokeLike = [
@@ -455,6 +289,10 @@ function isStrokeLikeOp(op: number, OPS: Record<string, number>): boolean {
     OPS.closeEOFillStroke,
   ].filter((v): v is number => typeof v === 'number');
   return strokeLike.includes(op);
+}
+
+function mergeTransform(a: number[], b: number[]): number[] {
+  return pdfjsLib.Util.transform(a, b);
 }
 
 async function extractHorizontalRules(page: PdfPage, viewport?: PdfViewport): Promise<HorizontalRule[]> {
@@ -562,9 +400,16 @@ async function extractHorizontalRules(page: PdfPage, viewport?: PdfViewport): Pr
       continue;
     }
     if (constructPathCode !== undefined && fn === constructPathCode) {
-      const extracted = extractPathLinesFromConstructPathArgs(args, ctm, viewportTransform);
+      const extracted = extractPathLines(args, ctm, viewportTransform, OPS);
       pendingLines.push(...extracted.lines);
       pendingBoxes.push(...extracted.boxes);
+      // PDF.js 4.x+ 把绘制算子合进了 constructPath 自身（args[0] 为 stroke/closeStroke 等），
+      // 后面不再跟独立的 stroke 算子，所以必须在这里立即冲刷。
+      // 3.x 的 args[0] 是算子数组，不会命中这个分支。
+      const embeddedOp = isDrawOpsShape(args) ? Number((args as unknown[])[0]) : NaN;
+      if (Number.isFinite(embeddedOp) && isStrokeLikeOp(embeddedOp, OPS)) {
+        flushPath(true);
+      }
       continue;
     }
 
