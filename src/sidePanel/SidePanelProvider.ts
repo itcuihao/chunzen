@@ -754,7 +754,12 @@ export class SidePanelProvider {
     // 同 PdfEditorProvider：media="print" 不阻塞首帧，下载完再切 all。
     ['katex-link', 'font-link'].forEach(function (id) {
       var link = document.getElementById(id);
-      if (link) link.addEventListener('load', function () { link.media = 'all'; });
+      if (!link) return;
+      // 缓存命中时 load 可能已错过；link.sheet 非 null 表示已解析完成。
+      var done = false;
+      var flip = function () { if (!done) { done = true; link.media = 'all'; } };
+      if (link.sheet) { flip(); return; }
+      link.addEventListener('load', flip);
     });
   </script>
   <script nonce="${nonce}" src="${panelJsUri}"></script>

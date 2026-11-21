@@ -13,6 +13,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync, statSync } from 'node:fs';
+import { execSync } from 'node:child_process';
 import { join } from 'node:path';
 
 const ROOT = join(import.meta.dirname, '..');
@@ -91,4 +92,12 @@ describe('运行期必需资源不被排除', () => {
     assert.ok(size > 0);
     assert.ok(covers(ignoreRules(), 'pdf'), '.vscodeignore 未排除 pdf/');
   });
+});
+
+test('dist/ 是构建产物，不能有文件被 git 跟踪', () => {
+  // dist/pdfViewer.css 与 dist/panel.js.LICENSE.txt 曾被历史误提交：它们被
+  // .gitignore 忽略却又在索引里，于是每次 npm run compile 都让工作区变脏，
+  // 还会混进无关提交的 diff。构建产物应当只由 CI/本地构建生成。
+  const out = execSync('git ls-files dist/', { cwd: ROOT, encoding: 'utf8' }).trim();
+  assert.equal(out, '', `dist/ 下仍有被跟踪文件:\n${out}`);
 });

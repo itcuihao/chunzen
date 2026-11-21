@@ -68,6 +68,18 @@ test('切 media 靠带 nonce 的脚本，不能靠内联 onload', () => {
   }
 });
 
+test('切 media 前检查 link.sheet，避免错过已触发的 load', () => {
+  // <link> 在 <head>，切换脚本在 <body> 末尾。字体命中缓存时样式表可能在脚本
+  // 执行前就解析完（实测 load 只比监听注册晚 0.7-4ms，往返顺序随时可能倒过来），
+  // 此时 load 已经错过，media 会永远停在 print —— 字体永久不生效且无报错。
+  // link.sheet 非 null 即表示已解析，可以直接切。
+  for (const rel of ['src/pdfEditor/PdfEditorProvider.ts', 'src/sidePanel/SidePanelProvider.ts']) {
+    const src = read(rel);
+    assert.match(src, /link\.sheet/, `${rel} 未处理 load 已触发的情形`);
+    assert.match(src, /done\s*=\s*false/, `${rel} 缺少幂等保护`);
+  }
+});
+
 test('字体栈有本地回退，拿不到字体也不会退化成衬线体', () => {
   const css = read('src/webviews/pdfViewer/styles/pdfViewer.css');
   const decl = css.match(/font-family:\s*'Inter',([^;]+);/);

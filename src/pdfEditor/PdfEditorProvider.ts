@@ -491,7 +491,12 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
     (function () {
       var link = document.getElementById('font-link');
       if (!link) return;
-      link.addEventListener('load', function () { link.media = 'all'; });
+      // 缓存命中时样式表可能在脚本执行前就解析完，load 已经错过；
+      // link.sheet 非 null 即表示已解析，此时直接切 all 不必再等事件。
+      var done = false;
+      var flip = function () { if (!done) { done = true; link.media = 'all'; } };
+      if (link.sheet) { flip(); return; }
+      link.addEventListener('load', flip);
     })();
   </script>
   <script nonce="${nonce}" src="${libUri}"></script>
