@@ -6,6 +6,15 @@ export interface TranslationResult {
   cached: boolean;
 }
 
+export interface EngineDiagnoseResult {
+  ok: boolean;
+  message: string;
+  hint?: string;
+  requestUrl?: string;
+  modelCount?: number;
+  models?: string[];
+}
+
 export interface TranslationEngine {
   name: string;
   displayName: string;
@@ -14,6 +23,8 @@ export interface TranslationEngine {
   isConfigured(): boolean;
   /** 仅大模型类引擎实现：以任意 system prompt 完成一次对话（用于 AI 释义等非翻译场景） */
   complete?(systemPrompt: string, userText: string, configOverride?: Record<string, any>): Promise<string>;
+  /** 仅大模型类引擎实现：不改动翻译设置地验证地址与 Key，并尽量返回可用模型列表 */
+  diagnose?(baseUrl?: string, apiKey?: string, timeoutMs?: number): Promise<EngineDiagnoseResult>;
   translate(text: string, sourceLang?: string, targetLang?: string, glossary?: GlossaryEntry[], configOverride?: Record<string, any>): Promise<string>;
 }
 

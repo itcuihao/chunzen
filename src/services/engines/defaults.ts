@@ -6,9 +6,13 @@
  * 否则更新默认值时，已保存 Key 的用户会在不知情时把 Key 发往另一家服务商。
  */
 
+import { OPENAI_PRESETS } from './openaiPresets';
+
+const DEEPSEEK_PRESET = OPENAI_PRESETS.find((p) => p.id === 'deepseek')!;
+
 /** 设置页“填入示例”按钮使用的 DeepSeek 示例：只在用户点击后写入表单，绝不作为回退值 */
-export const DEEPSEEK_EXAMPLE_BASE_URL = 'https://api.deepseek.com';
-export const DEEPSEEK_EXAMPLE_MODEL = 'deepseek-flash';
+export const DEEPSEEK_EXAMPLE_BASE_URL = DEEPSEEK_PRESET.baseUrl;
+export const DEEPSEEK_EXAMPLE_MODEL = DEEPSEEK_PRESET.model;
 
 /**
  * 规范化并校验用户填写的 Base URL。
@@ -34,4 +38,14 @@ export function resolveOpenAiModel(raw: unknown): string | undefined {
   if (typeof raw !== 'string') return undefined;
   const trimmed = raw.trim();
   return trimmed || undefined;
+}
+
+/**
+ * 读取一次请求的超时时间（毫秒）。设置页可调，缺省 60s：
+ * 长句翻译在部分服务商上需要十几秒，30s 会误判为超时。
+ */
+export function resolveOpenAiTimeout(raw: unknown): number {
+  const ms = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw) : NaN;
+  if (!Number.isFinite(ms)) return 60000;
+  return Math.min(180000, Math.max(3000, Math.round(ms)));
 }

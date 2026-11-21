@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { GeneralSettings, JournalSourceType, LayoutConfig, MineruConfig } from '../types/config';
 import { getEngineNames, getEngines, getTranslationPriority } from './engines/registry';
 import { normalizePriority } from './enginePriority';
-import { CACHE_MAX_SIZE, DEFAULT_LAYOUT_ENDPOINT, LAYOUT_TIMEOUT_MS, clampNumber, oneOf } from './settingsNormalize';
+import { CACHE_MAX_SIZE, DEFAULT_LAYOUT_ENDPOINT, LAYOUT_TIMEOUT_MS, OPENAI_TIMEOUT_MS, clampNumber, oneOf } from './settingsNormalize';
 
 const HOVER_STYLES = ['overlay', 'bar'] as const;
 const THEMES = ['auto', 'dark', 'light'] as const;
@@ -25,7 +25,8 @@ export class ConfigService {
         apiKey: cfg.get<string>('openai.apiKey', '').trim(),
         baseUrl: cfg.get<string>('openai.baseUrl', '').trim(),
         model: cfg.get<string>('openai.model', '').trim(),
-        systemPrompt: cfg.get<string>('openai.systemPrompt', '').trim()
+        systemPrompt: cfg.get<string>('openai.systemPrompt', '').trim(),
+        timeoutMs: clampNumber(cfg.get<number>('openai.timeoutMs'), OPENAI_TIMEOUT_MS)
       },
       custom: {
         url: cfg.get<string>('custom.url', '').trim(),
@@ -74,7 +75,13 @@ export class ConfigService {
     return {
       baidu: { appId: tc.baidu.appId, secretKey: tc.baidu.secretKey },
       deepl: { apiKey: tc.deepl.apiKey, freeApi: String(tc.deepl.freeApi) },
-      openai: { apiKey: tc.openai.apiKey, baseUrl: tc.openai.baseUrl, model: tc.openai.model, systemPrompt: tc.openai.systemPrompt },
+      openai: {
+        apiKey: tc.openai.apiKey,
+        baseUrl: tc.openai.baseUrl,
+        model: tc.openai.model,
+        systemPrompt: tc.openai.systemPrompt,
+        timeoutMs: String(tc.openai.timeoutMs)
+      },
       custom: { url: tc.custom.url, headers: JSON.stringify(tc.custom.headers), bodyTemplate: tc.custom.bodyTemplate, responsePath: tc.custom.responsePath }
     };
   }
@@ -110,6 +117,10 @@ export class ConfigService {
 
       if (key === 'freeApi') {
         await cfg.update(fullKey, trimmedValue === 'true', vscode.ConfigurationTarget.Global);
+      } else if (key === 'timeoutMs') {
+        // 数值型设置必须写成 number，否则 package.json 的类型校验会报错
+        const parsed = typeof trimmedValue === 'number' ? trimmedValue : Number(trimmedValue);
+        await cfg.update(fullKey, clampNumber(parsed, OPENAI_TIMEOUT_MS), vscode.ConfigurationTarget.Global);
       } else if (key === 'headers') {
         try {
           const parsed = JSON.parse(trimmedValue);

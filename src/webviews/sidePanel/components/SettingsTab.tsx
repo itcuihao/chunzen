@@ -1,9 +1,9 @@
 import { FunctionComponent, useEffect, useState } from 'react';
-import { useStore, EngineConfigFields } from '../store';
+import { useStore, EngineConfigFields, EngineTestResult } from '../store';
 import { postMessage } from '../vscode';
 import { Database, Sparkles, Trash2, Settings, ChevronDown, ChevronUp, Network, Play, CheckCircle2, XCircle, Info, Eye, EyeOff, Bot, GripVertical, ArrowUp, ArrowDown, ArrowUpToLine, QrCode, ExternalLink, Copy, Check } from 'lucide-react';
 import type { JournalSourceType } from '../../../types/config';
-import { DEEPSEEK_EXAMPLE_BASE_URL, DEEPSEEK_EXAMPLE_MODEL } from '../../../services/engines/defaults';
+import { findPreset, detectPreset, OPENAI_PRESETS, type OpenAiPreset } from '../../../services/engines/openaiCompat';
 import { BUILD_INFO } from '../../../build-info';
 import { BIGMODEL_INVITE_URL, BIGMODEL_INVITE_CODE } from '../assets/bigmodelQr';
 import { SILICONFLOW_INVITE_URL, SILICONFLOW_INVITE_CODE } from '../assets/siliconflowQr';
@@ -41,9 +41,10 @@ const engineFields: Record<string, EngineField[]> = {
     { key: 'freeApi', label: '使用免费版 API', type: 'toggle' }
   ],
   openai: [
-    { key: 'apiKey', label: 'API Key', type: 'password', placeholder: 'API Key' },
     { key: 'baseUrl', label: 'Base URL', type: 'text', placeholder: '必填，如 https://api.deepseek.com' },
-    { key: 'model', label: '模型名称', type: 'text', placeholder: '必填，如 deepseek-flash' },
+    { key: 'apiKey', label: 'API Key', type: 'password', placeholder: '服务商控制台里的 API Key' },
+    { key: 'model', label: '模型名称', type: 'text', placeholder: '必填，如 deepseek-chat' },
+    { key: 'timeoutMs', label: '请求超时 (毫秒)', type: 'text', placeholder: '60000' },
     { key: 'systemPrompt', label: '系统提示词', type: 'textarea', placeholder: '你是一个学术翻译专家...' }
   ],
   custom: [
@@ -61,7 +62,6 @@ const COLLAPSED_BY_DEFAULT = ['deepl'];
 
 const EngineSettings: FunctionComponent = () => {
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [testing, setTesting] = useState<string | null>(null);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);
   const [showCollapsed, setShowCollapsed] = useState(false);
@@ -71,6 +71,10 @@ const EngineSettings: FunctionComponent = () => {
   const engineConfigs = useStore((state) => state.engineConfigs) || {};
   const testResults = useStore((state) => state.testResults) || {};
   const setEnginePriority = useStore((state) => state.setEnginePriority);
+  // 测试状态放在 store 里：结果由扩展端回传后才清除，不用定时器猜
+  const testing = useStore((state) => state.testingEngine);
+  const setTestingEngine = useStore((state) => state.setTestingEngine);
+  const clearTestResultForEngine = useStore((state) => state.clearTestResultForEngine);
 
   // 默认折叠、但用户已配置时自动展示的引擎（例如拥有会员的 DeepL）
   const isCollapsed = (name: string) =>
@@ -121,10 +125,14 @@ const EngineSettings: FunctionComponent = () => {
   };
 
   const handleTest = (engineName: string, config?: Record<string, string>) => {
-    setTesting(engineName);
+    clearTestResultForEngine(engineName);
+    setTestingEngine(engineName);
     postMessage({ type: 'test-engine', engineName, config });
-    // Reset testing status after 5 seconds automatically in case response lags
-    setTimeout(() => setTesting(null), 5000);
+  };
+
+  const handleListModels = (engineName: string, config?: Record<string, string>) => {
+    setTestingEngine(engineName);
+    postMessage({ type: 'list-engine-models', engineName, config });
   };
 
   const handleSave = (engineName: string, config: Record<string, string>) => {
@@ -247,6 +255,7 @@ const EngineSettings: FunctionComponent = () => {
                     fields={engineFields[name] || []}
                     onSave={(config) => handleSave(name, config)}
                     onTest={(config) => handleTest(name, config)}
+                    onListModels={(config) => handleListModels(name, config)}
                     isTesting={isTesting}
                     testResult={testResult}
                   />
@@ -283,18 +292,14 @@ interface EngineConfigFormProps {
   fields: EngineField[];
   onSave: (config: Record<string, string>) => void;
   onTest: (config: Record<string, string>) => void;
+  onListModels: (config: Record<string, string>) => void;
   isTesting: boolean;
-  testResult: { success: boolean; message: string } | null | undefined;
+  testResult: EngineTestResult | null | undefined;
 }
 
-type ProviderPreset = 'glm' | 'siliconflow' | 'deepseek';
-
-const detectProvider = (url?: string | boolean): ProviderPreset => {
-  const u = String(url || '').toLowerCase();
-  if (u.includes('siliconflow.cn')) return 'siliconflow';
-  if (u.includes('deepseek.com')) return 'deepseek';
-  return 'glm';
-};
+/** 表单里没有初值定义的字段，用空串/默认值兜底 */
+const EMPTY_FIELD_VALUE = (field: EngineField): string | boolean =>
+  field.type === 'toggle' ? false : '';
 
 const EngineConfigForm: FunctionComponent<EngineConfigFormProps> = ({
   engineName,
@@ -302,6 +307,7 @@ const EngineConfigForm: FunctionComponent<EngineConfigFormProps> = ({
   fields,
   onSave,
   onTest,
+  onListModels,
   isTesting,
   testResult
 }) => {
@@ -310,18 +316,19 @@ const EngineConfigForm: FunctionComponent<EngineConfigFormProps> = ({
   const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
   const [showQr, setShowQr] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
+  const [showModelList, setShowModelList] = useState(false);
+  const [presetId, setPresetId] = useState<string | null>(null);
 
-  // Initialize form state
-  const formValues: Record<string, string | boolean> = {};
-  for (const field of fields) {
-    formValues[field.key] = formState[field.key] !== undefined
-      ? formState[field.key]
-      : (config as Record<string, string | boolean>)[field.key] ?? (field.type === 'toggle' ? false : '');
-  }
+  const modelsForEngine = useStore((state) => state.engineModels[engineName]);
 
-  const [activeProvider, setActiveProvider] = useState<ProviderPreset>(() =>
-    detectProvider(formValues.baseUrl)
-  );
+  /** 当前值：已改动的表单值 → 已保存的配置 → 字段默认值 */
+  const valueOf = (key: string): string | boolean => {
+    if (formState[key] !== undefined) return formState[key];
+    const fromConfig = (config as Record<string, string | boolean>)[key];
+    if (fromConfig !== undefined && fromConfig !== '') return fromConfig;
+    const field = fields.find((f) => f.key === key);
+    return field ? EMPTY_FIELD_VALUE(field) : '';
+  };
 
   const handleChange = (key: string, value: string | boolean) => {
     setFormState((prev) => ({ ...prev, [key]: value }));
@@ -331,35 +338,31 @@ const EngineConfigForm: FunctionComponent<EngineConfigFormProps> = ({
     setShowPasswords((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const handleSaveClick = () => {
+  /** 组装要提交给扩展端的完整字段集合 */
+  const collectValues = (): Record<string, string> => {
     const values: Record<string, string> = {};
     for (const field of fields) {
-      const val = formState[field.key] !== undefined ? formState[field.key] : (config as Record<string, string | boolean>)[field.key];
-      if (field.type === 'toggle') {
-        values[field.key] = String(Boolean(val));
-      } else {
-        values[field.key] = String(val ?? '');
-      }
+      const val = valueOf(field.key);
+      values[field.key] = field.type === 'toggle' ? String(Boolean(val)) : String(val ?? '');
     }
-    onSave(values);
+    return values;
+  };
+
+  const handleSaveClick = () => {
+    onSave(collectValues());
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
   };
 
-  const handleTestClick = () => {
-    const values: Record<string, string> = {};
-    for (const field of fields) {
-      const val = formState[field.key] !== undefined ? formState[field.key] : (config as Record<string, string | boolean>)[field.key];
-      if (field.type === 'toggle') {
-        values[field.key] = String(Boolean(val));
-      } else {
-        values[field.key] = String(val ?? '');
-      }
-    }
-    onTest(values);
+  const activePreset = findPreset(presetId) ?? detectPreset(valueOf('baseUrl'));
+
+  const applyPreset = (preset: OpenAiPreset) => {
+    setPresetId(preset.id);
+    handleChange('baseUrl', preset.baseUrl);
+    handleChange('model', preset.model);
   };
 
-  const promo = activeProvider === 'siliconflow' ? {
+  const promo = activePreset?.id === 'siliconflow' ? {
     title: '还没有 API Key？注册硅基流动领免费额度',
     desc: (
       <span>
@@ -371,23 +374,11 @@ const EngineConfigForm: FunctionComponent<EngineConfigFormProps> = ({
     inviteCode: SILICONFLOW_INVITE_CODE,
     qrType: 'siliconflow' as const,
     qrTip: '使用手机微信或浏览器扫码，注册即领免费额度'
-  } : activeProvider === 'deepseek' ? {
-    title: '前往 DeepSeek 官方开放平台获取 API Key',
-    desc: (
-      <span>
-        DeepSeek 官方提供超高性价比的 <strong className="text-foreground">deepseek-chat</strong> 与 <strong className="text-foreground">deepseek-reasoner</strong> 模型接口。
-      </span>
-    ),
-    buttonText: '前往 DeepSeek 开放平台',
-    inviteUrl: 'https://platform.deepseek.com',
-    inviteCode: '',
-    qrType: null,
-    qrTip: ''
-  } : {
+  } : activePreset?.id === 'glm' ? {
     title: '还没有 API Key？注册智谱 BigModel 领 2000万 Tokens',
     desc: (
       <span>
-        智谱新一代旗舰模型 <strong className="text-foreground">GLM-5.3-Flash</strong> 已上线，在推理、代码、智能体能力达到开源 SOTA 水平。通过专属链接注册即可获得 <strong className="text-accent">2000万 Tokens 大礼包</strong>！
+        智谱新一代旗舰模型已上线，在推理、代码、智能体能力达到开源 SOTA 水平。通过专属链接注册即可获得 <strong className="text-accent">2000万 Tokens 大礼包</strong>！
       </span>
     ),
     buttonText: '前往注册领 2000万 Tokens',
@@ -395,148 +386,58 @@ const EngineConfigForm: FunctionComponent<EngineConfigFormProps> = ({
     inviteCode: BIGMODEL_INVITE_CODE,
     qrType: 'bigmodel' as const,
     qrTip: '使用手机微信或浏览器扫码，注册即享 2000万 Tokens'
+  } : null;
+
+  const getButtonClass = (id: string) => {
+    return activePreset?.id === id
+      ? 'px-2.5 py-1 text-[9.5px] rounded border border-accent bg-accent text-accent-foreground font-semibold shadow-sm transition-all'
+      : 'px-2.5 py-1 text-[9.5px] rounded border border-border bg-card/60 text-secondary-foreground hover:bg-secondary-hover/50 hover:text-foreground transition-all';
   };
 
-  const getButtonClass = (p: ProviderPreset) => {
-    return activeProvider === p
-      ? "px-2.5 py-1 text-[9.5px] rounded border border-accent bg-accent text-accent-foreground font-semibold shadow-sm transition-all"
-      : "px-2.5 py-1 text-[9.5px] rounded border border-border bg-card/60 text-secondary-foreground hover:bg-secondary-hover/50 hover:text-foreground transition-all";
-  };
+  const chosenModel = String(valueOf('model') ?? '');
 
   return (
     <div className="p-4 border-t border-border bg-card/5 flex flex-col gap-3.5 animate-in slide-in-from-top-1 duration-150">
       {engineName === 'openai' && (
-        <div className="text-[10px] text-secondary-foreground/75 bg-secondary/20 p-2.5 rounded border border-border/40 leading-relaxed flex flex-col gap-1.5 font-sans">
-          <div className="font-bold text-accent">常用服务商一键填入：</div>
+        <div className="text-[10px] text-secondary-foreground/75 bg-secondary/20 p-2.5 rounded border border-border/40 leading-relaxed flex flex-col gap-2 font-sans">
+          <div className="font-bold text-accent">
+            第 1 步 · 选择服务商（自动填入 Base URL 与模型名）
+          </div>
           <div className="flex flex-wrap gap-1.5">
-            <button
-              type="button"
-              onClick={() => {
-                setActiveProvider('glm');
-                handleChange('baseUrl', 'https://open.bigmodel.cn/api/paas/v4');
-                handleChange('model', 'GLM-5.3-Flash');
-              }}
-              className={getButtonClass('glm')}
-            >
-              智谱 GLM (BigModel)
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setActiveProvider('siliconflow');
-                handleChange('baseUrl', 'https://api.siliconflow.cn/v1');
-                handleChange('model', 'deepseek-ai/DeepSeek-V3');
-              }}
-              className={getButtonClass('siliconflow')}
-            >
-              硅基流动 (SiliconFlow)
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setActiveProvider('deepseek');
-                handleChange('baseUrl', DEEPSEEK_EXAMPLE_BASE_URL);
-                handleChange('model', DEEPSEEK_EXAMPLE_MODEL);
-              }}
-              className={getButtonClass('deepseek')}
-            >
-              DeepSeek (官方)
-            </button>
+            {OPENAI_PRESETS.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                onClick={() => applyPreset(preset)}
+                className={getButtonClass(preset.id)}
+              >
+                {preset.label}
+              </button>
+            ))}
           </div>
-          <div className="grid grid-cols-[65px_1fr] gap-x-2 gap-y-1 mt-1 font-mono text-[9px] bg-secondary/10 p-2 rounded border border-border/20">
-            <span className="font-sans font-bold text-foreground">Base URL:</span>
-            <code className="font-semibold text-foreground select-all bg-secondary/50 px-1 rounded truncate">
-              {String(formValues.baseUrl || (activeProvider === 'siliconflow' ? 'https://api.siliconflow.cn/v1' : activeProvider === 'deepseek' ? DEEPSEEK_EXAMPLE_BASE_URL : 'https://open.bigmodel.cn/api/paas/v4'))}
-            </code>
-
-            <span className="font-sans font-bold text-foreground">模型:</span>
-            <code className="font-semibold text-foreground select-all bg-secondary/50 px-1 rounded truncate">
-              {String(formValues.model || (activeProvider === 'siliconflow' ? 'deepseek-ai/DeepSeek-V3' : activeProvider === 'deepseek' ? DEEPSEEK_EXAMPLE_MODEL : 'GLM-5.3-Flash'))}
-            </code>
-          </div>
-          <p className="mt-0.5 text-[9px] text-secondary-foreground/70">
-            点击上方按钮可快速填入接口地址与模型。填写您的 API Key 后点击“保存配置”生效。
-          </p>
-
-          <div className="mt-2 pt-2 border-t border-border/30 flex flex-col gap-1.5 animate-in fade-in duration-150">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1 font-bold text-accent text-[9.5px]">
-                <Sparkles className="w-3 h-3 text-accent shrink-0" />
-                <span>{promo.title}</span>
-              </div>
-              {promo.qrType && (
-                <button
-                  type="button"
-                  onClick={() => setShowQr(!showQr)}
-                  className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded border border-border/60 bg-secondary/40 text-foreground hover:bg-secondary transition-colors"
-                  title="手机微信扫码注册"
-                >
-                  <QrCode className="w-3 h-3 text-accent" />
-                  <span>{showQr ? '收起二维码' : '扫码注册'}</span>
-                </button>
-              )}
-            </div>
-
-            <p className="text-[9px] text-secondary-foreground/80 leading-relaxed">
-              {promo.desc}
-            </p>
-
-            <div className="flex items-center flex-wrap gap-2 pt-0.5">
+          {activePreset && (
+            <div className="flex flex-col gap-1">
               <a
-                href={promo.inviteUrl}
+                href={activePreset.keyUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 px-2.5 py-1 text-[9px] font-semibold rounded bg-accent text-accent-foreground hover:opacity-90 transition-opacity shadow-sm"
+                className="inline-flex items-center gap-1 text-[9.5px] font-semibold text-accent hover:opacity-80"
               >
-                <span>{promo.buttonText}</span>
+                <span>第 2 步 · 在 {activePreset.label} 控制台创建 API Key</span>
                 <ExternalLink className="w-2.5 h-2.5" />
               </a>
-
-              {promo.inviteCode && (
-                <div className="flex items-center gap-1 text-[9px] bg-secondary/50 border border-border/40 px-1.5 py-0.5 rounded font-mono">
-                  <span className="text-secondary-foreground/70 font-sans">邀请码:</span>
-                  <code className="font-bold text-foreground select-all text-[8.5px] max-w-[140px] truncate" title={promo.inviteCode}>
-                    {promo.inviteCode}
-                  </code>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      navigator.clipboard.writeText(promo.inviteCode);
-                      setCopiedCode(true);
-                      setTimeout(() => setCopiedCode(false), 2000);
-                    }}
-                    className="ml-0.5 text-accent hover:underline flex items-center gap-0.5 font-sans"
-                    title="复制邀请码"
-                  >
-                    {copiedCode ? <Check className="w-2.5 h-2.5 text-success" /> : <Copy className="w-2.5 h-2.5" />}
-                    <span>{copiedCode ? '已复制' : '复制'}</span>
-                  </button>
-                </div>
-              )}
+              <span className="text-[9px] text-secondary-foreground/70">{activePreset.note}</span>
             </div>
-
-            {showQr && promo.qrType && (
-              <div className="mt-1.5 p-2.5 bg-background/95 rounded border border-border flex flex-col items-center gap-1.5 animate-in fade-in zoom-in-95 duration-150 shadow-sm">
-                <div className="w-32 h-32 bg-white rounded border border-border p-1.5 shadow-sm flex items-center justify-center">
-                  <QrCodeSvg type={promo.qrType} className="w-full h-full" />
-                </div>
-                <div className="text-[8.5px] text-secondary-foreground text-center">
-                  {promo.qrTip}
-                </div>
-                <a
-                  href={promo.inviteUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-[8.5px] text-accent underline flex items-center gap-0.5 hover:opacity-80"
-                >
-                  <span>若无法扫码，点击此处直接在网页打开注册</span>
-                  <ExternalLink className="w-2 h-2" />
-                </a>
-              </div>
-            )}
-          </div>
+          )}
+          {!activePreset && (
+            <span className="text-[9px] text-secondary-foreground/70">
+              也可以直接填写任意 OpenAI 兼容中转服务的地址；根地址、带 /v1 的地址、完整
+              /chat/completions 地址都能识别。
+            </span>
+          )}
         </div>
       )}
+
       {engineName === 'custom' && (
         <div className="text-[10px] text-secondary-foreground/75 bg-secondary/20 p-2.5 rounded border border-border/40 leading-relaxed flex flex-col gap-1 font-sans">
           <div className="font-bold text-accent">自定义接口配置示例：</div>
@@ -544,13 +445,13 @@ const EngineConfigForm: FunctionComponent<EngineConfigFormProps> = ({
           <div className="grid grid-cols-[65px_1fr] gap-x-2 gap-y-1 mt-1.5 font-mono text-[9px] bg-secondary/10 p-2 rounded border border-border/20">
             <span className="font-sans font-bold text-foreground">接口 URL:</span>
             <code className="text-foreground select-all bg-secondary/50 px-1 rounded truncate">https://api.mytranslator.com/v1/translate</code>
-            
+
             <span className="font-sans font-bold text-foreground">请求头:</span>
             <code className="text-foreground select-all bg-secondary/50 px-1 rounded truncate">{"{\"Authorization\": \"Bearer my_token\"}"}</code>
-            
+
             <span className="font-sans font-bold text-foreground">请求体:</span>
             <code className="text-foreground select-all bg-secondary/50 px-1 rounded truncate">{"{\"text\": \"{{text}}\", \"to\": \"zh\"}"}</code>
-            
+
             <span className="font-sans font-bold text-foreground">响应路径:</span>
             <code className="text-foreground select-all bg-secondary/50 px-1 rounded truncate">data.translatedText</code>
           </div>
@@ -559,18 +460,22 @@ const EngineConfigForm: FunctionComponent<EngineConfigFormProps> = ({
           </p>
         </div>
       )}
+
       {fields.map((field) => (
         <div key={field.key} className="flex flex-col gap-1.5">
-          <label className="text-[10px] font-semibold text-secondary-foreground/80 tracking-wider uppercase">
-            {field.label}
+          <label className="text-[10px] font-semibold text-secondary-foreground/80 tracking-wider uppercase flex items-center gap-1.5">
+            <span>{field.label}</span>
+            {field.key === 'model' && engineName === 'openai' && chosenModel && (
+              <span className="text-[9px] font-normal text-success">当前：{chosenModel}</span>
+            )}
           </label>
-          
+
           {field.type === 'toggle' ? (
             <label className="relative inline-flex items-center cursor-pointer select-none">
               <input
                 type="checkbox"
                 className="sr-only peer"
-                checked={Boolean(formValues[field.key])}
+                checked={Boolean(valueOf(field.key))}
                 onChange={(e) => handleChange(field.key, e.target.checked)}
               />
               <div className="w-9 h-5 bg-border rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
@@ -579,7 +484,7 @@ const EngineConfigForm: FunctionComponent<EngineConfigFormProps> = ({
             <textarea
               className="w-full px-3 py-2 text-xs rounded border border-border bg-background placeholder-secondary-foreground/40 text-foreground outline-none focus:border-accent font-mono resize-y min-h-[50px] leading-relaxed"
               placeholder={field.placeholder}
-              value={String(formValues[field.key] ?? '')}
+              value={String(valueOf(field.key) ?? '')}
               onChange={(e) => handleChange(field.key, e.target.value)}
               rows={3}
             />
@@ -589,10 +494,10 @@ const EngineConfigForm: FunctionComponent<EngineConfigFormProps> = ({
                 type={showPasswords[field.key] ? 'text' : 'password'}
                 className="w-full pl-3 pr-9 py-1.5 text-xs rounded border border-border bg-background placeholder-secondary-foreground/40 text-foreground outline-none focus:border-accent font-mono"
                 placeholder={field.placeholder}
-                value={String(formValues[field.key] ?? '')}
+                value={String(valueOf(field.key) ?? '')}
                 onChange={(e) => handleChange(field.key, e.target.value)}
               />
-              <button 
+              <button
                 type="button"
                 onClick={() => togglePasswordVisibility(field.key)}
                 className="absolute right-2 text-secondary-foreground/50 hover:text-foreground p-1 rounded"
@@ -609,23 +514,70 @@ const EngineConfigForm: FunctionComponent<EngineConfigFormProps> = ({
               type="text"
               className="w-full px-3 py-1.5 text-xs rounded border border-border bg-background placeholder-secondary-foreground/40 text-foreground outline-none focus:border-accent font-mono"
               placeholder={field.placeholder}
-              value={String(formValues[field.key] ?? '')}
+              value={String(valueOf(field.key) ?? '')}
               onChange={(e) => handleChange(field.key, e.target.value)}
+              spellCheck={false}
             />
           )}
         </div>
       ))}
 
+      {engineName === 'openai' && (
+        <div className="flex flex-col gap-1.5">
+          <button
+            type="button"
+            onClick={() => {
+              setShowModelList((prev) => !prev);
+              if (!modelsForEngine || modelsForEngine.models.length === 0) onListModels(collectValues());
+            }}
+            disabled={isTesting}
+            className="flex items-center gap-1.5 text-[10px] text-secondary-foreground hover:text-foreground disabled:opacity-50 transition-colors"
+          >
+            <ChevronDown className={`w-3 h-3 transition-transform ${showModelList ? 'rotate-180' : ''}`} />
+            {modelsForEngine && modelsForEngine.models.length > 0
+              ? `从接口返回的 ${modelsForEngine.models.length} 个模型中挑选`
+              : '拉取该服务商的可用模型列表'}
+          </button>
+          {showModelList && modelsForEngine && (
+            <div className="flex flex-col gap-1.5">
+              {modelsForEngine.models.length === 0 ? (
+                <div className="text-[9.5px] text-secondary-foreground/70 bg-secondary/20 border border-border/40 rounded p-2 leading-relaxed break-all font-mono">
+                  {modelsForEngine.message}
+                  {modelsForEngine.hint && <div className="mt-1 text-error/90 font-sans">{modelsForEngine.hint}</div>}
+                </div>
+              ) : (
+                <div className="max-h-40 overflow-y-auto flex flex-wrap gap-1 p-1.5 rounded border border-border bg-background/60">
+                  {modelsForEngine.models.map((id) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => handleChange('model', id)}
+                      className={`px-1.5 py-0.5 rounded text-[9px] font-mono border transition-colors ${
+                        chosenModel === id
+                          ? 'border-accent bg-accent/15 text-accent'
+                          : 'border-border bg-secondary/40 text-secondary-foreground hover:text-foreground'
+                      }`}
+                    >
+                      {id}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="flex gap-2 justify-end mt-1.5">
-        <button 
-          onClick={handleTestClick} 
+        <button
+          onClick={() => onTest(collectValues())}
           disabled={isTesting}
-          className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded border border-border bg-secondary text-secondary-foreground hover:bg-secondary-hover transition-colors"
+          className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded border border-border bg-secondary text-secondary-foreground hover:bg-secondary-hover transition-colors disabled:opacity-60"
         >
-          <Play className="w-3.5 h-3.5 text-accent" />
+          <Play className={`w-3.5 h-3.5 text-accent ${isTesting ? 'animate-pulse' : ''}`} />
           {isTesting ? '正在测试...' : '测试连接'}
         </button>
-        <button 
+        <button
           onClick={handleSaveClick}
           className={`flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded text-white transition-all ${
             saved ? 'bg-success hover:bg-success' : 'bg-primary hover:bg-primary-hover shadow-sm'
@@ -638,8 +590,8 @@ const EngineConfigForm: FunctionComponent<EngineConfigFormProps> = ({
 
       {testResult && (
         <div className={`flex gap-2 items-start p-3 rounded-md border text-xs leading-relaxed animate-in fade-in duration-200 mt-1 ${
-          testResult.success 
-            ? 'bg-success/10 border-success/20 text-success' 
+          testResult.success
+            ? 'bg-success/10 border-success/20 text-success'
             : 'bg-error/10 border-error/20 text-error'
         }`}>
           {testResult.success ? (
@@ -647,9 +599,99 @@ const EngineConfigForm: FunctionComponent<EngineConfigFormProps> = ({
           ) : (
             <XCircle className="w-4 h-4 mt-0.5 flex-shrink-0 text-error" />
           )}
-          <div className="flex-1 break-all font-mono">
-            {testResult.message}
+          <div className="flex-1 flex flex-col gap-1">
+            <div className="break-all font-mono">{testResult.message}</div>
+            {testResult.hint && (
+              <div className="text-[10px] font-sans opacity-90">{testResult.hint}</div>
+            )}
+            {(testResult.requestUrl || testResult.elapsedMs !== undefined) && (
+              <div className="text-[9px] font-mono opacity-60 break-all">
+                {testResult.requestUrl ? `请求：${testResult.requestUrl}` : ''}
+                {testResult.requestUrl && testResult.elapsedMs !== undefined ? ' · ' : ''}
+                {testResult.elapsedMs !== undefined ? `耗时 ${testResult.elapsedMs} ms` : ''}
+              </div>
+            )}
           </div>
+        </div>
+      )}
+
+      {engineName === 'openai' && promo && (
+        <div className="mt-2 pt-2 border-t border-border/30 flex flex-col gap-1.5 animate-in fade-in duration-150">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1 font-bold text-accent text-[9.5px]">
+              <Sparkles className="w-3 h-3 text-accent shrink-0" />
+              <span>{promo.title}</span>
+            </div>
+            {promo.qrType && (
+              <button
+                type="button"
+                onClick={() => setShowQr(!showQr)}
+                className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded border border-border/60 bg-secondary/40 text-foreground hover:bg-secondary transition-colors"
+                title="手机微信扫码注册"
+              >
+                <QrCode className="w-3 h-3 text-accent" />
+                <span>{showQr ? '收起二维码' : '扫码注册'}</span>
+              </button>
+            )}
+          </div>
+
+          <p className="text-[9px] text-secondary-foreground/80 leading-relaxed">
+            {promo.desc}
+          </p>
+
+          <div className="flex items-center flex-wrap gap-2 pt-0.5">
+            <a
+              href={promo.inviteUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 px-2.5 py-1 text-[9px] font-semibold rounded bg-accent text-accent-foreground hover:opacity-90 transition-opacity shadow-sm"
+            >
+              <span>{promo.buttonText}</span>
+              <ExternalLink className="w-2.5 h-2.5" />
+            </a>
+
+            {promo.inviteCode && (
+              <div className="flex items-center gap-1 text-[9px] bg-secondary/50 border border-border/40 px-1.5 py-0.5 rounded font-mono">
+                <span className="text-secondary-foreground/70 font-sans">邀请码:</span>
+                <code className="font-bold text-foreground select-all text-[8.5px] max-w-[140px] truncate" title={promo.inviteCode}>
+                  {promo.inviteCode}
+                </code>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(promo.inviteCode);
+                    setCopiedCode(true);
+                    setTimeout(() => setCopiedCode(false), 2000);
+                  }}
+                  className="ml-0.5 text-accent hover:underline flex items-center gap-0.5 font-sans"
+                  title="复制邀请码"
+                >
+                  {copiedCode ? <Check className="w-2.5 h-2.5 text-success" /> : <Copy className="w-2.5 h-2.5" />}
+                  <span>{copiedCode ? '已复制' : '复制'}</span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {showQr && promo.qrType && (
+            <div className="mt-1.5 p-2.5 bg-background/95 rounded border border-border flex flex-col items-center gap-1.5 animate-in fade-in zoom-in-95 duration-150 shadow-sm">
+              <div className="w-32 h-32 bg-white rounded border border-border p-1.5 shadow-sm flex items-center justify-center">
+                <QrCodeSvg type={promo.qrType} className="w-full h-full" />
+              </div>
+              <div className="text-[8.5px] text-secondary-foreground text-center">
+                {promo.qrTip}
+              </div>
+              <a
+                href={promo.inviteUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[8.5px] text-accent underline flex items-center gap-0.5 hover:opacity-80"
+              >
+                <span>若无法扫码，点击此处直接在网页打开注册</span>
+                <ExternalLink className="w-2 h-2" />
+              </a>
+            </div>
+          )}
         </div>
       )}
     </div>

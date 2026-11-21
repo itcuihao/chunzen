@@ -38,12 +38,17 @@ test('源码: OpenAI 引擎和配置层不再含任何服务商地址字面量',
 
 test('源码: 引擎只在校验 Base URL 与模型之后才发请求', () => {
   const text = readFileSync(new URL('../src/services/engines/openaiEngine.ts', import.meta.url), 'utf8');
-  const fetchAt = text.indexOf('customFetch(baseUrl');
-  assert.ok(fetchAt > 0);
-  const before = text.slice(0, fetchAt);
+  // 校验必须发生在 chat() 的请求循环之前；引擎已把校验集中在 chat() 开头
+  const chatAt = text.indexOf('private async chat(');
+  assert.ok(chatAt > 0);
+  const fetchAt = text.indexOf('await customFetch(url', chatAt);
+  assert.ok(fetchAt > chatAt, '引擎应通过候选地址变量发起请求');
+  const before = text.slice(chatAt, fetchAt);
+  assert.ok(before.includes('if (!apiKey)'), '发请求前必须检查 apiKey');
   assert.ok(before.includes('if (!baseUrl)'), '发请求前必须检查 baseUrl');
   assert.ok(before.includes('if (!model)'), '发请求前必须检查 model');
-  assert.ok(before.includes('if (!apiKey)'), '发请求前必须检查 apiKey');
+  // 地址只能来自候选函数（内部的 resolveOpenAiBaseUrl），不得出现硬编码服务商
+  assert.ok(before.includes('chatCompletionsCandidates(baseUrl)'), '请求地址必须由候选函数生成');
 });
 
 // ── 地址/模型校验 ──
@@ -79,5 +84,5 @@ test('resolveOpenAiModel: 空/空白/非字符串不可用，其余去空白后�
 
 test('示例常量本身是合法的，且只用于设置页按钮，不是回退值', () => {
   assert.equal(resolveOpenAiBaseUrl(DEEPSEEK_EXAMPLE_BASE_URL), 'https://api.deepseek.com');
-  assert.equal(resolveOpenAiModel(DEEPSEEK_EXAMPLE_MODEL), 'deepseek-flash');
+  assert.equal(resolveOpenAiModel(DEEPSEEK_EXAMPLE_MODEL), 'deepseek-chat');
 });

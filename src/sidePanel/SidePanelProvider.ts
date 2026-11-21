@@ -10,6 +10,7 @@ import { HighlightService } from '../services/highlightService';
 import { LayoutConfig } from '../types/config';
 import { MineruCoordinator } from './mineruCoordinator';
 import { buildExplainSystemPrompt, parseExplainOutput } from '../services/engines/llmPrompt';
+import { getEngines } from '../services/engines/registry';
 import type { AiExplainResultMessage } from '../types/messages';
 
 type AiExplainPayload = Pick<AiExplainResultMessage, 'translation' | 'explanation' | 'notice'>;
@@ -167,15 +168,16 @@ export class SidePanelProvider {
       case 'test-engine':
         await this.handleTestEngine(msg.engineName, msg.config);
         break;
+      case 'list-engine-models':
+        await this.handleListEngineModels(msg.engineName, msg.config);
+        break;
       case 'set-engine-priority':
         await this.configService.saveEnginePriority(msg.priority);
         break;
       case 'save-engine-config':
         await this.configService.saveEngineConfig(msg.engineName, msg.config);
-        this.postMessage({
-          type: 'engines-status',
-          engines: this.configService.getEngineStatuses()
-        });
+        // 回传实际写入的值（保存时会 trim/校验），表单才能反映真实生效的配置
+        this.sendInitState();
         break;
       case 'save-general-settings':
         await this.configService.saveGeneralSettings(msg.settings);
@@ -434,23 +436,59 @@ export class SidePanelProvider {
   }
 
   private async handleTestEngine(engineName: string, tempConfig?: Record<string, string>): Promise<void> {
+    const startedAt = Date.now();
     try {
       const result = await this.translationService.translateWithEngine(engineName, 'test sentence', tempConfig);
       this.postMessage({
         type: 'engine-test-result',
         engineName,
         success: true,
-        message: `test: ${result}`
+        message: `翻译成功：${result}`,
+        elapsedMs: Date.now() - startedAt
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      // 请求地址与处置建议来自引擎的结构化错误，直接透传给设置页
+      const requestUrl = (err as { requestUrl?: string })?.requestUrl;
+      const hint = (err as { hint?: string })?.hint;
       this.postMessage({
         type: 'engine-test-result',
         engineName,
         success: false,
-        message: msg
+        message: msg,
+        hint,
+        requestUrl,
+        elapsedMs: Date.now() - startedAt
       });
     }
+  }
+
+  private async handleListEngineModels(engineName: string, tempConfig?: Record<string, string>): Promise<void> {
+    const engine = getEngines().find((e) => e.name === engineName);
+    if (!engine?.diagnose) {
+      this.postMessage({
+        type: 'engine-models',
+        engineName,
+        ok: false,
+        models: [],
+        message: '该引擎不支持拉取模型列表'
+      });
+      return;
+    }
+    const rawTimeout = tempConfig?.timeoutMs;
+    const timeoutMs = rawTimeout !== undefined && rawTimeout !== '' && Number.isFinite(Number(rawTimeout))
+      ? Number(rawTimeout)
+      : undefined;
+    const result = await engine.diagnose(tempConfig?.baseUrl, tempConfig?.apiKey, timeoutMs);
+    this.postMessage({
+      type: 'engine-models',
+      engineName,
+      ok: result.ok,
+      models: result.models ?? [],
+      message: result.message,
+      hint: result.hint,
+      requestUrl: result.requestUrl
+    });
   }
 
   private async handleExport(format: 'markdown' | 'bilingual'): Promise<void> {

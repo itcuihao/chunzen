@@ -142,6 +142,21 @@ export interface EngineTestResultMessage {
   engineName: string;
   success: boolean;
   message: string;
+  /** 可执行的下一步建议（Key 无效、路径不对、模型不存在等） */
+  hint?: string;
+  /** 实际请求的地址，便于用户核对 Base URL */
+  requestUrl?: string;
+  elapsedMs?: number;
+}
+
+export interface EngineModelsMessage {
+  type: 'engine-models';
+  engineName: string;
+  ok: boolean;
+  models: string[];
+  message: string;
+  hint?: string;
+  requestUrl?: string;
 }
 
 export interface GlossarySyncMessage {
@@ -255,6 +270,7 @@ export type ExtToPanelMessage =
   | InitStateMessage
   | EnginesStatusMessage
   | EngineTestResultMessage
+  | EngineModelsMessage
   | GlossarySyncMessage
   | HistorySyncMessage
   | SyncPageTextMessage
@@ -282,6 +298,13 @@ export interface SaveEngineConfigMessage {
 
 export interface TestEngineMessage {
   type: 'test-engine';
+  engineName: string;
+  config?: Record<string, string>;
+}
+
+/** 拉取服务商可用模型列表（仅 OpenAI 兼容类引擎实现） */
+export interface ListEngineModelsMessage {
+  type: 'list-engine-models';
   engineName: string;
   config?: Record<string, string>;
 }
@@ -353,6 +376,7 @@ export interface ExportDocMessage {
 export type PanelToExtMessage =
   | SaveEngineConfigMessage
   | TestEngineMessage
+  | ListEngineModelsMessage
   | SetEnginePriorityMessage
   | SaveGeneralSettingsMessage
   | AddTermMessage

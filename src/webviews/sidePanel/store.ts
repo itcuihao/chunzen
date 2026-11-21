@@ -17,11 +17,20 @@ export interface EngineConfigFields {
   model?: string;
   systemPrompt?: string;
   freeApi?: boolean;
+  timeoutMs?: string;
   url?: string;
   headers?: string;
   bodyTemplate?: string;
   responsePath?: string;
 }
+
+export type EngineTestResult = {
+  success: boolean;
+  message: string;
+  hint?: string;
+  requestUrl?: string;
+  elapsedMs?: number;
+};
 
 interface PanelState {
   // UI State
@@ -85,9 +94,14 @@ interface PanelState {
   setCacheSize: (size: number) => void;
   layoutConfig: LayoutConfig;
   setLayoutConfig: (config: LayoutConfig) => void;
-  testResults: Record<string, { success: boolean; message: string } | null>;
+  testResults: Record<string, EngineTestResult | null>;
   setTestResults: (results: PanelState['testResults']) => void;
-  setTestResultForEngine: (engineName: string, success: boolean, message: string) => void;
+  setTestResultForEngine: (engineName: string, result: EngineTestResult) => void;
+  clearTestResultForEngine: (engineName: string) => void;
+  testingEngine: string | null;
+  setTestingEngine: (engineName: string | null) => void;
+  engineModels: Record<string, { ok: boolean; models: string[]; message: string; hint?: string; requestUrl?: string }>;
+  setEngineModels: (engineName: string, result: PanelState['engineModels'][string]) => void;
   layoutMode: 'translation' | 'bilingual' | 'original';
   setLayoutMode: (mode: 'translation' | 'bilingual' | 'original') => void;
   exportProgress: {
@@ -178,12 +192,23 @@ export const useStore = create<PanelState>((set) => ({
   setLayoutConfig: (layoutConfig) => set({ layoutConfig }),
   testResults: {},
   setTestResults: (testResults) => set({ testResults }),
-  setTestResultForEngine: (engineName, success, message) => 
+  setTestResultForEngine: (engineName, result) =>
     set((state) => ({
       testResults: {
         ...state.testResults,
-        [engineName]: { success, message }
+        [engineName]: result
       }
+    })),
+  clearTestResultForEngine: (engineName) =>
+    set((state) => ({
+      testResults: { ...state.testResults, [engineName]: null }
+    })),
+  testingEngine: null,
+  setTestingEngine: (testingEngine) => set({ testingEngine }),
+  engineModels: {},
+  setEngineModels: (engineName, result) =>
+    set((state) => ({
+      engineModels: { ...state.engineModels, [engineName]: result }
     })),
   layoutMode: 'original',
   setLayoutMode: (layoutMode) => set({ layoutMode }),

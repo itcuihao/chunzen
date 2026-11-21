@@ -136,7 +136,14 @@
         "chunzen.translation.openai.model": {
           "type": "string",
           "default": "",
-          "description": "使用的模型名称，需手动填写。例如 DeepSeek：deepseek-flash"
+          "description": "使用的模型名称，需手动填写。例如 DeepSeek：deepseek-chat"
+        },
+        "chunzen.translation.openai.timeoutMs": {
+          "type": "number",
+          "default": 60000,
+          "minimum": 3000,
+          "maximum": 180000,
+          "description": "OpenAI 兼容接口单次请求超时（毫秒）。长句或推理模型建议调大"
         },
         "chunzen.translation.openai.systemPrompt": {
           "type": "string",
@@ -249,7 +256,8 @@
     "compile-tests": "tsc -p . --outDir out",
     "lint": "eslint src --ext ts,tsx",
     "typecheck": "tsc -p . --noEmit",
-    "test": "node --import ./tests/support/resolve-ts.mjs --test tests/*.test.ts"
+    "test": "node --import ./tests/support/resolve-ts.mjs --test tests/*.test.ts",
+    "test:live": "node --import ./tests/support/resolve-ts.mjs --test tests/openaiEngine.integration.test.ts"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

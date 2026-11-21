@@ -2,6 +2,7 @@
 
 export const CACHE_MAX_SIZE = { min: 50, max: 5000, fallback: 500 } as const;
 export const LAYOUT_TIMEOUT_MS = { min: 500, max: 20000, fallback: 3500 } as const;
+export const OPENAI_TIMEOUT_MS = { min: 3000, max: 180000, fallback: 60000 } as const;
 export const DEFAULT_LAYOUT_ENDPOINT = 'http://127.0.0.1:8765/layout';
 
 export function clampNumber(

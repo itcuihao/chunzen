@@ -19,6 +19,8 @@ export const App: FunctionComponent = () => {
   const setJournalInfo = useStore((state) => state.setJournalInfo);
   const setEngineStatuses = useStore((state) => state.setEngineStatuses);
   const setTestResultForEngine = useStore((state) => state.setTestResultForEngine);
+  const setTestingEngine = useStore((state) => state.setTestingEngine);
+  const setEngineModels = useStore((state) => state.setEngineModels);
   const setGlossaryTerms = useStore((state) => state.setGlossaryTerms);
   const setCurrentPageText = useStore((state) => state.setCurrentPageText);
   const setCurrentPageTranslation = useStore((state) => state.setCurrentPageTranslation);
@@ -120,7 +122,30 @@ export const App: FunctionComponent = () => {
         setEngineStatuses(msg.engines);
         break;
       case 'engine-test-result':
-        setTestResultForEngine(msg.engineName, msg.success, msg.message);
+        setTestResultForEngine(msg.engineName, {
+          success: msg.success,
+          message: msg.message,
+          hint: msg.hint,
+          requestUrl: msg.requestUrl,
+          elapsedMs: msg.elapsedMs
+        });
+        setTestingEngine(null);
+        break;
+      case 'engine-models':
+        setEngineModels(msg.engineName, {
+          ok: msg.ok,
+          models: msg.models,
+          message: msg.message,
+          hint: msg.hint,
+          requestUrl: msg.requestUrl
+        });
+        setTestResultForEngine(msg.engineName, {
+          success: msg.ok,
+          message: msg.models.length > 0 ? `${msg.message}（${msg.models.length} 个）` : msg.message,
+          hint: msg.hint,
+          requestUrl: msg.requestUrl
+        });
+        setTestingEngine(null);
         break;
       case 'glossary-sync':
         setGlossaryTerms(msg.terms);
@@ -218,6 +243,8 @@ export const App: FunctionComponent = () => {
     setJournalInfo,
     setEngineStatuses,
     setTestResultForEngine,
+    setTestingEngine,
+    setEngineModels,
     setGlossaryTerms,
     setTranslationHistory,
     setCurrentPageText,
