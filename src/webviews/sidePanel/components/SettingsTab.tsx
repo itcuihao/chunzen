@@ -322,7 +322,8 @@ const EngineConfigForm: FunctionComponent<EngineConfigFormProps> = ({
   const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
   const [showQr, setShowQr] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
-  const [showModelList, setShowModelList] = useState(false);
+  // 默认展开：多数人卡在「模型名填什么」，折叠起来等于藏了答案。
+  const [showModelList, setShowModelList] = useState(true);
   const [presetId, setPresetId] = useState<string | null>(null);
 
   const modelsForEngine = useStore((state) => state.engineModels[engineName]);
@@ -542,9 +543,15 @@ const EngineConfigForm: FunctionComponent<EngineConfigFormProps> = ({
           >
             <ChevronDown className={`w-3 h-3 transition-transform ${showModelList ? 'rotate-180' : ''}`} />
             {modelsForEngine && modelsForEngine.models.length > 0
-              ? `从接口返回的 ${modelsForEngine.models.length} 个模型中挑选`
+              ? `从接口返回的 ${modelsForEngine.models.length} 个模型中挑选（已填入：${chosenModel || '未填'}）`
               : '拉取该服务商的可用模型列表'}
           </button>
+          {showModelList && !modelsForEngine && (
+            <div className="text-[9.5px] text-secondary-foreground/70 bg-secondary/20 border border-border/40 rounded p-2 leading-relaxed">
+              填好 Base URL 与 API Key 后点上方按钮，可直接从接口拉回该服务商的真实模型名——
+              模型 ID 带大小写、版本号和中转前缀，手抄容易错。
+            </div>
+          )}
           {showModelList && modelsForEngine && (
             <div className="flex flex-col gap-1.5">
               {modelsForEngine.models.length === 0 ? (

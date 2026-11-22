@@ -245,3 +245,17 @@ test('模型名错误识别：不误判认证/限流/参数/路径类错误', ()
     assert.equal(looksLikeModelError(status, detail), false, `误判：${status} ${detail}`);
   }
 });
+
+test('设置页的模型列表默认展开，且未拉取时给出引导', () => {
+  // 折起来等于把答案藏了：用户卡在「模型名填什么」，而列表正是答案。
+  const ui = readFileSync(
+    new URL('../src/webviews/sidePanel/components/SettingsTab.tsx', import.meta.url),
+    'utf8'
+  );
+  assert.match(ui, /useState\(true\)[^;]*;\s*\n?.*showModelList|const \[showModelList, setShowModelList\] = useState\(true\)/,
+    '模型列表应默认展开');
+  assert.ok(!/const \[showModelList, setShowModelList\] = useState\(false\)/.test(ui),
+    '模型列表不能默认折叠');
+  // 未拉取时不能是一片空白
+  assert.match(ui, /showModelList && !modelsForEngine/, '应处理「还没拉过列表」的状态');
+});
