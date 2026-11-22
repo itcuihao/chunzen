@@ -357,3 +357,38 @@ describe('真实端点（CHUNZEN_LIVE_OPENAI=1 时启用）', () => {
     );
   });
 });
+
+describe('模型名错误的处理', () => {
+  test('模型名不存在时抛出的错误带 status，供上层判断是否自动拉列表', async () => {
+    // 曾经这里硬编码 status=undefined，导致 SidePanelProvider 拿不到状态码，
+    // 「模型不存在」的 400 无法识别成模型名问题，用户只能自己去猜模型 ID。
+    await withServer(
+      ({ path }) => {
+        if (path.endsWith('/models')) {
+          return { status: 200, body: JSON.stringify({ data: [{ id: 'real-model-a' }, { id: 'real-model-b' }] }) };
+        }
+        return { status: 400, body: JSON.stringify({ error: { message: '模型不存在，请检查模型代码。' } }) };
+      },
+      async () => {
+        const engine = new OpenAIEngine();
+        await assert.rejects(
+          () =>
+            engine.translate('hello', undefined, undefined, [], {
+              baseUrl,
+              apiKey: 'k',
+              model: 'made-up-model'
+            }),
+          (err: any) => {
+            assert.equal(err.status, 400, 'status 必须透传，否则上层无法识别模型名错误');
+            assert.equal(engine.isModelNameError?.(err.status, err.message), true);
+            return true;
+          }
+        );
+
+        // 上层据此补拉列表，能拿到真实名字
+        const diag = await engine.diagnose(baseUrl, 'k');
+        assert.deepEqual(diag.models, ['real-model-a', 'real-model-b']);
+      }
+    );
+  });
+});

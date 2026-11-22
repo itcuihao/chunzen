@@ -451,6 +451,13 @@ export class SidePanelProvider {
       // 请求地址与处置建议来自引擎的结构化错误，直接透传给设置页
       const requestUrl = (err as { requestUrl?: string })?.requestUrl;
       const hint = (err as { hint?: string })?.hint;
+      const status = (err as { status?: number })?.status;
+
+      // 翻译失败且判像是模型名的问题时，主动去拉一次真实模型列表。
+      // 模型 ID 带大小写、版本号、中转前缀（zai-org/GLM-5.3-Flash），
+      // 让用户照文档手抄必错；这里直接把可用名字端到设置页上。
+      const availableModels = await this.fetchModelsForModelError(engineName, status, msg, tempConfig);
+
       this.postMessage({
         type: 'engine-test-result',
         engineName,
@@ -458,8 +465,38 @@ export class SidePanelProvider {
         message: msg,
         hint,
         requestUrl,
-        elapsedMs: Date.now() - startedAt
+        elapsedMs: Date.now() - startedAt,
+        availableModels: availableModels.length > 0 ? availableModels : undefined,
+        modelListHint: availableModels.length > 0
+          ? `模型名可能不对，该服务当前可用 ${availableModels.length} 个模型，点一下即可填入`
+          : undefined
       });
+    }
+  }
+
+  /**
+   * 翻译报错后补一次模型列表。只在这条错误确实指向模型名时发起，
+   * 避免用户配错地址时又白等一次 20s 的 /models 请求。
+   */
+  private async fetchModelsForModelError(
+    engineName: string,
+    status: number | undefined,
+    detail: string | undefined,
+    tempConfig?: Record<string, string>
+  ): Promise<string[]> {
+    try {
+      const engine = getEngines().find((e) => e.name === engineName);
+      if (!engine?.diagnose || !engine.isModelNameError?.(status, detail)) {
+        return [];
+      }
+      const rawTimeout = tempConfig?.timeoutMs;
+      const timeoutMs = rawTimeout !== undefined && rawTimeout !== '' && Number.isFinite(Number(rawTimeout))
+        ? Math.min(Number(rawTimeout), 20000)
+        : 20000;
+      const result = await engine.diagnose(tempConfig?.baseUrl, tempConfig?.apiKey, timeoutMs);
+      return result.ok ? result.models ?? [] : [];
+    } catch {
+      return [];
     }
   }
 

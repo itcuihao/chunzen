@@ -147,6 +147,14 @@ export interface EngineTestResultMessage {
   /** 实际请求的地址，便于用户核对 Base URL */
   requestUrl?: string;
   elapsedMs?: number;
+  /**
+   * 失败原因是模型名不对时，顺手带回来的真实可用模型名。
+   * 模型 ID 会带大小写、版本号、中转前缀（zai-org/GLM-5.3-Flash），
+   * 让人手抄必错，所以测试失败就直接给可点的列表。
+   */
+  availableModels?: string[];
+  /** 用于预填模型名输入框的提示，如 "模型名可能不对，以下 12 个可用" */
+  modelListHint?: string;
 }
 
 export interface EngineModelsMessage {

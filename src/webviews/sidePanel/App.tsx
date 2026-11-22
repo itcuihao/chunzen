@@ -127,7 +127,9 @@ export const App: FunctionComponent = () => {
           message: msg.message,
           hint: msg.hint,
           requestUrl: msg.requestUrl,
-          elapsedMs: msg.elapsedMs
+          elapsedMs: msg.elapsedMs,
+          availableModels: msg.availableModels,
+          modelListHint: msg.modelListHint
         });
         setTestingEngine(null);
         break;

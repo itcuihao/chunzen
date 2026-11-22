@@ -30,6 +30,9 @@ export type EngineTestResult = {
   hint?: string;
   requestUrl?: string;
   elapsedMs?: number;
+  /** 模型名报错时顺带拉回的真实可用模型，点了直接填进输入框 */
+  availableModels?: string[];
+  modelListHint?: string;
 };
 
 interface PanelState {

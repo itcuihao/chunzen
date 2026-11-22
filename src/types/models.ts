@@ -25,6 +25,11 @@ export interface TranslationEngine {
   complete?(systemPrompt: string, userText: string, configOverride?: Record<string, any>): Promise<string>;
   /** 仅大模型类引擎实现：不改动翻译设置地验证地址与 Key，并尽量返回可用模型列表 */
   diagnose?(baseUrl?: string, apiKey?: string, timeoutMs?: number): Promise<EngineDiagnoseResult>;
+  /**
+   * 仅大模型类引擎实现：判断一条失败信息是否「大概率是模型名不对」。
+   * 设置页据此自动拉取真实模型列表，而不是让用户自己去猜名字。
+   */
+  isModelNameError?(status: number | undefined, detail: string | undefined): boolean;
   translate(text: string, sourceLang?: string, targetLang?: string, glossary?: GlossaryEntry[], configOverride?: Record<string, any>): Promise<string>;
 }
 

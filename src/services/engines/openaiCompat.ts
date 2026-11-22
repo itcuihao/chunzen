@@ -167,6 +167,28 @@ export function httpFailureHint(status: number): string {
   return '';
 }
 
+/**
+ * 判断一次失败是否「大概率是模型名不对」。
+ *
+ * 各家措辞差得离谱，但语义高度集中：
+ *   OpenAI      model_not_found / "The model `x` does not exist"
+ *   DeepSeek    "Model Not Exist"
+ *   智谱        1211 模型不存在
+ *   硅基流动    20012 Model does not exist
+ *   各类中转     "invalid model" / "no such model" / "模型名称错误"
+ * 所以不看状态码（404 也可能是路径错），只看文本里有没有模型相关的否定词。
+ */
+export function looksLikeModelError(status?: number, detail?: string): boolean {
+  const text = (detail ?? '').toLowerCase();
+  if (!text) return false;
+  const mentionsModel = /model|模型|engine/.test(text);
+  if (!mentionsModel) return false;
+  return /not\s*(found|exist|available|supported|valid)|does\s*not\s*exist|no\s*such|invalid|unknown|不存在|无效|不支持|未找到|错误|not\s*allowed|unrecognized/.test(text)
+    // 仅 400/404/422 时信任文本判断，避免把 429「model quota」之类误判
+    ? status === undefined || [400, 404, 422, 400, 500].includes(status)
+    : false;
+}
+
 /** 截断长文本用于 UI 展示 */
 export function previewText(text: string, max = 200): string {
   const flat = text.replace(/\s+/g, ' ').trim();

@@ -11,6 +11,7 @@ import {
   extractAssistantContent,
   extractModelIds,
   httpFailureHint,
+  looksLikeModelError,
   modelListCandidates,
   parseJson,
   previewText
@@ -62,6 +63,10 @@ export class OpenAIEngine implements TranslationEngine {
 
   async complete(systemPrompt: string, userText: string, configOverride?: Record<string, any>): Promise<string> {
     return this.chat(this.readSettings(configOverride ?? {}), systemPrompt, userText);
+  }
+
+  isModelNameError(status: number | undefined, detail: string | undefined): boolean {
+    return looksLikeModelError(status, detail);
   }
 
   /** 设置页“测试连接 / 拉取模型列表”使用：返回结构化结果，而不是抛异常 */
@@ -300,11 +305,15 @@ export class OpenAIEngine implements TranslationEngine {
     if (unauthorized) throw unauthorized;
 
     const first = failures[0] || '请求失败';
+    // 从 failures 里把状态码捞回来：原先这里硬编码 undefined，导致
+    // 调用方拿不到 status，"模型名不存在" 这类 400 无法被识别，
+    // 也就不会自动去拉模型列表（设置页只能让用户自己猜名字）。
+    const firstStatus = Number(/HTTP (\d{3})/.exec(first)?.[1] ?? NaN);
     throw new OpenAiRequestError(
       failures.length > 1 ? `${first}（共尝试 ${failures.length} 个地址）` : first,
       candidates[0],
-      undefined,
-      httpFailureHint(Number(/HTTP (\d{3})/.exec(first)?.[1] ?? NaN))
+      Number.isFinite(firstStatus) ? firstStatus : undefined,
+      httpFailureHint(firstStatus)
     );
   }
 }

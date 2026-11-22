@@ -11,6 +11,7 @@ import {
   findPreset,
   httpFailureHint,
   isConcretePreset,
+  looksLikeModelError,
   modelListCandidates,
   parseJson,
   previewText,
@@ -206,4 +207,41 @@ test('超时时间：非法值回落到 60s，并按 3s~180s 收敛', () => {
   assert.equal(resolveOpenAiTimeout('15000'), 15000);
   assert.equal(resolveOpenAiTimeout(10), 3000);
   assert.equal(resolveOpenAiTimeout(999999), 180000);
+});
+
+test('模型名错误识别：跨服务商措辞都能认出来', () => {
+  // 这一条决定「测试连接失败后要不要自动拉模型列表」。
+  // 各家措辞完全不同，但语义集中，实测样本：
+  const shouldMatch: Array<[number, string]> = [
+    [400, '模型不存在，请检查模型代码。'],                       // 智谱
+    [404, 'Model Not Exist'],                                   // DeepSeek
+    [400, 'The model `deepseek-v4.1-flash` does not exist'],     // OpenAI 风格
+    [400, '20012 Model does not exist'],                         // 硅基流动
+    [400, 'invalid model: gpt-9'],                               // 各类中转
+    [422, 'no such model'],                                      // 少数网关
+    [404, 'model not found'],
+    [400, 'unknown model'],
+    [400, '模型名称错误'],
+  ];
+  for (const [status, detail] of shouldMatch) {
+    assert.equal(looksLikeModelError(status, detail), true, `未识别：${status} ${detail}`);
+  }
+});
+
+test('模型名错误识别：不误判认证/限流/参数/路径类错误', () => {
+  // 误判会导致用户配错 Base URL 时又白等一次 /models 请求（可到 20s）。
+  const shouldNotMatch: Array<[number | undefined, string]> = [
+    [401, 'Invalid API key provided'],
+    [403, 'insufficient permissions'],
+    [429, 'model quota exceeded'],           // 提到 model 但语义是限流
+    [404, 'Not Found'],                       // 路径错，没提 model
+    [400, 'messages is required'],
+    [400, 'temperature must be <= 2'],
+    [402, 'Insufficient Balance'],
+    [undefined, ''],
+    [undefined, 'fetch failed'],
+  ];
+  for (const [status, detail] of shouldNotMatch) {
+    assert.equal(looksLikeModelError(status, detail), false, `误判：${status} ${detail}`);
+  }
 });

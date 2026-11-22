@@ -611,6 +611,32 @@ const EngineConfigForm: FunctionComponent<EngineConfigFormProps> = ({
             {testResult.hint && (
               <div className="text-[10px] font-sans opacity-90">{testResult.hint}</div>
             )}
+            {/*
+              模型名报错时，扩展端已经顺手把 /models 的真实结果拉回来了。
+              模型 ID 带大小写、版本号和中转前缀，手抄必错，所以直接给可点的
+              名字——点一下就填进「模型名称」再点测试，不用去翻文档。
+            */}
+            {testResult.availableModels && testResult.availableModels.length > 0 && (
+              <div className="flex flex-col gap-1 font-sans">
+                <div className="text-[10px] opacity-90">{testResult.modelListHint}</div>
+                <div className="max-h-32 overflow-y-auto flex flex-wrap gap-1 p-1.5 rounded border border-error/30 bg-background/50">
+                  {testResult.availableModels.map((id) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => handleChange('model', id)}
+                      className={`px-1.5 py-0.5 rounded text-[9px] font-mono border transition-colors ${
+                        chosenModel === id
+                          ? 'border-accent bg-accent/15 text-accent'
+                          : 'border-border bg-secondary/40 text-secondary-foreground hover:text-foreground'
+                      }`}
+                    >
+                      {id}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             {(testResult.requestUrl || testResult.elapsedMs !== undefined) && (
               <div className="text-[9px] font-mono opacity-60 break-all">
                 {testResult.requestUrl ? `请求：${testResult.requestUrl}` : ''}
