@@ -724,6 +724,9 @@ document.getElementById('btn-capture')?.addEventListener('click', () => {
     vscode.postMessage({ type: 'figure-screenshot-error', pageNumber: currentPage, reason: msg });
   });
 });
+document.getElementById('btn-open-side-panel')?.addEventListener('click', () => {
+  vscode.postMessage({ type: 'open-side-panel' });
+});
 let pdfFullscreenState = false;
 document.getElementById('btn-fullscreen')?.addEventListener('click', () => {
   pdfFullscreenState = !pdfFullscreenState;

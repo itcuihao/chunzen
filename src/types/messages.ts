@@ -95,7 +95,8 @@ export type PdfViewerToExtMessage =
   | PdfHoverMessage
   | PdfPagesTextResultMessage
   | PdfBibliographyExtractedMessage
-  | { type: 'toggle-pdf-fullscreen' };
+  | { type: 'toggle-pdf-fullscreen' }
+  | { type: 'open-side-panel' };
 
 // ── Extension → Side Panel ──
 
