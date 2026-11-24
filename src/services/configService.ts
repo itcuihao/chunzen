@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { GeneralSettings, JournalSourceType, LayoutConfig, MineruConfig } from '../types/config';
 import { getEngineNames, getEngines, getTranslationPriority } from './engines/registry';
 import { normalizePriority } from './enginePriority';
+import { parseOpenAiProfiles, resolveOpenAiProfiles } from './engines/openaiProfiles';
 import { CACHE_MAX_SIZE, DEFAULT_LAYOUT_ENDPOINT, LAYOUT_TIMEOUT_MS, OPENAI_TIMEOUT_MS, clampNumber, oneOf } from './settingsNormalize';
 
 const HOVER_STYLES = ['overlay', 'bar'] as const;
@@ -21,13 +22,22 @@ export class ConfigService {
         apiKey: cfg.get<string>('deepl.apiKey', '').trim(),
         freeApi: cfg.get<boolean>('deepl.freeApi', true)
       },
-      openai: {
-        apiKey: cfg.get<string>('openai.apiKey', '').trim(),
-        baseUrl: cfg.get<string>('openai.baseUrl', '').trim(),
-        model: cfg.get<string>('openai.model', '').trim(),
-        systemPrompt: cfg.get<string>('openai.systemPrompt', '').trim(),
-        timeoutMs: clampNumber(cfg.get<number>('openai.timeoutMs'), OPENAI_TIMEOUT_MS)
-      },
+      openai: (() => {
+        const apiKey = cfg.get<string>('openai.apiKey', '').trim();
+        const baseUrl = cfg.get<string>('openai.baseUrl', '').trim();
+        const model = cfg.get<string>('openai.model', '').trim();
+        const systemPrompt = cfg.get<string>('openai.systemPrompt', '').trim();
+        const timeoutMs = clampNumber(cfg.get<number>('openai.timeoutMs'), OPENAI_TIMEOUT_MS);
+        const profiles = resolveOpenAiProfiles(cfg.get('openai.profiles'), {
+          apiKey,
+          baseUrl,
+          model,
+          systemPrompt,
+          timeoutMs
+        });
+        const explainProfileId = cfg.get<string>('openai.explainProfileId', '').trim();
+        return { apiKey, baseUrl, model, systemPrompt, timeoutMs, profiles, explainProfileId };
+      })(),
       custom: {
         url: cfg.get<string>('custom.url', '').trim(),
         headers: cfg.get<Record<string, string>>('custom.headers', {}),
@@ -80,7 +90,9 @@ export class ConfigService {
         baseUrl: tc.openai.baseUrl,
         model: tc.openai.model,
         systemPrompt: tc.openai.systemPrompt,
-        timeoutMs: String(tc.openai.timeoutMs)
+        timeoutMs: String(tc.openai.timeoutMs),
+        profiles: JSON.stringify(tc.openai.profiles),
+        explainProfileId: tc.openai.explainProfileId
       },
       custom: { url: tc.custom.url, headers: JSON.stringify(tc.custom.headers), bodyTemplate: tc.custom.bodyTemplate, responsePath: tc.custom.responsePath }
     };
@@ -117,6 +129,21 @@ export class ConfigService {
 
       if (key === 'freeApi') {
         await cfg.update(fullKey, trimmedValue === 'true', vscode.ConfigurationTarget.Global);
+      } else if (key === 'profiles' && engineName === 'openai') {
+        const profiles = parseOpenAiProfiles(trimmedValue);
+        await cfg.update('openai.profiles', profiles, vscode.ConfigurationTarget.Global);
+        const primary = profiles.find((p) => p.enabled && p.apiKey && p.baseUrl && p.model)
+          ?? profiles.find((p) => p.enabled)
+          ?? profiles[0];
+        await cfg.update('openai.apiKey', primary?.apiKey ?? '', vscode.ConfigurationTarget.Global);
+        await cfg.update('openai.baseUrl', primary?.baseUrl ?? '', vscode.ConfigurationTarget.Global);
+        await cfg.update('openai.model', primary?.model ?? '', vscode.ConfigurationTarget.Global);
+        if (primary?.systemPrompt !== undefined) {
+          await cfg.update('openai.systemPrompt', primary.systemPrompt, vscode.ConfigurationTarget.Global);
+        }
+        if (primary?.timeoutMs !== undefined) {
+          await cfg.update('openai.timeoutMs', clampNumber(primary.timeoutMs, OPENAI_TIMEOUT_MS), vscode.ConfigurationTarget.Global);
+        }
       } else if (key === 'timeoutMs') {
         // 数值型设置必须写成 number，否则 package.json 的类型校验会报错
         const parsed = typeof trimmedValue === 'number' ? trimmedValue : Number(trimmedValue);

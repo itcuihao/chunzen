@@ -442,6 +442,7 @@ export class SidePanelProvider {
       this.postMessage({
         type: 'engine-test-result',
         engineName,
+        profileId: tempConfig?.profileId,
         success: true,
         message: `翻译成功：${result}`,
         elapsedMs: Date.now() - startedAt
@@ -461,6 +462,7 @@ export class SidePanelProvider {
       this.postMessage({
         type: 'engine-test-result',
         engineName,
+        profileId: tempConfig?.profileId,
         success: false,
         message: msg,
         hint,
@@ -520,6 +522,7 @@ export class SidePanelProvider {
     this.postMessage({
       type: 'engine-models',
       engineName,
+      profileId: tempConfig?.profileId,
       ok: result.ok,
       models: result.models ?? [],
       message: result.message,
@@ -726,7 +729,12 @@ export class SidePanelProvider {
     let llmError: unknown;
     try {
       const prompt = buildExplainSystemPrompt(this.glossaryService.getMatchingTerms(text));
-      const raw = await this.translationService.completeWithLlm(prompt, text);
+      const explainProfileId = this.configService.getTranslationConfig().openai.explainProfileId;
+      const raw = await this.translationService.completeWithLlm(
+        prompt,
+        text,
+        explainProfileId ? { profileId: explainProfileId } : undefined
+      );
       if (raw) {
         const parsed = parseExplainOutput(raw);
         if (parsed.translation || parsed.explanation) return parsed;

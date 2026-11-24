@@ -16,6 +16,8 @@ export interface EngineConfigFields {
   baseUrl?: string;
   model?: string;
   systemPrompt?: string;
+  profiles?: string;
+  explainProfileId?: string;
   freeApi?: boolean;
   timeoutMs?: string;
   url?: string;

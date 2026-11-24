@@ -14,6 +14,7 @@ import { BUILD_INFO } from '../../../build-info';
 import { BIGMODEL_INVITE_URL, BIGMODEL_INVITE_CODE } from '../assets/bigmodelQr';
 import { SILICONFLOW_INVITE_URL, SILICONFLOW_INVITE_CODE } from '../assets/siliconflowQr';
 import { QrCodeSvg } from './QrCodeSvg';
+import { OpenAiProfilesForm } from './OpenAiProfilesForm';
 
 export const SettingsTab: FunctionComponent = () => {
   return (
@@ -255,16 +256,26 @@ const EngineSettings: FunctionComponent = () => {
                 </div>
 
                 {isExpanded && (
-                  <EngineConfigForm
-                    engineName={name}
-                    config={engineConfigs[name] || {}}
-                    fields={engineFields[name] || []}
-                    onSave={(config) => handleSave(name, config)}
-                    onTest={(config) => handleTest(name, config)}
-                    onListModels={(config) => handleListModels(name, config)}
-                    isTesting={isTesting}
-                    testResult={testResult}
-                  />
+                  name === 'openai' ? (
+                    <OpenAiProfilesForm
+                      config={engineConfigs[name] || {}}
+                      onSave={(config) => handleSave(name, config)}
+                      onTest={(config) => handleTest(name, config)}
+                      onListModels={(config) => handleListModels(name, config)}
+                      isTesting={isTesting}
+                    />
+                  ) : (
+                    <EngineConfigForm
+                      engineName={name}
+                      config={engineConfigs[name] || {}}
+                      fields={engineFields[name] || []}
+                      onSave={(config) => handleSave(name, config)}
+                      onTest={(config) => handleTest(name, config)}
+                      onListModels={(config) => handleListModels(name, config)}
+                      isTesting={isTesting}
+                      testResult={testResult}
+                    />
+                  )
                 )}
                 {isOver && overIndex !== null && overIndex > (dragIndex ?? 0) && (
                   <div className="h-0.5 bg-accent rounded-full mx-2 -mb-0.5 mt-1 animate-pulse" />

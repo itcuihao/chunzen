@@ -4,6 +4,7 @@ import { customFetch } from '../../utils/fetch';
 import { getByPath, renderBodyTemplate } from '../../utils/engineHelpers';
 import { resolveOpenAiBaseUrl, resolveOpenAiModel, resolveOpenAiTimeout } from './defaults';
 import { DEFAULT_TRANSLATION_SYSTEM_PROMPT, buildGlossaryPrompt } from './llmPrompt';
+import { getOrderedConfiguredProfiles, resolveOpenAiProfiles } from './openaiProfiles';
 import {
   OpenAiRequestError,
   chatCompletionsCandidates,
@@ -46,7 +47,7 @@ export class OpenAIEngine implements TranslationEngine {
   usesGlossaryPrompt = true;
 
   isConfigured(): boolean {
-    return this.readSettings({}).configured;
+    return this.readConfiguredProfiles({}).length > 0;
   }
 
   async translate(
@@ -56,13 +57,34 @@ export class OpenAIEngine implements TranslationEngine {
     glossary?: GlossaryEntry[],
     configOverride?: Record<string, any>
   ): Promise<string> {
-    const settings = this.readSettings(configOverride ?? {});
-    const systemPrompt = this.resolveSystemPrompt(configOverride ?? {});
-    return this.chat(settings, systemPrompt + buildGlossaryPrompt(glossary), text);
+    const override = configOverride ?? {};
+    const glossarySuffix = buildGlossaryPrompt(glossary);
+    if (this.hasExplicitConnectionOverride(override)) {
+      const settings = this.readSettings(override);
+      const systemPrompt = this.resolveSystemPrompt(override);
+      return this.chat(settings, systemPrompt + glossarySuffix, text);
+    }
+
+    const profiles = this.readConfiguredProfiles(override);
+    if (profiles.length === 0) {
+      return this.chat(this.readSettings(override), this.resolveSystemPrompt(override) + glossarySuffix, text);
+    }
+
+    return this.runAcrossProfiles(profiles, (p) => p.systemPrompt + glossarySuffix, text);
   }
 
   async complete(systemPrompt: string, userText: string, configOverride?: Record<string, any>): Promise<string> {
-    return this.chat(this.readSettings(configOverride ?? {}), systemPrompt, userText);
+    const override = configOverride ?? {};
+    if (this.hasExplicitConnectionOverride(override)) {
+      return this.chat(this.readSettings(override), systemPrompt, userText);
+    }
+
+    const profiles = this.readConfiguredProfiles(override);
+    if (profiles.length === 0) {
+      return this.chat(this.readSettings(override), systemPrompt, userText);
+    }
+
+    return this.runAcrossProfiles(profiles, () => systemPrompt, userText);
   }
 
   isModelNameError(status: number | undefined, detail: string | undefined): boolean {
@@ -137,6 +159,53 @@ export class OpenAIEngine implements TranslationEngine {
       hint: lastStatus ? httpFailureHint(Number(lastStatus)) : '请检查网络、代理设置与 Base URL 是否可访问',
       requestUrl: candidates[0]
     };
+  }
+
+  private hasExplicitConnectionOverride(override: Record<string, any>): boolean {
+    return ['apiKey', 'baseUrl', 'model'].some((k) => {
+      const v = override[k];
+      return typeof v === 'string' && v.trim().length > 0;
+    });
+  }
+
+  private readConfiguredProfiles(override: Record<string, any>): Array<OpenAiSettings & { configured: boolean; systemPrompt: string }> {
+    const cfg = vscode.workspace.getConfiguration(SCOPE);
+    const profiles = resolveOpenAiProfiles(override.profiles ?? cfg.get('profiles'), {
+      apiKey: cfg.get('apiKey'),
+      baseUrl: cfg.get('baseUrl'),
+      model: cfg.get('model'),
+      systemPrompt: cfg.get('systemPrompt'),
+      timeoutMs: cfg.get('timeoutMs')
+    });
+    const preferredId = typeof override.profileId === 'string' && override.profileId.trim()
+      ? override.profileId.trim()
+      : undefined;
+    const ordered = getOrderedConfiguredProfiles(profiles, preferredId);
+    const fallbackPrompt = this.resolveSystemPrompt(override);
+    return ordered.map((p) => ({
+      apiKey: p.apiKey.trim(),
+      baseUrl: resolveOpenAiBaseUrl(p.baseUrl),
+      model: resolveOpenAiModel(p.model),
+      timeoutMs: resolveOpenAiTimeout(p.timeoutMs ?? cfg.get('timeoutMs')),
+      configured: true,
+      systemPrompt: p.systemPrompt?.trim() || fallbackPrompt
+    }));
+  }
+
+  private async runAcrossProfiles(
+    profiles: Array<OpenAiSettings & { configured: boolean; systemPrompt: string }>,
+    getPrompt: (profile: OpenAiSettings & { configured: boolean; systemPrompt: string }) => string,
+    userText: string
+  ): Promise<string> {
+    let firstError: unknown;
+    for (const profile of profiles) {
+      try {
+        return await this.chat(profile, getPrompt(profile), userText);
+      } catch (err) {
+        if (firstError === undefined) firstError = err;
+      }
+    }
+    throw firstError;
   }
 
   private resolveSystemPrompt(override: Record<string, any>): string {

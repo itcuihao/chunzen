@@ -121,8 +121,9 @@ export const App: FunctionComponent = () => {
       case 'engines-status':
         setEngineStatuses(msg.engines);
         break;
-      case 'engine-test-result':
-        setTestResultForEngine(msg.engineName, {
+      case 'engine-test-result': {
+        const key = msg.profileId ? `${msg.engineName}:${msg.profileId}` : msg.engineName;
+        setTestResultForEngine(key, {
           success: msg.success,
           message: msg.message,
           hint: msg.hint,
@@ -133,15 +134,17 @@ export const App: FunctionComponent = () => {
         });
         setTestingEngine(null);
         break;
-      case 'engine-models':
-        setEngineModels(msg.engineName, {
+      }
+      case 'engine-models': {
+        const key = msg.profileId ? `${msg.engineName}:${msg.profileId}` : msg.engineName;
+        setEngineModels(key, {
           ok: msg.ok,
           models: msg.models,
           message: msg.message,
           hint: msg.hint,
           requestUrl: msg.requestUrl
         });
-        setTestResultForEngine(msg.engineName, {
+        setTestResultForEngine(key, {
           success: msg.ok,
           message: msg.models.length > 0 ? `${msg.message}（${msg.models.length} 个）` : msg.message,
           hint: msg.hint,
@@ -149,6 +152,7 @@ export const App: FunctionComponent = () => {
         });
         setTestingEngine(null);
         break;
+      }
       case 'glossary-sync':
         setGlossaryTerms(msg.terms);
         break;

@@ -22,6 +22,14 @@ export interface OpenAiPreset {
 
 export const OPENAI_PRESETS: readonly OpenAiPreset[] = [
   {
+    id: 'custom',
+    label: '自定义 / 中转站',
+    baseUrl: '',
+    model: '',
+    keyUrl: '',
+    note: '中转站或自建服务：Base URL 与模型名按你拿到的说明填写。根地址、带 /v1 的地址、完整 /chat/completions 地址都能识别。'
+  },
+  {
     id: 'deepseek',
     label: 'DeepSeek 官方',
     baseUrl: 'https://api.deepseek.com',
@@ -48,14 +56,6 @@ export const OPENAI_PRESETS: readonly OpenAiPreset[] = [
     note:
       '模型名需带命名空间前缀，如 zai-org/GLM-5.3-Flash、Qwen/Qwen2.5-7B-Instruct。' +
       '注意中转名与智谱直连不同：这里写 zai-org/GLM-5.3-Flash，不是 glm-4-flash。'
-  },
-  {
-    id: 'custom',
-    label: '自定义 / 中转站',
-    baseUrl: '',
-    model: '',
-    keyUrl: '',
-    note: '中转站或自建服务：Base URL 与模型名按你拿到的说明填写。根地址、带 /v1 的地址、完整 /chat/completions 地址都能识别。'
   }
 ];
 

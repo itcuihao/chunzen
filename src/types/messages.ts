@@ -141,6 +141,7 @@ export interface EnginesStatusMessage {
 export interface EngineTestResultMessage {
   type: 'engine-test-result';
   engineName: string;
+  profileId?: string;
   success: boolean;
   message: string;
   /** 可执行的下一步建议（Key 无效、路径不对、模型不存在等） */
@@ -161,6 +162,7 @@ export interface EngineTestResultMessage {
 export interface EngineModelsMessage {
   type: 'engine-models';
   engineName: string;
+  profileId?: string;
   ok: boolean;
   models: string[];
   message: string;
