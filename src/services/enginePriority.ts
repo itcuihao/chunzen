@@ -18,3 +18,19 @@ export function normalizePriority(configured: unknown, known: readonly string[])
   }
   return result;
 }
+
+/**
+ * 规范化被临时停用的引擎列表：只保留已知引擎名并去重。
+ */
+export function normalizeDisabledEngines(configured: unknown, known: readonly string[]): string[] {
+  const result: string[] = [];
+  const knownSet = new Set(known);
+  if (Array.isArray(configured)) {
+    for (const name of configured) {
+      if (typeof name === 'string' && knownSet.has(name) && !result.includes(name)) {
+        result.push(name);
+      }
+    }
+  }
+  return result;
+}

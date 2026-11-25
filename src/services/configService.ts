@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { GeneralSettings, JournalSourceType, LayoutConfig, MineruConfig } from '../types/config';
-import { getEngineNames, getEngines, getTranslationPriority } from './engines/registry';
-import { normalizePriority } from './enginePriority';
+import { getDisabledEngineSet, getEngineNames, getEngines, getTranslationPriority } from './engines/registry';
+import { normalizeDisabledEngines, normalizePriority } from './enginePriority';
 import { parseOpenAiProfiles, resolveOpenAiProfiles } from './engines/openaiProfiles';
 import { CACHE_MAX_SIZE, DEFAULT_LAYOUT_ENDPOINT, LAYOUT_TIMEOUT_MS, OPENAI_TIMEOUT_MS, clampNumber, oneOf } from './settingsNormalize';
 
@@ -55,6 +55,13 @@ export class ConfigService {
     };
   }
 
+  getSidePanelConfig() {
+    const cfg = vscode.workspace.getConfiguration('chunzen.sidePanel');
+    return {
+      autoOpen: cfg.get<boolean>('autoOpen', true)
+    };
+  }
+
   getCacheConfig() {
     const cfg = vscode.workspace.getConfiguration('chunzen.cache');
     return { maxSize: clampNumber(cfg.get<number>('maxSize'), CACHE_MAX_SIZE) };
@@ -98,13 +105,28 @@ export class ConfigService {
     };
   }
 
-  getEngineStatuses(): Array<{ name: string; displayName: string; configured: boolean }> {
+  getEngineStatuses(): Array<{ name: string; displayName: string; configured: boolean; enabled: boolean }> {
+    const disabled = getDisabledEngineSet();
     // 状态直接取自引擎注册表，新增引擎无需在此处登记
     return getEngines().map(e => ({
       name: e.name,
       displayName: e.displayName,
-      configured: e.isConfigured()
+      configured: e.isConfigured(),
+      enabled: !disabled.has(e.name)
     }));
+  }
+
+  async saveEngineEnabled(engineName: string, enabled: boolean): Promise<void> {
+    const known = getEngineNames();
+    if (!known.includes(engineName)) return;
+    const cfg = vscode.workspace.getConfiguration('chunzen.translation');
+    const current = normalizeDisabledEngines(cfg.get('disabledEngines'), known);
+    const next = enabled
+      ? current.filter((n) => n !== engineName)
+      : current.includes(engineName)
+        ? current
+        : [...current, engineName];
+    await cfg.update('disabledEngines', next, vscode.ConfigurationTarget.Global);
   }
 
   /** 保存用户拖拽后的引擎优先级（规范化后写入全局设置） */
@@ -165,6 +187,7 @@ export class ConfigService {
   async saveGeneralSettings(settings: GeneralSettings): Promise<void> {
     const cacheCfg = vscode.workspace.getConfiguration('chunzen.cache');
     const journalCfg = vscode.workspace.getConfiguration('chunzen.journal');
+    const sidePanelCfg = vscode.workspace.getConfiguration('chunzen.sidePanel');
     const layoutCfg = vscode.workspace.getConfiguration('chunzen.layout');
 
     if (typeof settings.cacheMaxSize === 'number') {
@@ -179,33 +202,38 @@ export class ConfigService {
       await journalCfg.update('source', settings.journalSource.type, vscode.ConfigurationTarget.Global);
     }
 
+    if (typeof settings.sidePanelAutoOpen === 'boolean') {
+      await sidePanelCfg.update('autoOpen', settings.sidePanelAutoOpen, vscode.ConfigurationTarget.Global);
+    }
+
     if (settings.layout) {
+      const currentLayout = this.getLayoutConfig();
       const useModelEnabled = typeof settings.layout.useModel === 'boolean'
         ? settings.layout.useModel
-        : this.getLayoutConfig().useModel;
-      const endpointTrimmed = typeof settings.layout.modelEndpoint === 'string'
-        ? settings.layout.modelEndpoint.trim()
-        : '';
-      const normalizedEndpoint = useModelEnabled
-        ? (endpointTrimmed || DEFAULT_LAYOUT_ENDPOINT)
-        : endpointTrimmed;
+        : currentLayout.useModel;
 
       if (typeof settings.layout.useModel === 'boolean') {
         await layoutCfg.update('useModel', settings.layout.useModel, vscode.ConfigurationTarget.Global);
       }
-      if (typeof settings.layout.modelEndpoint === 'string' || useModelEnabled) {
+
+      if (typeof settings.layout.modelEndpoint === 'string') {
+        const trimmed = settings.layout.modelEndpoint.trim();
+        const normalizedEndpoint = useModelEnabled ? (trimmed || DEFAULT_LAYOUT_ENDPOINT) : trimmed;
         await layoutCfg.update('modelEndpoint', normalizedEndpoint, vscode.ConfigurationTarget.Global);
+      } else if (settings.layout.useModel === true && !currentLayout.modelEndpoint) {
+        await layoutCfg.update('modelEndpoint', DEFAULT_LAYOUT_ENDPOINT, vscode.ConfigurationTarget.Global);
       }
+
       if (typeof settings.layout.timeoutMs === 'number') {
         await layoutCfg.update('timeoutMs', clampNumber(settings.layout.timeoutMs, LAYOUT_TIMEOUT_MS), vscode.ConfigurationTarget.Global);
       }
-      if (HOVER_STYLES.includes(settings.layout.hoverHighlightStyle)) {
+      if (settings.layout.hoverHighlightStyle && HOVER_STYLES.includes(settings.layout.hoverHighlightStyle)) {
         await layoutCfg.update('hoverHighlightStyle', settings.layout.hoverHighlightStyle, vscode.ConfigurationTarget.Global);
       }
-      if (THEMES.includes(settings.layout.theme)) {
+      if (settings.layout.theme && THEMES.includes(settings.layout.theme)) {
         await layoutCfg.update('theme', settings.layout.theme, vscode.ConfigurationTarget.Global);
       }
-      if (RENDER_SCALES.includes(settings.layout.renderScale)) {
+      if (settings.layout.renderScale && RENDER_SCALES.includes(settings.layout.renderScale)) {
         await layoutCfg.update('renderScale', settings.layout.renderScale, vscode.ConfigurationTarget.Global);
       }
     }

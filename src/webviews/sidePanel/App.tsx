@@ -27,7 +27,9 @@ export const App: FunctionComponent = () => {
   
   const setEnginePriority = useStore((state) => state.setEnginePriority);
   const setEngineConfigs = useStore((state) => state.setEngineConfigs);
+  const setJournalEnabled = useStore((state) => state.setJournalEnabled);
   const setJournalSource = useStore((state) => state.setJournalSource);
+  const setSidePanelAutoOpen = useStore((state) => state.setSidePanelAutoOpen);
   const setCacheMaxSize = useStore((state) => state.setCacheMaxSize);
   const setCacheSize = useStore((state) => state.setCacheSize);
   const setLayoutConfig = useStore((state) => state.setLayoutConfig);
@@ -39,7 +41,9 @@ export const App: FunctionComponent = () => {
     if (msg.engines) setEngineStatuses(msg.engines);
     if (msg.priority) setEnginePriority(msg.priority);
     if (msg.engineConfigs) setEngineConfigs(msg.engineConfigs);
+    if (typeof msg.journalEnabled === 'boolean') setJournalEnabled(msg.journalEnabled);
     if (msg.journalSource) setJournalSource(msg.journalSource);
+    if (typeof msg.sidePanelAutoOpen === 'boolean') setSidePanelAutoOpen(msg.sidePanelAutoOpen);
     if (msg.cacheMaxSize !== undefined && msg.cacheMaxSize !== null) setCacheMaxSize(msg.cacheMaxSize);
     if (msg.cacheSize !== undefined && msg.cacheSize !== null) setCacheSize(msg.cacheSize);
     if (msg.layoutConfig) setLayoutConfig(msg.layoutConfig);
@@ -50,7 +54,9 @@ export const App: FunctionComponent = () => {
     setEngineStatuses,
     setEnginePriority,
     setEngineConfigs,
+    setJournalEnabled,
     setJournalSource,
+    setSidePanelAutoOpen,
     setCacheMaxSize,
     setCacheSize,
     setLayoutConfig,

@@ -174,14 +174,21 @@ export class SidePanelProvider {
       case 'set-engine-priority':
         await this.configService.saveEnginePriority(msg.priority);
         break;
+      case 'set-engine-enabled':
+        await this.configService.saveEngineEnabled(msg.engineName, msg.enabled);
+        this.syncSettingsState();
+        break;
       case 'save-engine-config':
         await this.configService.saveEngineConfig(msg.engineName, msg.config);
         // 回传实际写入的值（保存时会 trim/校验），表单才能反映真实生效的配置
-        this.sendInitState();
+        this.syncSettingsState();
         break;
       case 'save-general-settings':
         await this.configService.saveGeneralSettings(msg.settings);
-        this.sendInitState();
+        if (typeof msg.settings.cacheMaxSize === 'number') {
+          this.translationService.trimCache();
+        }
+        this.syncSettingsState();
         if (msg.settings.layout && typeof msg.settings.layout.useModel === 'boolean') {
           if (this.configService.getLayoutConfig().useModel) {
             await this.ensureLayoutEndpointStarted();
@@ -189,17 +196,8 @@ export class SidePanelProvider {
             this.stopLayoutEndpoint();
           }
         }
-        await this.onLayoutConfigChanged?.(this.configService.getLayoutConfig());
-        if (this.activePdfUri) {
-          const mineruConfig = this.configService.getMineruConfig();
-          if (mineruConfig.enable) {
-            this.mineru.parse(this.activePdfUri);
-          } else {
-            this.postMessage({
-              type: 'mineru-status',
-              status: 'idle'
-            });
-          }
+        if (msg.settings.layout) {
+          await this.onLayoutConfigChanged?.(this.configService.getLayoutConfig());
         }
         break;
       case 'trigger-mineru-parse': {
@@ -372,7 +370,8 @@ export class SidePanelProvider {
     this.postMessage({ type: 'clear' });
   }
 
-  sendInitState(): void {
+  syncSettingsState(): void {
+    const journalCfg = this.configService.getJournalConfig();
     this.postMessage({
       type: 'init-state',
       glossary: this.glossaryService.getAll(),
@@ -380,12 +379,18 @@ export class SidePanelProvider {
       engines: this.configService.getEngineStatuses(),
       priority: this.configService.getTranslationConfig().priority,
       engineConfigs: this.configService.getEngineConfigs(),
-      journalSource: { type: this.configService.getJournalConfig().source },
+      journalEnabled: journalCfg.enabled,
+      journalSource: { type: journalCfg.source },
+      sidePanelAutoOpen: this.configService.getSidePanelConfig().autoOpen,
       cacheMaxSize: this.configService.getCacheConfig().maxSize,
       cacheSize: this.translationService.getCacheSize(),
       layoutConfig: this.configService.getLayoutConfig(),
       mineruConfig: this.configService.getMineruConfig()
     });
+  }
+
+  sendInitState(): void {
+    this.syncSettingsState();
     if (this.lastJournalInfo) {
       this.postMessage({
         type: 'update-journal',

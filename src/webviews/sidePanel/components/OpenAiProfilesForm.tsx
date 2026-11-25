@@ -2,13 +2,16 @@ import { FunctionComponent, useEffect, useState } from 'react';
 import {
   ArrowDown,
   ArrowUp,
+  Check,
   CheckCircle2,
   ChevronDown,
+  Copy,
   ExternalLink,
   Eye,
   EyeOff,
   Play,
   Plus,
+  QrCode,
   RefreshCw,
   Search,
   Sparkles,
@@ -16,6 +19,10 @@ import {
   XCircle
 } from 'lucide-react';
 import { EngineConfigFields, useStore } from '../store';
+import { BIGMODEL_INVITE_CODE, BIGMODEL_INVITE_URL } from '../assets/bigmodelQr';
+import { SILICONFLOW_INVITE_CODE, SILICONFLOW_INVITE_URL } from '../assets/siliconflowQr';
+import { QrCodeSvg } from './QrCodeSvg';
+import { useInlineConfirm } from './useInlineConfirm';
 import {
   detectPreset,
   isConcretePreset,
@@ -61,9 +68,14 @@ export const OpenAiProfilesForm: FunctionComponent<OpenAiProfilesFormProps> = ({
   const [showAdvanced, setShowAdvanced] = useState<Record<string, boolean>>({});
   const [openModelPicker, setOpenModelPicker] = useState<Record<string, boolean>>({});
   const [modelQueries, setModelQueries] = useState<Record<string, string>>({});
+  const [openPromo, setOpenPromo] = useState<Record<string, boolean>>({});
+  const [showQr, setShowQr] = useState<Record<string, boolean>>({});
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [saved, setSaved] = useState(false);
+  const { isConfirming, trigger: confirmDelete } = useInlineConfirm(3000);
 
+  const testingEngine = useStore((s) => s.testingEngine);
   const testResults = useStore((s) => s.testResults);
   const engineModels = useStore((s) => s.engineModels);
   const setEngineModels = useStore((s) => s.setEngineModels);
@@ -173,6 +185,28 @@ export const OpenAiProfilesForm: FunctionComponent<OpenAiProfilesFormProps> = ({
           const isPrimary = profile.id === firstActiveId;
           const preset = detectPreset(profile.baseUrl);
           const resultKey = `openai:${profile.id}`;
+          const isCardTesting = isTesting || testingEngine === resultKey;
+          const confirmingDelete = isConfirming(`del:${profile.id}`);
+          const promo =
+            !profile.apiKey.trim() && preset?.id === 'siliconflow'
+              ? {
+                  title: '还没有 API Key？领硅基流动免费额度',
+                  desc: '新用户注册实名认证送 14~20 元算力额度，支持 Qwen、DeepSeek 等全系列模型。',
+                  inviteUrl: SILICONFLOW_INVITE_URL,
+                  inviteCode: SILICONFLOW_INVITE_CODE,
+                  qrType: 'siliconflow' as const,
+                  qrTip: '手机微信或浏览器扫码注册即领免费额度'
+                }
+              : !profile.apiKey.trim() && preset?.id === 'glm'
+                ? {
+                    title: '还没有 API Key？领智谱 2000万 Tokens',
+                    desc: '通过专属链接注册智谱 BigModel 即可获赠 2000万 Tokens 新手礼包。',
+                    inviteUrl: BIGMODEL_INVITE_URL,
+                    inviteCode: BIGMODEL_INVITE_CODE,
+                    qrType: 'bigmodel' as const,
+                    qrTip: '手机微信或浏览器扫码注册即享 2000万 Tokens'
+                  }
+                : null;
           const profileTestResult = testResults[resultKey];
           const profileModels = engineModels[resultKey];
           const hasModels = Boolean(profileModels && profileModels.models.length > 0);
@@ -256,11 +290,16 @@ export const OpenAiProfilesForm: FunctionComponent<OpenAiProfilesFormProps> = ({
                   </button>
                   <button
                     type="button"
-                    onClick={() => removeProfile(profile.id)}
-                    title="删除此配置"
-                    className="p-1 rounded text-secondary-foreground/60 hover:text-error hover:bg-error/10 transition-colors"
+                    onClick={() => confirmDelete(`del:${profile.id}`, () => removeProfile(profile.id))}
+                    title={confirmingDelete ? '再次点击确认删除' : '删除此配置'}
+                    className={`rounded transition-colors flex items-center gap-0.5 ${
+                      confirmingDelete
+                        ? 'px-1.5 py-0.5 text-[9px] font-semibold bg-error text-white'
+                        : 'p-1 text-secondary-foreground/60 hover:text-error hover:bg-error/10'
+                    }`}
                   >
                     <Trash2 className="w-3 h-3" />
+                    {confirmingDelete && <span>确认?</span>}
                   </button>
                   <button
                     type="button"
@@ -347,6 +386,84 @@ export const OpenAiProfilesForm: FunctionComponent<OpenAiProfilesFormProps> = ({
                         )}
                       </button>
                     </div>
+
+                    {promo && (
+                      <div className="mt-1 rounded border border-border/50 bg-secondary/20 px-2.5 py-1.5">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setOpenPromo((prev) => ({ ...prev, [profile.id]: !prev[profile.id] }))
+                          }
+                          className="w-full flex items-center justify-between text-[9.5px] font-semibold text-accent hover:opacity-85"
+                        >
+                          <span className="flex items-center gap-1">
+                            <Sparkles className="w-3 h-3" />
+                            <span>{promo.title}</span>
+                          </span>
+                          <ChevronDown
+                            className={`w-3 h-3 transition-transform ${
+                              openPromo[profile.id] ? 'rotate-180' : ''
+                            }`}
+                          />
+                        </button>
+
+                        {openPromo[profile.id] && (
+                          <div className="mt-1.5 pt-1.5 border-t border-border/40 flex flex-col gap-1.5 text-[9px] text-secondary-foreground/80">
+                            <p>{promo.desc}</p>
+                            <div className="flex items-center flex-wrap gap-1.5">
+                              <a
+                                href={promo.inviteUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 px-2 py-0.5 font-semibold rounded bg-accent text-accent-foreground hover:opacity-90"
+                              >
+                                <span>前往注册领额度</span>
+                                <ExternalLink className="w-2.5 h-2.5" />
+                              </a>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setShowQr((prev) => ({ ...prev, [profile.id]: !prev[profile.id] }))
+                                }
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-border bg-background text-foreground hover:bg-secondary"
+                              >
+                                <QrCode className="w-2.5 h-2.5 text-accent" />
+                                <span>{showQr[profile.id] ? '收起二维码' : '扫码注册'}</span>
+                              </button>
+                              {promo.inviteCode && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(promo.inviteCode);
+                                    setCopiedId(profile.id);
+                                    setTimeout(() => setCopiedId(null), 2000);
+                                  }}
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-border/60 bg-secondary/40 font-mono text-foreground hover:border-accent"
+                                  title="点击复制邀请码"
+                                >
+                                  <span>邀请码: {promo.inviteCode}</span>
+                                  {copiedId === profile.id ? (
+                                    <Check className="w-2.5 h-2.5 text-success" />
+                                  ) : (
+                                    <Copy className="w-2.5 h-2.5 text-accent" />
+                                  )}
+                                </button>
+                              )}
+                            </div>
+                            {showQr[profile.id] && (
+                              <div className="mt-1 p-2 rounded border border-border bg-background flex flex-col items-center gap-1">
+                                <div className="w-28 h-28 bg-white rounded border border-border p-1.5 flex items-center justify-center">
+                                  <QrCodeSvg type={promo.qrType} className="w-full h-full" />
+                                </div>
+                                <span className="text-[8.5px] text-secondary-foreground">
+                                  {promo.qrTip}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Model + Pull Models Button right next to it */}
@@ -368,7 +485,7 @@ export const OpenAiProfilesForm: FunctionComponent<OpenAiProfilesFormProps> = ({
                       />
                       <button
                         type="button"
-                        disabled={isTesting}
+                        disabled={isCardTesting}
                         onClick={() => {
                           setOpenModelPicker((prev) => ({ ...prev, [profile.id]: true }));
                           onListModels({
@@ -381,10 +498,16 @@ export const OpenAiProfilesForm: FunctionComponent<OpenAiProfilesFormProps> = ({
                         className="flex items-center gap-1 px-2.5 py-1.5 text-[10.5px] font-semibold rounded border border-border bg-secondary text-secondary-foreground hover:bg-secondary-hover hover:text-foreground disabled:opacity-50 transition-colors flex-shrink-0"
                         title="根据上方 Base URL 与 API Key 拉取可用模型"
                       >
-                        <RefreshCw className={`w-3 h-3 text-accent ${isTesting ? 'animate-spin' : ''}`} />
+                        <RefreshCw className={`w-3 h-3 text-accent ${isCardTesting ? 'animate-spin' : ''}`} />
                         <span>拉取模型</span>
                       </button>
                     </div>
+
+                    {(!profileModels || !profileModels.message) && (
+                      <span className="text-[9px] text-secondary-foreground/65">
+                        填好 Base URL 与 API Key 后点「拉取模型」，可直接点选真实模型 ID，避免手抄大小写或前缀出错。
+                      </span>
+                    )}
 
                     {/* Model Picker */}
                     {openModelPicker[profile.id] && profileModels && profileModels.message && (
@@ -497,7 +620,7 @@ export const OpenAiProfilesForm: FunctionComponent<OpenAiProfilesFormProps> = ({
                   <div className="flex items-center justify-end gap-2">
                     <button
                       type="button"
-                      disabled={isTesting}
+                      disabled={isCardTesting}
                       onClick={() =>
                         onTest({
                           profileId: profile.id,
@@ -510,8 +633,8 @@ export const OpenAiProfilesForm: FunctionComponent<OpenAiProfilesFormProps> = ({
                       }
                       className="flex items-center gap-1.5 px-3 py-1 text-[11px] font-semibold rounded border border-border bg-secondary text-secondary-foreground hover:bg-secondary-hover transition-colors disabled:opacity-60"
                     >
-                      <Play className={`w-3 h-3 text-accent ${isTesting ? 'animate-pulse' : ''}`} />
-                      <span>{isTesting ? '正在测试...' : '测试此配置'}</span>
+                      <Play className={`w-3 h-3 text-accent ${isCardTesting ? 'animate-pulse' : ''}`} />
+                      <span>{isCardTesting ? '正在测试...' : '测试此配置'}</span>
                     </button>
                   </div>
 

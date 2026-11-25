@@ -123,9 +123,11 @@ export interface InitStateMessage {
   type: 'init-state';
   glossary: GlossaryEntry[];
   history: TranslationHistoryEntry[];
-  engines: Array<{ name: string; displayName: string; configured: boolean }>;
+  engines: Array<{ name: string; displayName: string; configured: boolean; enabled: boolean }>;
   priority: string[];
+  journalEnabled?: boolean;
   journalSource: JournalSource;
+  sidePanelAutoOpen?: boolean;
   cacheMaxSize: number;
   cacheSize?: number;
   layoutConfig: LayoutConfig;
@@ -135,7 +137,7 @@ export interface InitStateMessage {
 
 export interface EnginesStatusMessage {
   type: 'engines-status';
-  engines: Array<{ name: string; displayName: string; configured: boolean }>;
+  engines: Array<{ name: string; displayName: string; configured: boolean; enabled: boolean }>;
 }
 
 export interface EngineTestResultMessage {
@@ -325,6 +327,12 @@ export interface SetEnginePriorityMessage {
   priority: string[];
 }
 
+export interface SetEngineEnabledMessage {
+  type: 'set-engine-enabled';
+  engineName: string;
+  enabled: boolean;
+}
+
 export interface SaveGeneralSettingsMessage {
   type: 'save-general-settings';
   settings: GeneralSettings;
@@ -389,6 +397,7 @@ export type PanelToExtMessage =
   | TestEngineMessage
   | ListEngineModelsMessage
   | SetEnginePriorityMessage
+  | SetEngineEnabledMessage
   | SaveGeneralSettingsMessage
   | AddTermMessage
   | UpdateTermMessage

@@ -7,6 +7,7 @@ export type EngineStatus = {
   name: string;
   displayName: string;
   configured: boolean;
+  enabled?: boolean;
 };
 
 export interface EngineConfigFields {
@@ -91,8 +92,12 @@ interface PanelState {
   setEnginePriority: (priority: string[]) => void;
   engineConfigs: Record<string, EngineConfigFields>;
   setEngineConfigs: (configs: Record<string, EngineConfigFields>) => void;
+  journalEnabled: boolean;
+  setJournalEnabled: (enabled: boolean) => void;
   journalSource: JournalSource;
   setJournalSource: (source: JournalSource) => void;
+  sidePanelAutoOpen: boolean;
+  setSidePanelAutoOpen: (autoOpen: boolean) => void;
   cacheMaxSize: number;
   setCacheMaxSize: (size: number) => void;
   cacheSize: number;
@@ -180,8 +185,12 @@ export const useStore = create<PanelState>((set) => ({
   setEnginePriority: (enginePriority) => set({ enginePriority }),
   engineConfigs: {},
   setEngineConfigs: (engineConfigs) => set({ engineConfigs }),
+  journalEnabled: true,
+  setJournalEnabled: (journalEnabled) => set({ journalEnabled }),
   journalSource: { type: 'ablesci' },
   setJournalSource: (journalSource) => set({ journalSource }),
+  sidePanelAutoOpen: true,
+  setSidePanelAutoOpen: (sidePanelAutoOpen) => set({ sidePanelAutoOpen }),
   cacheMaxSize: 500,
   setCacheMaxSize: (cacheMaxSize) => set({ cacheMaxSize }),
   cacheSize: 0,

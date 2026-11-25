@@ -49,6 +49,20 @@ export class CacheService {
     this.saveToDisk();
   }
 
+  trimToMaxSize(): void {
+    const max = this.maxCacheSize;
+    let changed = false;
+    while (this.cache.size > max) {
+      const firstKey = this.cache.keys().next().value;
+      if (!firstKey) break;
+      this.cache.delete(firstKey);
+      changed = true;
+    }
+    if (changed) {
+      this.saveToDisk();
+    }
+  }
+
   get size(): number {
     return this.cache.size;
   }

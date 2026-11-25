@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizePriority } from '../src/services/enginePriority.ts';
+import { normalizeDisabledEngines, normalizePriority } from '../src/services/enginePriority.ts';
 
 const known = ['baidu', 'deepl', 'openai', 'custom'];
 
@@ -30,4 +30,18 @@ test('package.json 声明的默认优先级与注册表顺序一致', async () =
   const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
   const declared = pkg.contributes.configuration.properties['chunzen.translation.priority'].default;
   assert.deepEqual(declared, ['baidu', 'openai', 'custom', 'deepl']);
+});
+
+test('normalizeDisabledEngines 仅保留已知引擎名并去重，非法输入返回空数组', () => {
+  assert.deepEqual(normalizeDisabledEngines(['baidu', 'unknown', 'baidu', 123, null], known), ['baidu']);
+  assert.deepEqual(normalizeDisabledEngines(undefined, known), []);
+  assert.deepEqual(normalizeDisabledEngines('baidu', known), []);
+});
+
+test('package.json 新增设置项 disabledEngines 与 sidePanel.autoOpen 默认值合理', async () => {
+  const { readFileSync } = await import('node:fs');
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  const props = pkg.contributes.configuration.properties;
+  assert.deepEqual(props['chunzen.translation.disabledEngines'].default, []);
+  assert.equal(props['chunzen.sidePanel.autoOpen'].default, true);
 });

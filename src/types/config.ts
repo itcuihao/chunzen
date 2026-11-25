@@ -10,7 +10,8 @@ export interface GeneralSettings {
   cacheMaxSize?: number;
   journalEnabled?: boolean;
   journalSource?: JournalSource;
-  layout?: LayoutConfig;
+  sidePanelAutoOpen?: boolean;
+  layout?: Partial<LayoutConfig>;
 }
 
 export interface LayoutConfig {

@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { TranslationEngine, TranslationResult, GlossaryEntry } from '../types';
 import { CacheService } from './cacheService';
 import { GlossaryService } from './glossaryService';
-import { getEngines, getTranslationPriority } from './engines/registry';
+import { getActiveTranslationPriority, getDisabledEngineSet, getEngines } from './engines/registry';
 import { applyGlossary } from './glossaryPostProcess';
 import { encodeCacheEntry, decodeCacheEntry } from './translationCacheEntry';
 
@@ -35,7 +35,7 @@ export class TranslationService {
     const matchingTerms = this.glossaryService.getMatchingTerms(trimmed);
     const errors: string[] = [];
 
-    for (const engineName of getTranslationPriority()) {
+    for (const engineName of getActiveTranslationPriority()) {
       const engine = this.engines.get(engineName);
       if (!engine || !engine.isConfigured()) continue;
 
@@ -87,7 +87,7 @@ export class TranslationService {
     userText: string,
     configOverride?: Record<string, any>
   ): Promise<string | undefined> {
-    for (const engineName of getTranslationPriority()) {
+    for (const engineName of getActiveTranslationPriority()) {
       const engine = this.engines.get(engineName);
       if (engine?.complete && engine.isConfigured()) {
         return engine.complete(systemPrompt, userText, configOverride);
@@ -111,9 +111,14 @@ export class TranslationService {
     return this.cache.size;
   }
 
+  trimCache(): void {
+    this.cache.trimToMaxSize();
+  }
+
   getConfiguredEngines(): string[] {
+    const disabled = getDisabledEngineSet();
     return [...this.engines.values()]
-      .filter(e => e.isConfigured())
+      .filter(e => !disabled.has(e.name) && e.isConfigured())
       .map(e => e.displayName);
   }
 

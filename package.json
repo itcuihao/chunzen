@@ -103,6 +103,16 @@
           ],
           "description": "翻译引擎优先级顺序（从高到低）"
         },
+        "chunzen.translation.disabledEngines": {
+          "type": "array",
+          "default": [],
+          "description": "临时停用的翻译引擎列表（保留已存密钥，但不参与自动翻译与回退链）"
+        },
+        "chunzen.sidePanel.autoOpen": {
+          "type": "boolean",
+          "default": true,
+          "description": "打开 PDF 文件时是否自动展开右侧翻译与期刊面板"
+        },
         "chunzen.translation.baidu.appId": {
           "type": "string",
           "default": "",

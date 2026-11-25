@@ -102,8 +102,10 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
             break;
 
           case 'ready':
-            // WebView 就绪，确保面板打开
-            this.sidePanel.show();
+            // WebView 就绪，按用户设置决定是否自动弹出右侧面板
+            if (this.configService.getSidePanelConfig().autoOpen) {
+              this.sidePanel.show();
+            }
             webviewPanel.webview.postMessage({
               type: 'layout-config',
               config: this.configService.getLayoutConfig()

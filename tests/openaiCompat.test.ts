@@ -246,16 +246,13 @@ test('模型名错误识别：不误判认证/限流/参数/路径类错误', ()
   }
 });
 
-test('设置页的模型列表默认展开，且未拉取时给出引导', () => {
-  // 折起来等于把答案藏了：用户卡在「模型名填什么」，而列表正是答案。
+test('OpenAI 多平台设置表单常驻展示「拉取模型」入口，且未拉取时给出引导', () => {
+  // 拉取模型按钮直接放在模型输入框旁常驻展示（不折叠隐藏），未拉取时给出操作引导
   const ui = readFileSync(
-    new URL('../src/webviews/sidePanel/components/SettingsTab.tsx', import.meta.url),
+    new URL('../src/webviews/sidePanel/components/OpenAiProfilesForm.tsx', import.meta.url),
     'utf8'
   );
-  assert.match(ui, /useState\(true\)[^;]*;\s*\n?.*showModelList|const \[showModelList, setShowModelList\] = useState\(true\)/,
-    '模型列表应默认展开');
-  assert.ok(!/const \[showModelList, setShowModelList\] = useState\(false\)/.test(ui),
-    '模型列表不能默认折叠');
-  // 未拉取时不能是一片空白
-  assert.match(ui, /showModelList && !modelsForEngine/, '应处理「还没拉过列表」的状态');
+  assert.match(ui, /<span>拉取模型<\/span>/, '拉取模型按钮应常驻可见');
+  assert.match(ui, /\(!profileModels \|\| !profileModels\.message\)/, '应处理「还没拉过列表」的引导状态');
+  assert.match(ui, /筛选模型/, '拉取模型后应支持关键词筛选');
 });
