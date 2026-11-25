@@ -29,7 +29,9 @@
   "bugs": {
     "url": "https://github.com/itcuihao/chunzen/issues"
   },
-  "activationEvents": [],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./dist/extension.js",
   "icon": "media/icon.png",
   "contributes": {
@@ -49,7 +51,12 @@
       {
         "command": "chunzen.openSidePanel",
         "title": "春蝉：打开翻译面板",
-        "icon": "$(book)"
+        "icon": "$(chunzen-cicada)"
+      },
+      {
+        "command": "chunzen.focusReader",
+        "title": "春蝉：一键切回原文与译文",
+        "icon": "$(chunzen-cicada)"
       },
       {
         "command": "chunzen.clearCache",
@@ -69,11 +76,19 @@
         "icon": "$(device-camera)"
       }
     ],
+    "icons": {
+      "chunzen-cicada": {
+        "description": "春蝉图标（竹枝上的春蝉）",
+        "default": {
+          "fontPath": "media/chunzen-icons.woff",
+          "fontCharacter": "\\E001"
+        }
+      }
+    },
     "menus": {
       "editor/title": [
         {
           "command": "chunzen.openSidePanel",
-          "when": "activeCustomEditorId == 'chunzen.pdfViewer'",
           "group": "navigation"
         },
         {

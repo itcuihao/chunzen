@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { PdfEditorProvider } from './pdfEditor/PdfEditorProvider';
 import { SidePanelProvider } from './sidePanel/SidePanelProvider';
 import { TranslationService } from './services/translationService';
@@ -89,6 +90,34 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('chunzen.openSidePanel', () => {
       sidePanel.show();
+    })
+  );
+
+  // 底部状态栏常驻入口：一键将原文 PDF 与译文面板切回前台
+  const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+  statusBarItem.command = 'chunzen.focusReader';
+  const updateStatusBar = () => {
+    const activeUri = pdfProvider.getActivePdfUri();
+    if (activeUri) {
+      const fileName = path.basename(activeUri.fsPath, '.pdf');
+      const shortName = fileName.length > 18 ? `${fileName.slice(0, 16)}…` : fileName;
+      statusBarItem.text = `$(chunzen-cicada) 春蝉 · ${shortName}`;
+      statusBarItem.tooltip = `春蝉学术阅读器：${fileName}\n点击一键将原文 PDF 与译文面板切回前台`;
+    } else {
+      statusBarItem.text = '$(chunzen-cicada) 春蝉';
+      statusBarItem.tooltip = '点击打开春蝉译文面板（或选择 PDF 阅读）';
+    }
+  };
+  pdfProvider.onActivePdfChanged = updateStatusBar;
+  updateStatusBar();
+  statusBarItem.show();
+  context.subscriptions.push(statusBarItem);
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('chunzen.focusReader', () => {
+      pdfProvider.revealActivePdf();
+      sidePanel.show();
+      updateStatusBar();
     })
   );
 

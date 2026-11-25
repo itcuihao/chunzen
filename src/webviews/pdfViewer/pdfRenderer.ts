@@ -149,12 +149,25 @@ export async function loadPdf(url: string): Promise<PdfDocument> {
   return loadingTask.promise;
 }
 
+// Track active render task per canvas so concurrent renders cancel cleanly
+// before resizing or mutating the shared 2D context.
+const activeCanvasRenders = new WeakMap<
+  HTMLCanvasElement,
+  { task: RenderTask; settled: Promise<void> }
+>();
+
 export async function renderPageToCanvas(
   page: PdfPage,
   canvas: HTMLCanvasElement,
   scale: number,
   pixelRatioMultiplier = 1
 ): Promise<PdfViewport> {
+  const prev = activeCanvasRenders.get(canvas);
+  if (prev) {
+    prev.task.cancel();
+    await prev.settled;
+  }
+
   const viewport = page.getViewport({ scale });
 
   // Render at physical-pixel resolution on HiDPI/Retina displays, then display
@@ -172,6 +185,13 @@ export async function renderPageToCanvas(
   if (!ctx) throw new Error('Failed to get canvas context');
   const transform = outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null;
   const renderTask = page.render({ canvasContext: ctx, viewport, transform });
+  const settled = renderTask.promise.then(
+    () => undefined,
+    () => undefined
+  );
+  const entry = { task: renderTask, settled };
+  activeCanvasRenders.set(canvas, entry);
+
   try {
     await renderTask.promise;
   } catch (e: unknown) {
@@ -179,6 +199,10 @@ export async function renderPageToCanvas(
       return viewport;
     }
     throw e;
+  } finally {
+    if (activeCanvasRenders.get(canvas) === entry) {
+      activeCanvasRenders.delete(canvas);
+    }
   }
   return viewport;
 }

@@ -38,6 +38,13 @@ interface MineruPara {
 
 // ── Component ──
 
+function isGlossaryCandidate(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed || trimmed.length > 60) return false;
+  if (/[\r\n.!?。！？;；]/.test(trimmed)) return false;
+  return trimmed.split(/\s+/).length <= 6;
+}
+
 export const TranslationTab: FunctionComponent = () => {
   const loading = useStore((state) => state.isTranslating);
   const error = useStore((state) => state.translationError);
@@ -105,6 +112,8 @@ export const TranslationTab: FunctionComponent = () => {
   }, [mineruPages, currentPageText?.pageNumber]);
 
   const [addingGlossaryParaId, setAddingGlossaryParaId] = useState<string | null>(null);
+  const [aiGlossaryOpen, setAiGlossaryOpen] = useState(false);
+  const [aiGlossarySaved, setAiGlossarySaved] = useState(false);
   const [glossarySource, setGlossarySource] = useState('');
   const [glossaryTarget, setGlossaryTarget] = useState('');
   const [glossaryCategory, setGlossaryCategory] = useState('学术词汇');
@@ -173,6 +182,8 @@ export const TranslationTab: FunctionComponent = () => {
 
   const handleAiExplainFromBubble = () => {
     if (!selectedText) return;
+    setAiGlossaryOpen(false);
+    setAiGlossarySaved(false);
     setAiExplanation({
       text: selectedText,
       loading: true
@@ -1397,32 +1408,102 @@ export const TranslationTab: FunctionComponent = () => {
               )}
             </div>
 
-            {!aiExplanation.loading && !aiExplanation.error && (
-              <div className="flex gap-2 justify-end border-t border-zinc-900 pt-2">
-                <button
-                  onClick={() => {
-                    const copyText = [aiExplanation.translation, aiExplanation.result].filter(Boolean).join('\n\n');
-                    navigator.clipboard.writeText(copyText);
-                  }}
-                  className="px-2.5 py-1 text-[10px] bg-zinc-800 hover:bg-zinc-700 rounded text-zinc-300 cursor-pointer border-0 font-sans"
-                >
-                  复制释义
-                </button>
-                <button
-                  onClick={() => {
-                    const text = aiExplanation.text;
-                    const target = aiExplanation.translation || aiExplanation.result || '';
-                    setGlossarySource(text);
-                    setGlossaryTarget(target.slice(0, 50));
-                    setAddingGlossaryParaId(selectedParaId || '');
-                    setAiExplanation(null);
-                  }}
-                  className="px-2.5 py-1 text-[10px] bg-primary text-primary-foreground hover:bg-primary/95 rounded cursor-pointer font-bold border-0 font-sans"
-                >
-                  记术语
-                </button>
-              </div>
-            )}
+            {!aiExplanation.loading && !aiExplanation.error && (() => {
+              const canSaveGlossary = isGlossaryCandidate(aiExplanation.text);
+              return (
+                <>
+                  {canSaveGlossary && aiGlossaryOpen && (
+                  <div className="mb-2.5 p-2.5 rounded-lg border border-zinc-800 bg-zinc-900/90 flex flex-col gap-2">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[9px] text-zinc-400 mb-0.5 font-sans">英文原文</label>
+                        <input
+                          type="text"
+                          value={glossarySource}
+                          onChange={(e) => setGlossarySource(e.target.value)}
+                          className="w-full px-2 py-1 text-[11px] rounded bg-zinc-950 border border-zinc-700 text-zinc-100 outline-none focus:border-primary"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[9px] text-zinc-400 mb-0.5 font-sans">中文译文</label>
+                        <input
+                          type="text"
+                          value={glossaryTarget}
+                          onChange={(e) => setGlossaryTarget(e.target.value)}
+                          className="w-full px-2 py-1 text-[11px] rounded bg-zinc-950 border border-zinc-700 text-zinc-100 outline-none focus:border-primary"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <input
+                        type="text"
+                        value={glossaryCategory}
+                        onChange={(e) => setGlossaryCategory(e.target.value)}
+                        placeholder="分类（如：方法与模型 / 生物医学）"
+                        className="flex-1 px-2 py-1 text-[10px] rounded bg-zinc-950 border border-zinc-700 text-zinc-200 outline-none focus:border-primary"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setAiGlossaryOpen(false)}
+                        className="px-2 py-1 text-[10px] bg-zinc-800 hover:bg-zinc-700 rounded text-zinc-300 cursor-pointer border-0 font-sans"
+                      >
+                        取消
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!glossarySource.trim() || !glossaryTarget.trim()}
+                        onClick={() => {
+                          if (!glossarySource.trim() || !glossaryTarget.trim()) return;
+                          postMessage({
+                            type: 'add-term',
+                            source: glossarySource.trim(),
+                            target: glossaryTarget.trim(),
+                            category: glossaryCategory.trim()
+                          });
+                          setAiGlossaryOpen(false);
+                          setAiGlossarySaved(true);
+                        }}
+                        className="px-2.5 py-1 text-[10px] bg-primary text-primary-foreground hover:bg-primary/95 rounded cursor-pointer font-bold border-0 font-sans disabled:opacity-40"
+                      >
+                        保存术语
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex gap-2 justify-end border-t border-zinc-900 pt-2">
+                  <button
+                    onClick={() => {
+                      const copyText = [aiExplanation.translation, aiExplanation.result].filter(Boolean).join('\n\n');
+                      navigator.clipboard.writeText(copyText);
+                    }}
+                    className="px-2.5 py-1 text-[10px] bg-zinc-800 hover:bg-zinc-700 rounded text-zinc-300 cursor-pointer border-0 font-sans"
+                  >
+                    复制释义
+                  </button>
+                  {canSaveGlossary && (
+                    <button
+                      onClick={() => {
+                        if (aiGlossaryOpen) {
+                          setAiGlossaryOpen(false);
+                          return;
+                        }
+                        const text = aiExplanation.text;
+                        const target = aiExplanation.translation || aiExplanation.result || '';
+                        setGlossarySource(text);
+                        setGlossaryTarget(target.slice(0, 80));
+                        setAiGlossaryOpen(true);
+                        setAiGlossarySaved(false);
+                      }}
+                      className="px-2.5 py-1 text-[10px] bg-primary text-primary-foreground hover:bg-primary/95 rounded cursor-pointer font-bold border-0 font-sans"
+                    >
+                      {aiGlossarySaved ? '已记入术语表' : aiGlossaryOpen ? '收起录入' : '记术语'}
+                    </button>
+                  )}
+                </div>
+              </>
+              );
+            })()}
           </div>
         )}
       </article>

@@ -30,7 +30,7 @@ let pdfDoc: PdfDocument | null = null;
 let currentPage = 1;
 let totalPages = 0;
 let scale = 1.2;
-let renderTask: { cancel(): void } | null = null;
+let renderEpoch = 0;
 let layoutConfig: LayoutConfig = { ...defaultLayoutConfig };
 
 function applyTheme(t: 'auto' | 'dark' | 'light') {
@@ -100,33 +100,37 @@ async function loadPdfDocument() {
     pageTotalEl.textContent = totalPagesText;
     hudPageTotal.textContent = totalPagesText;
 
-    try {
-      const meta = await pdfDoc.getMetadata();
-      if (meta?.info?.Title) pdfTitleEl.textContent = meta.info.Title;
-    } catch { /* ignore */ }
+    // 尽早通知扩展端就绪（同步主题/渲染倍率配置与右侧面板）
+    vscode.postMessage({ type: 'ready' });
 
-    // Fetch and render PDF bookmarks outline
-    try {
-      const outline = await pdfDoc.getOutline();
-      const outlineBtn = document.getElementById('btn-outline');
-      if (outline && outline.length > 0) {
-        const outlineTreeEl = document.getElementById('outline-tree')!;
-        outlineTreeEl.innerHTML = '';
-        renderOutlineNode(outline, outlineTreeEl);
-        outlineBtn?.classList.remove('hidden');
-      } else {
-        outlineBtn?.classList.add('hidden');
-      }
-    } catch (err) {
-      console.warn('[PDF Viewer] Failed to load outline:', err);
-      document.getElementById('btn-outline')?.classList.add('hidden');
-    }
+    // 元数据与目录树不阻塞首屏渲染，改为后台并发读取
+    pdfDoc.getMetadata()
+      .then(meta => {
+        if (meta?.info?.Title) pdfTitleEl.textContent = meta.info.Title;
+      })
+      .catch(() => { /* ignore */ });
+
+    pdfDoc.getOutline()
+      .then(outline => {
+        const outlineBtn = document.getElementById('btn-outline');
+        if (outline && outline.length > 0) {
+          const outlineTreeEl = document.getElementById('outline-tree')!;
+          outlineTreeEl.innerHTML = '';
+          renderOutlineNode(outline, outlineTreeEl);
+          outlineBtn?.classList.remove('hidden');
+        } else {
+          outlineBtn?.classList.add('hidden');
+        }
+      })
+      .catch(err => {
+        console.warn('[PDF Viewer] Failed to load outline:', err);
+        document.getElementById('btn-outline')?.classList.add('hidden');
+      });
 
     await renderCurrentPage();
-    await extractMetaFromFirstPage();
-    hideLoading();
 
-    vscode.postMessage({ type: 'ready' });
+    // 首页 DOI/ISSN 提取与后台全文扫描在首屏显示后异步执行
+    extractMetaFromFirstPage().catch(err => console.warn('[PDF Viewer] Meta extract error:', err));
     startBackgroundScan().catch(err => console.error('[PDF Viewer] Background scan error:', err));
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -136,16 +140,15 @@ async function loadPdfDocument() {
 
 async function renderCurrentPage() {
   if (!pdfDoc) return;
+  const epoch = ++renderEpoch;
   readPages.add(currentPage);
 
-  if (renderTask) {
-    renderTask.cancel();
-    renderTask = null;
-  }
-
   const page = await pdfDoc.getPage(currentPage);
+  if (epoch !== renderEpoch) return;
+
   const multiplier = renderScaleToMultiplier(layoutConfig.renderScale);
   const viewport = await renderPageToCanvas(page, canvas, scale, multiplier);
+  if (epoch !== renderEpoch) return;
 
   wrapper.style.width = viewport.width + 'px';
   wrapper.style.height = viewport.height + 'px';
@@ -155,6 +158,7 @@ async function renderCurrentPage() {
   let items = pageRichContentCache.get(currentPage);
   if (!items) {
     items = await getPageText(page);
+    if (epoch !== renderEpoch) return;
     pageRichContentCache.set(currentPage, items);
   }
 
@@ -171,6 +175,7 @@ async function renderCurrentPage() {
   };
 
   const modelHints = await getLayoutHints(renderedRichContent, viewport);
+  if (epoch !== renderEpoch) return;
   const { paragraphs: newParagraphs, columnsCount } = buildTextLayer(textLayer, renderedRichContent, viewport, {
     layoutHints: modelHints || undefined,
     pageNumber: currentPage
@@ -214,6 +219,8 @@ async function renderCurrentPage() {
     columnsCount,
     translations
   });
+
+  hideLoading();
 }
 
 function normalizeRepeatSignature(text: string): string {

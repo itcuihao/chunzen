@@ -27,6 +27,7 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
   private webviews = new Map<string, vscode.WebviewPanel>();
   private panelUris = new Map<vscode.WebviewPanel, vscode.Uri>();
   private activeWebviewPanel: vscode.WebviewPanel | undefined;
+  public onActivePdfChanged?: () => void;
 
   constructor(
     context: vscode.ExtensionContext,
@@ -63,6 +64,7 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
     this.panelUris.set(webviewPanel, uri);
     this.activeWebviewPanel = webviewPanel;
     this.sidePanel.setActivePdf(uri);
+    this.onActivePdfChanged?.();
 
     // Default to open PDF on the left side (ViewColumn.One)
     if (webviewPanel.viewColumn !== vscode.ViewColumn.One) {
@@ -73,6 +75,7 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
       if (e.webviewPanel.active) {
         this.activeWebviewPanel = webviewPanel;
         this.sidePanel.setActivePdf(uri);
+        this.onActivePdfChanged?.();
       }
     });
 
@@ -156,6 +159,7 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
       if (this.activeWebviewPanel === webviewPanel) {
         this.activeWebviewPanel = undefined;
       }
+      this.onActivePdfChanged?.();
     });
   }
 
@@ -192,6 +196,19 @@ export class PdfEditorProvider implements vscode.CustomReadonlyEditorProvider {
 
     await vscode.workspace.fs.writeFile(vscode.Uri.file(target), raw);
     vscode.window.showInformationMessage(`整页高清截图已保存：${path.basename(target)}`);
+  }
+
+  /** 将当前活跃（或最近打开）的 PDF 原文切回左侧前台 */
+  public revealActivePdf(): boolean {
+    const panel = this.resolveActivePanel();
+    if (!panel) return false;
+    panel.reveal(vscode.ViewColumn.One, true);
+    return true;
+  }
+
+  public getActivePdfUri(): vscode.Uri | undefined {
+    const panel = this.resolveActivePanel();
+    return panel ? this.panelUris.get(panel) : undefined;
   }
 
   private resolveActivePanel(): vscode.WebviewPanel | undefined {
