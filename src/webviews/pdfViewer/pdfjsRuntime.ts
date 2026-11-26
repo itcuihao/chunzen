@@ -14,6 +14,8 @@
 export interface PdfJsRuntime {
   getDocument(config: {
     url: string;
+    disableRange?: boolean;
+    disableStream?: boolean;
     cMapUrl?: string;
     cMapPacked?: boolean;
     standardFontDataUrl?: string;

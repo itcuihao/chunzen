@@ -100,6 +100,8 @@ export interface RichTextContent {
   hasStructure: boolean;
   /** Horizontal separator rules detected from vector paths */
   horizontalRules: HorizontalRule[];
+  /** False when extracted with skipRules:true (e.g. background scan) */
+  rulesExtracted?: boolean;
   styles?: Record<string, { fontFamily: string; ascent: number; descent: number }>;
   commonObjs?: any;
 }
@@ -132,15 +134,34 @@ export interface PdfJsAssets {
 }
 
 let assets: PdfJsAssets = { workerSrc: '' };
+let resolvedWorkerBlobUrl: string | null = null;
 
 export function initPdfJs(config: PdfJsAssets | string): void {
   assets = typeof config === 'string' ? { workerSrc: config } : config;
   pdfjs().GlobalWorkerOptions.workerSrc = assets.workerSrc;
 }
 
+async function ensureBlobWorker(): Promise<void> {
+  if (resolvedWorkerBlobUrl || !assets.workerSrc || assets.workerSrc.startsWith('blob:')) return;
+  try {
+    const resp = await fetch(assets.workerSrc);
+    if (!resp.ok) return;
+    const blob = await resp.blob();
+    resolvedWorkerBlobUrl = URL.createObjectURL(new Blob([blob], { type: 'application/javascript' }));
+    pdfjs().GlobalWorkerOptions.workerSrc = resolvedWorkerBlobUrl;
+  } catch {
+    // Fall back to original workerSrc
+  }
+}
+
 export async function loadPdf(url: string): Promise<PdfDocument> {
+  await ensureBlobWorker();
   const loadingTask = pdfjs().getDocument({
     url,
+    // VSCode webview 的 vscode-resource 代理对 HTTP Range / 流式分块支持不佳，
+    // 关闭 Range/Stream 避免反复试探或挂起，直接一次性读取。
+    disableRange: true,
+    disableStream: true,
     // 中文字体与标准字体的数据文件同样随扩展分发；缺失时 PDF.js 会退化成
     // 画不出字形，所以地址必须和 worker 一起给全。
     ...(assets.cMapUrl ? { cMapUrl: assets.cMapUrl, cMapPacked: true } : {}),
@@ -217,7 +238,11 @@ export async function renderPageToCanvas(
  * When the PDF is untagged, `paragraphBoundaries` is empty and `hasStructure`
  * is false — the caller should fall back to heuristic paragraph detection.
  */
-export async function getPageText(page: PdfPage, viewport?: PdfViewport): Promise<RichTextContent> {
+export async function getPageText(
+  page: PdfPage,
+  viewport?: PdfViewport,
+  options?: { skipRules?: boolean }
+): Promise<RichTextContent> {
   // Request marked-content markers so we get paragraph/heading boundaries
   let rawContent: TextContent;
   try {
@@ -275,7 +300,8 @@ export async function getPageText(page: PdfPage, viewport?: PdfViewport): Promis
   // Remove nested duplicates: if a boundary is fully contained inside another,
   // keep only the innermost one.
   const dedupedBoundaries = dedupBoundaries(paragraphBoundaries);
-  const horizontalRules = await extractHorizontalRules(page, viewport);
+  const skipRules = options?.skipRules === true;
+  const horizontalRules = skipRules ? [] : await extractHorizontalRules(page, viewport);
 
   console.log(
     `[ChunZen] getPageText: items=${items.length}`,
@@ -289,6 +315,7 @@ export async function getPageText(page: PdfPage, viewport?: PdfViewport): Promis
     paragraphBoundaries: dedupedBoundaries,
     hasStructure,
     horizontalRules,
+    rulesExtracted: !skipRules,
     styles: (rawContent as any).styles || {},
     commonObjs: page.commonObjs
   };
@@ -329,7 +356,7 @@ function mergeTransform(a: number[], b: number[]): number[] {
   return pdfjs().Util.transform(a, b);
 }
 
-async function extractHorizontalRules(page: PdfPage, viewport?: PdfViewport): Promise<HorizontalRule[]> {
+export async function extractHorizontalRules(page: PdfPage, viewport?: PdfViewport): Promise<HorizontalRule[]> {
   let operatorList: OperatorList | null = null;
   try {
     operatorList = await page.getOperatorList();

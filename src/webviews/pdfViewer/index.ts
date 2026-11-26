@@ -1,6 +1,6 @@
 // PDF viewer webview entry point
 
-import { initPdfJs, loadPdf, PdfDocument, PdfViewport, RichTextContent, renderPageToCanvas, getPageText } from './pdfRenderer';
+import { initPdfJs, loadPdf, PdfDocument, PdfViewport, RichTextContent, renderPageToCanvas, getPageText, extractHorizontalRules } from './pdfRenderer';
 import { buildTextLayer, Paragraph, LayoutHints } from './textLayer';
 
 
@@ -86,6 +86,9 @@ wrapper.appendChild(textLayer);
 
 async function loadPdfDocument() {
   try {
+    const t0 = performance.now();
+    const loadingTextEl = loadingOverlay.querySelector('.loading-text');
+    const setLoadingText = (t: string) => { if (loadingTextEl) loadingTextEl.textContent = t; };
     repeatCandidateSignaturesByPage.clear();
     repeatSignaturePages.clear();
     const globals = window as unknown as Record<string, string>;
@@ -94,7 +97,9 @@ async function loadPdfDocument() {
       cMapUrl: globals.PDFJS_CMAPS,
       standardFontDataUrl: globals.PDFJS_FONTS,
     });
+    setLoadingText('读取 PDF 文件中…');
     pdfDoc = await loadPdf((window as unknown as Record<string, string>).PDF_SRC);
+    console.log(`[PDF Viewer] loadPdf took ${Math.round(performance.now() - t0)}ms`);
     totalPages = pdfDoc.numPages;
     const totalPagesText = `/ ${totalPages}`;
     pageTotalEl.textContent = totalPagesText;
@@ -127,11 +132,16 @@ async function loadPdfDocument() {
         document.getElementById('btn-outline')?.classList.add('hidden');
       });
 
+    setLoadingText('渲染首页中…');
+    const tRender0 = performance.now();
     await renderCurrentPage();
+    console.log(`[PDF Viewer] first page ready in ${Math.round(performance.now() - tRender0)}ms (total ${Math.round(performance.now() - t0)}ms)`);
 
-    // 首页 DOI/ISSN 提取与后台全文扫描在首屏显示后异步执行
+    // 首页 DOI/ISSN 提取异步执行；后台全文扫描延迟 2s 启动，避免与首屏及切换抢占资源
     extractMetaFromFirstPage().catch(err => console.warn('[PDF Viewer] Meta extract error:', err));
-    startBackgroundScan().catch(err => console.error('[PDF Viewer] Background scan error:', err));
+    setTimeout(() => {
+      startBackgroundScan().catch(err => console.error('[PDF Viewer] Background scan error:', err));
+    }, 2000);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     loadingOverlay.querySelector('.loading-text')!.textContent = `加载失败: ${msg}`;
@@ -154,11 +164,18 @@ async function renderCurrentPage() {
   wrapper.style.height = viewport.height + 'px';
   textLayer.style.width = viewport.width + 'px';
   textLayer.style.height = viewport.height + 'px';
+  // 画布渲染完成即刻撤掉遮罩，后续文本层与侧栏同步不阻塞视觉呈现
+  hideLoading();
 
   let items = pageRichContentCache.get(currentPage);
   if (!items) {
     items = await getPageText(page);
     if (epoch !== renderEpoch) return;
+    pageRichContentCache.set(currentPage, items);
+  } else if (items.rulesExtracted === false) {
+    const horizontalRules = await extractHorizontalRules(page);
+    if (epoch !== renderEpoch) return;
+    items = { ...items, horizontalRules, rulesExtracted: true };
     pageRichContentCache.set(currentPage, items);
   }
 
@@ -219,8 +236,6 @@ async function renderCurrentPage() {
     columnsCount,
     translations
   });
-
-  hideLoading();
 }
 
 function normalizeRepeatSignature(text: string): string {
@@ -1396,6 +1411,19 @@ function renderOutlineNode(items: any[], container: HTMLElement) {
   container.appendChild(ul);
 }
 
+function waitWhileHidden(): Promise<void> {
+  if (!document.hidden) return Promise.resolve();
+  return new Promise(resolve => {
+    const onVis = () => {
+      if (!document.hidden) {
+        document.removeEventListener('visibilitychange', onVis);
+        resolve();
+      }
+    };
+    document.addEventListener('visibilitychange', onVis);
+  });
+}
+
 async function startBackgroundScan() {
   if (!pdfDoc || totalPages === 0) return;
   console.log('[PDF Viewer] Starting background scan...');
@@ -1405,28 +1433,31 @@ async function startBackgroundScan() {
   const startPage = Math.max(1, totalPages - 14);
 
   for (let pageNum = endPage; pageNum >= startPage; pageNum--) {
+    await waitWhileHidden();
     if (pageRichContentCache.has(pageNum)) continue;
     try {
       const page = await pdfDoc.getPage(pageNum);
-      const items = await getPageText(page);
+      const items = await getPageText(page, undefined, { skipRules: true });
       pageRichContentCache.set(pageNum, items);
-      await new Promise(resolve => setTimeout(resolve, 30));
+      await new Promise(resolve => setTimeout(resolve, 100));
     } catch (err) {
       console.warn(`[PDF Viewer] Background scan failed for page ${pageNum}:`, err);
     }
   }
 
   // Extract bibliography once the last 15 pages are loaded
+  await waitWhileHidden();
   await extractBibliography();
 
   // 2. Scan the rest of the pages in the background
   for (let pageNum = 1; pageNum < startPage; pageNum++) {
+    await waitWhileHidden();
     if (pageRichContentCache.has(pageNum)) continue;
     try {
       const page = await pdfDoc.getPage(pageNum);
-      const items = await getPageText(page);
+      const items = await getPageText(page, undefined, { skipRules: true });
       pageRichContentCache.set(pageNum, items);
-      await new Promise(resolve => setTimeout(resolve, 50));
+      await new Promise(resolve => setTimeout(resolve, 120));
     } catch (err) {
       console.warn(`[PDF Viewer] Background scan failed for page ${pageNum}:`, err);
     }

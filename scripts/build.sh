@@ -77,8 +77,12 @@ echo "=================="
 if $LOCAL_MODE; then
   echo ""
   echo "Installing to local VSCode..."
-  code --uninstall-extension "$EXT_ID" 2>/dev/null || true
-  code --install-extension "$PACKAGE_FILE" --force
+  CODE_BIN="code"
+  if [[ -x "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code" ]]; then
+    CODE_BIN="/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"
+  fi
+  "$CODE_BIN" --uninstall-extension "$EXT_ID" 2>/dev/null || true
+  "$CODE_BIN" --install-extension "$PACKAGE_FILE" --force
   echo "Installed. Reload any open VSCode windows to apply."
 else
   echo ""
