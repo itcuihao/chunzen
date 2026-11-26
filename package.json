@@ -2,7 +2,7 @@
   "name": "chunzen",
   "displayName": "春蝉 — 学术论文沉浸式阅读",
   "description": "春蝉 — 在 VSCode 中沉浸式阅读学术 PDF，支持整页双语对照翻译、选中文字 AI 释义、期刊信息查询（IF、中科院分区）",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "publisher": "HaoC",
   "repository": {
     "type": "git",
